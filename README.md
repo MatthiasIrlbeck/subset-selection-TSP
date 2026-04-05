@@ -1,28 +1,28 @@
 # Aldous subset selection TSP
 
-This project attacks an open traveling salesman problem (TSP) posed by David Aldous. Scatter N points uniformly in a square of area N and let L(k) denote the length of the shortest cycle through exactly k of them. The ratio f(p) = E[L(pN)] / (pN) is believed to converge to a constant as N grows, and at p = 1 the Beardwood-Halton-Hammersley (1959) theorem gives f(1) approximately 0.7124. Aldous asks for the shape of f over the full interval (0, 1]: does it decrease monotonically? What is its limiting form?
+This project attacks an open traveling salesman problem (TSP) posed by David Aldous. Scatter $N$ points uniformly in a square of area $N$ and let $L(k)$ denote the length of the shortest cycle through exactly $k$ of them. The ratio $f(p) = E[L(pN)] / (pN)$ is believed to converge to a constant as $N$ grows, and at $p = 1$ the Beardwood-Halton-Hammersley (1959) theorem gives $f(1) \approx 0.7124$. Aldous asks for the shape of $f$ over the full interval $(0, 1]$: does it decrease monotonically? What is its limiting form?
 
-The program estimates f(p) by Monte Carlo simulation over a grid of p values, solving the resulting combinatorial problems with heuristic local search. For background see [Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html).
+The program estimates $f(p)$ by Monte Carlo simulation over a grid of $p$ values, solving the resulting combinatorial problems with heuristic local search. For background see [Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html).
 
 ## Algorithmic approach
 
 ### Overview
 
-For each value of \( p \), the program has to solve two linked problems.
+For each value of $p$, the program has to solve two linked problems.
 
-First, it has to decide **which** \( k = pN \) points should be visited.
+First, it has to decide **which** $k = pN$ points should be visited.
 
 Second, it has to decide **in what order** those selected points should be visited.
 
-If \( p = 1 \), there is no subset choice and the task is an ordinary Euclidean traveling salesman problem on all \( N \) points. If \( p < 1 \), the task is harder: the program must optimize both the subset and the tour through that subset.
+If $p = 1$, there is no subset choice and the task is an ordinary Euclidean traveling salesman problem on all $N$ points. If $p < 1$, the task is harder: the program must optimize both the subset and the tour through that subset.
 
-The code estimates \( f(p) \) by Monte Carlo simulation. It repeatedly generates a random point set, solves the optimization problem for each requested value of \( p \), records the normalized tour length \( L(k)/k \), and then averages those values over many independent instances.
+The code estimates $f(p)$ by Monte Carlo simulation. It repeatedly generates a random point set, solves the optimization problem for each requested value of $p$, records the normalized tour length $L(k)/k$, and then averages those values over many independent instances.
 
 The solver is mainly heuristic. It is designed to produce good solutions quickly and consistently over many runs, not to certify global optimality. For very small subset sizes, the code does switch to exact search, but the main regime is heuristic local search.
 
-### Full TSP solver for \( p = 1 \)
+### Full TSP solver for $p = 1$
 
-When \( p = 1 \), the only question is the visiting order.
+When $p = 1$, the only question is the visiting order.
 
 The full tour solver uses **multiple restarts**. Each restart begins from a different initial tour. One start is built by **farthest insertion**: start with a far-apart pair of points, then repeatedly insert the point that is currently farthest from the tour in the cheapest place. Other starts are built by **nearest-neighbor construction**, which repeatedly appends a nearby unvisited point.
 
@@ -40,20 +40,20 @@ To escape local minima, the full-tour solver uses **iterated local search**. Aft
 
 The best restart solutions are stored in a small **elite pool**, meaning a short list of the strongest tours found so far. Those tours are then polished again with slightly broader search settings before the best one is reported.
 
-### Subset solver for \( p < 1 \)
+### Subset solver for $p < 1$
 
-When \( p < 1 \), the problem is no longer just “find a good tour.” It becomes “find a good set of \( k \) points and a good tour through them.”
+When $p < 1$, the problem is no longer just "find a good tour." It becomes "find a good set of $k$ points and a good tour through them."
 
 That is the core of the project.
 
-Each subset run starts from one or more seed solutions. A seed is simply an initial cycle on \( k \) selected points. Seeds can come from several sources:
+Each subset run starts from one or more seed solutions. A seed is simply an initial cycle on $k$ selected points. Seeds can come from several sources:
 
-- good solutions from nearby values of \( p \)
+- good solutions from nearby values of $p$
 - simple geometric constructions
 - spatially localized candidate sets
 - random samples
 
-Using nearby \( p \)-values matters because the optimal subset usually changes gradually as \( p \) changes. A strong solution at one \( p \) is often a useful starting point for the next.
+Using nearby $p$-values matters because the optimal subset usually changes gradually as $p$ changes. A strong solution at one $p$ is often a useful starting point for the next.
 
 Once a seed has been built, the code runs **simulated annealing**. In simple terms, simulated annealing is a search process that usually accepts improving moves, but also occasionally accepts worsening moves early in the run. That makes it less likely to get trapped immediately in a bad local minimum.
 
@@ -63,7 +63,7 @@ The main subset move is a **swap move**:
 - insert one point that is currently outside the subset
 - reconnect the cycle in the cheapest available place
 
-This keeps the subset size fixed at \( k \) while allowing the selected set itself to evolve.
+This keeps the subset size fixed at $k$ while allowing the selected set itself to evolve.
 
 The subset solver also uses occasional **2-opt** moves inside the current cycle. That is important because even if the selected point set is good, the ordering of those points may still be poor.
 
@@ -99,13 +99,13 @@ These combination steps help the search reuse information from different restart
 
 ### Special regimes
 
-The main documented mode is `balanced`. This is the default end to end path for estimating the full \( f(p) \) curve.
+The main documented mode is `balanced`. This is the default end to end path for estimating the full $f(p)$ curve.
 
-There are also specialized experimental regimes for the ends of the \( p \)-range.
+There are also specialized experimental regimes for the ends of the $p$-range.
 
-For very small \( p \), the solver can generate geometrically focused seeds that look for compact local regions before the main search begins. This is useful because when only a small fraction of the points must be visited, good solutions often come from dense local structure.
+For very small $p$, the solver can generate geometrically focused seeds that look for compact local regions before the main search begins. This is useful because when only a small fraction of the points must be visited, good solutions often come from dense local structure.
 
-For large \( p \), the solver can start from a full TSP tour and **delete** points that are cheap to remove, then improve the remaining cycle. This is a natural strategy near \( p = 1 \), because the selected subset is close to the full point set.
+For large $p$, the solver can start from a full TSP tour and **delete** points that are cheap to remove, then improve the remaining cycle. This is a natural strategy near $p = 1$, because the selected subset is close to the full point set.
 
 
 ## Build
@@ -155,7 +155,7 @@ For comparisons and for the examples above, `balanced` is the recommended baseli
 
 ## Design decisions
 
-The solver has no external dependencies beyond a C++17 compiler and pthreads. Distances are computed from coordinates on the fly rather than stored in an O(N^2) matrix, keeping memory linear in N and allowing larger N runs. KNN candidate sets are built over a uniform grid with expanding ring search rather than a k-d tree; for uniform random points in two dimensions the grid is simpler, cache friendlier, and competitive in practice. The RNG is xoshiro256. External solver integration (LKH, Concorde) is available as an optional post-processing step but is never required.
+The solver has no external dependencies beyond a C++17 compiler and pthreads. Distances are computed from coordinates on the fly rather than stored in an $O(N^2)$ matrix, keeping memory linear in $N$ and allowing larger $N$ runs. KNN candidate sets are built over a uniform grid with expanding ring search rather than a k-d tree; for uniform random points in two dimensions the grid is simpler, cache friendlier, and competitive in practice. The RNG is xoshiro256. External solver integration (LKH, Concorde) is available as an optional post-processing step but is never required.
 
 ## Project structure
 
