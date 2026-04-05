@@ -1,0 +1,15 @@
+build/
+build-*/
+cmake-build-*/
+compile_commands.json
+aldous_tsp
+aldous_tsp_warn
+aldous_tsp_native
+results.json
+*.o
+*.obj
+*.exe
+day_runs/
+overnight_runs/
+/tmp/
+
