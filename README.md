@@ -1,5 +1,7 @@
 # Aldous subset selection TSP
 
+![CI](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml/badge.svg)
+
 This project attacks an open traveling salesman problem (TSP) posed by David Aldous. Scatter $N$ points uniformly in a square of area $N$ and let $L(k)$ denote the length of the shortest cycle through exactly $k$ of them. The ratio $f(p) = E[L(pN)] / (pN)$ is believed to converge to a constant as $N$ grows, and at $p = 1$ the Beardwood-Halton-Hammersley (1959) theorem gives $f(1) \approx 0.7124$. Aldous asks for the shape of $f$ over the full interval $(0, 1]$: does it decrease monotonically? What is its limiting form?
 
 The program estimates $f(p)$ by Monte Carlo simulation over a grid of $p$ values, solving the resulting combinatorial problems with heuristic local search. For background see [Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html).
