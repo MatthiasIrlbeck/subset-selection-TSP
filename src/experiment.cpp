@@ -146,6 +146,7 @@ struct CoreInstanceRunResult {
     std::vector<int> best_restarts;
     std::vector<int> restarts_used;
     std::vector<double> solve_seconds;
+    std::vector<unsigned char> exact_optimal;
     SearchStats stats;
     KnnBuildInfo knn_info;
     // Control-variate bounds (raw length units; -1/empty when not requested).
@@ -188,6 +189,7 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     out.best_restarts.assign(np, -1);
     out.restarts_used.assign(np, 0);
     out.solve_seconds.assign(np, 0.0);
+    out.exact_optimal.assign(np, 0U);
     std::vector<std::vector<int>> sweep_nodes(opt.second_sweep ? np : 0U);
     std::vector<double> sweep_lengths(opt.second_sweep ? np : 0U, std::numeric_limits<double>::infinity());
     std::vector<std::vector<int>> final_nodes((opt.control_variate || opt.held_karp) ? np : 0U);
@@ -208,6 +210,8 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
         out.best_restarts[static_cast<std::size_t>(pi)] = best_restart_index(records);
         out.restarts_used[static_cast<std::size_t>(pi)] = static_cast<int>(records.size());
         out.solve_seconds[static_cast<std::size_t>(pi)] = solve_s;
+        out.exact_optimal[static_cast<std::size_t>(pi)] =
+            solved.exact_optimal ? 1U : 0U;
         warm = solved.tour.nodes;
         if (opt.control_variate || opt.held_karp) {
             final_nodes[static_cast<std::size_t>(pi)] = solved.tour.nodes;
@@ -231,6 +235,13 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
                 // subset warm starts; skip and keep chaining upward.
                 continue;
             }
+            if (out.exact_optimal[pi] != 0U) {
+                // The descending pass already proved the global optimum for
+                // this cardinality. Re-running the exponential dynamic
+                // program from a different warm start cannot improve it.
+                grow = sweep_nodes[pi];
+                continue;
+            }
             Rng up_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed),
                                         static_cast<std::uint64_t>(index),
                                         mix_hash64(static_cast<std::uint64_t>(std::llround(p * 1000000.0)) ^ 0x2b7e151628aed2a6ULL)));
@@ -245,6 +256,9 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
             out.restarts_used[pi] = static_cast<int>(out.restarts[pi].size());
             out.best_restarts[pi] = best_restart_index(out.restarts[pi]);
             out.stats.add(solved.stats);
+            if (solved.exact_optimal) {
+                out.exact_optimal[pi] = 1U;
+            }
             if (solved.tour.length < sweep_lengths[pi] - 1e-12) {
                 sweep_lengths[pi] = solved.tour.length;
                 sweep_nodes[pi] = solved.tour.nodes;
@@ -368,6 +382,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
     std::vector<int> best_restart_max(opt.p_values.size(), -1);
     std::vector<int> executed_restarts_max(opt.p_values.size(), -1);
     std::vector<double> solve_seconds_total(opt.p_values.size(), 0.0);
+    std::vector<int> exact_optimal_instances(opt.p_values.size(), 0);
     // Control-variate arrays, aligned by instance order per p.
     std::vector<std::vector<double>> cv_sub(opt.p_values.size());
     std::vector<std::vector<double>> cv_full(opt.p_values.size());
@@ -389,6 +404,9 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
             }
             if (pi < r.solve_seconds.size()) {
                 solve_seconds_total[pi] += r.solve_seconds[pi];
+            }
+            if (pi < r.exact_optimal.size() && r.exact_optimal[pi] != 0U) {
+                ++exact_optimal_instances[pi];
             }
             if (opt.control_variate) {
                 const int k = std::max(3, std::min(opt.N, static_cast<int>(std::llround(opt.p_values[pi] * static_cast<double>(opt.N)))));
@@ -426,6 +444,8 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
                 pvrow.best_restart = pi < r.best_restarts.size() ? r.best_restarts[pi] : -1;
                 pvrow.executed_restarts = pi < r.restarts_used.size() ? r.restarts_used[pi] : 0;
                 pvrow.solve_seconds = pi < r.solve_seconds.size() ? r.solve_seconds[pi] : 0.0;
+                pvrow.exact_optimal =
+                    pi < r.exact_optimal.size() && r.exact_optimal[pi] != 0U;
                 if (pi < r.restarts.size()) { pvrow.restarts = r.restarts[pi]; }
                 if (pi < r.subset_bounds.size() && r.subset_bounds[pi] >= 0.0) {
                     pvrow.conditional_two_nn_bound =
@@ -450,6 +470,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
         summary.best_restart_max = best_restart_max[pi];
         summary.executed_restarts_max = executed_restarts_max[pi];
         summary.solve_seconds_total = solve_seconds_total[pi];
+        summary.exact_optimal_instances = exact_optimal_instances[pi];
         if (opt.control_variate) {
             summary.has_control_variate = true;
             const int k = std::max(3, std::min(opt.N, static_cast<int>(std::llround(opt.p_values[pi] * static_cast<double>(opt.N)))));

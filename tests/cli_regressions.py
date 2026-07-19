@@ -36,6 +36,7 @@ def main() -> int:
         "--disable-path-relink",
         "--pair-exchange-max-k",
         "--racing-candidates",
+        "--exact-subset-max-n",
         "Boolean flags accept plain presence as true",
     ):
         assert marker in help_run.stdout, marker
@@ -112,6 +113,37 @@ def main() -> int:
         assert rows_doc["config"]["include_instance_rows"] is True, rows_doc["config"]
         assert len(rows_doc["instance_rows"]) == 2, rows_doc["instance_rows"]
         assert all(len(row["p_results"]) == 2 for row in rows_doc["instance_rows"]), rows_doc["instance_rows"]
+
+        exact_doc = run_case(
+            exe,
+            [
+                "--N", "10",
+                "--instances", "1",
+                "--threads", "1",
+                "--p-values", "0.5,1.0",
+                "--exact-subset-max-n", "10",
+                "--second-sweep",
+                "--include-instance-rows",
+            ],
+            tmp / "exact-subset.json",
+        )
+        assert exact_doc["config"]["exact_subset_max_n"] == 10, exact_doc["config"]
+        assert exact_doc["search_stats"]["exact_subset_calls"] == 2, exact_doc["search_stats"]
+        assert exact_doc["search_stats"]["exact_subset_solved"] == 2, exact_doc["search_stats"]
+        assert exact_doc["search_stats"]["exact_subset_states"] > 0, exact_doc["search_stats"]
+        assert exact_doc["search_stats"]["exact_subset_transitions"] > 0, exact_doc["search_stats"]
+        assert exact_doc["search_stats"]["phase_timing"]["exact_subset_seconds"] >= 0.0, exact_doc["search_stats"]
+        exact_p_rows = exact_doc["instance_rows"][0]["p_results"]
+        assert all(row["exact_optimal"] for row in exact_p_rows), exact_p_rows
+        assert all(row["executed_restarts"] == 0 for row in exact_p_rows), exact_p_rows
+        assert all(row["best_restart"] == -1 for row in exact_p_rows), exact_p_rows
+        restart_arrays = {
+            "restart_values", "restart_kinds", "restart_sweeps", "restart_roles",
+            "restart_variants", "restart_promotion_stages", "restart_sa_iterations",
+            "restart_centroids_x", "restart_centroids_y", "restart_radii",
+        }
+        assert all(restart_arrays.isdisjoint(row) for row in exact_p_rows), exact_p_rows
+        assert all(row["exact_optimal_instances"] == 1 for row in exact_doc["summary_rows"]), exact_doc["summary_rows"]
 
         racing_doc = run_case(
             exe,
@@ -223,6 +255,15 @@ def main() -> int:
         )
         assert bad_pair_gate.returncode != 0, (bad_pair_gate.stdout, bad_pair_gate.stderr)
         assert "--pair-exchange-max-k must be >= 0" in bad_pair_gate.stderr, bad_pair_gate.stderr
+
+        bad_exact_limit = subprocess.run(
+            [str(exe), "--exact-subset-max-n", "19", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert bad_exact_limit.returncode != 0, (bad_exact_limit.stdout, bad_exact_limit.stderr)
+        assert "--exact-subset-max-n must be in [0,18]" in bad_exact_limit.stderr, bad_exact_limit.stderr
 
         bad_racing_quota = subprocess.run(
             [str(exe), "--racing-candidates", "2", "--racing-survivors", "3", "--dry-run"],

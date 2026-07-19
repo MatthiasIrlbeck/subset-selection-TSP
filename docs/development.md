@@ -38,6 +38,8 @@ Current tests cover:
 - KNN correctness across random and duplicate-point cases,
 - tour invariants,
 - exact small TSP,
+- exhaustive differential checks for the global exact subset oracle in open
+  and periodic geometry,
 - 2-opt crossing removal,
 - collision-safe elite deduplication,
 - solver smoke tests,
@@ -53,6 +55,8 @@ Next testing improvements should add larger scenario benchmarks and per-oracle-c
 The core implementation is deliberately modularized:
 
 - `src/solver_common.cpp` contains shared scoring/stat helpers.
+- `src/exact_subset.cpp` contains the bounded global subset-and-tour dynamic
+  program exposed through `include/aldous_tsp/exact_subset.hpp`.
 - `src/solver_construction.cpp` contains tour construction and exact-small routines.
 - `src/solver_local_search.cpp` contains 2-opt and Or-opt logic.
 - `src/solver_neighborhoods.cpp` contains subset exchange, LNS, and path-relink neighborhoods.

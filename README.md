@@ -16,6 +16,7 @@ The project is organized as a reusable C++17 library plus a thin command-line ap
 - collision-safe elite-pool deduplication using canonical keys
 - full-TSP multi-restart ILS with farthest insertion, nearest-neighbor starts, 3-cut perturbations, 2-opt, and Or-opt-1
 - subset simulated annealing with KNN-guided swap candidates
+- optional global exact cardinality-`k` subset-and-tour dynamic program for `N <= 18`, disabled by default
 - small-p spatial/dense seed pools
 - high-p deletion seeds and high-p reference-guided exchange descent
 - deterministic subset swap descent, two-for-two pair exchange, ruin/recreate LNS, and elite path relinking
@@ -38,7 +39,10 @@ The project is organized as a reusable C++17 library plus a thin command-line ap
 - phase-level profiling support through `knn_build_seconds` and `scripts/profile_run.py`
 - optional real LKH/Concorde smoke script through `scripts/oracle_real_smoke.py`, with explicit skip/pass/fail manifests
 
-The solver remains heuristic. For very small fixed tours it uses exact Held-Karp tour ordering, but subset selection itself is not globally certified.
+The production solver is heuristic by default. For calibration and regression work,
+`--exact-subset-max-n` can instead prove the globally optimal size-`k` subset and
+its cycle for instances with `N <= 18`. The ordinary small-tour Held-Karp routine
+optimizes only the ordering of a fixed subset and is not a subset-optimality proof.
 
 ## Build
 
@@ -140,6 +144,7 @@ Important flags:
 - `--knn-backend grid|bruteforce`
 - `--grid-cell <float>`
 - `--verify-knn <int>`
+- `--exact-subset-max-n <int>` (`0` disables; values through the hard cap of `18` globally solve both subset choice and cycle)
 - `--final-exhaustive-k <int>`
 - `--exhaustive-two-opt-policy never|final-only|all-polish`
 - `--subset-swap-passes <int>`
@@ -195,6 +200,20 @@ auto subset = subset_solver.solve_with_warm_start(instance, 40, rng, tsp.tour.no
 aldous_tsp::ExperimentRunner runner(run_options);
 auto results = runner.run();
 ```
+
+For direct exact calibration on a small instance, include
+`<aldous_tsp/exact_subset.hpp>` and call:
+
+```cpp
+auto proof = aldous_tsp::exact_subset_cycle(instance, k);
+if (proof.proven_optimal) {
+    // proof.cycle globally minimizes the implemented metric over all
+    // cardinality-k subsets, and proof.length is its optimal cycle length.
+}
+```
+
+The direct exact API does not require KNN construction. Instances above the hard
+limit return `solved == false` without allocating the exponential DP table.
 
 See `examples/library_usage.cpp` for a complete library-use example.
 

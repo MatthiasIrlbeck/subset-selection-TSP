@@ -15,6 +15,7 @@ def assert_common_install_tree(prefix: Path) -> None:
     assert (include_dir / "version.hpp").exists(), f"missing generated version.hpp under {include_dir}"
     assert not (include_dir / "version.hpp.in").exists(), "version.hpp.in template must not be installed"
     assert (include_dir / "solver.hpp").exists(), "core public headers must be installed"
+    assert (include_dir / "exact_subset.hpp").exists(), "exact subset API must be installed"
     assert (include_dir / "restart.hpp").exists(), "typed restart API must be installed"
     assert (include_dir / "restart_kinds.def").exists(), "restart-kind metadata must be installed"
     assert (prefix / "lib" / "cmake" / "aldous_tsp" / "aldous_tspTargets.cmake").exists(), "exported CMake targets missing"

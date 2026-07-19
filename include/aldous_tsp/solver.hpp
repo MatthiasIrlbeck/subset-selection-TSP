@@ -11,6 +11,9 @@ namespace aldous_tsp {
 struct SolveResult {
     Tour tour;
     SearchStats stats;
+    // True only when the complete cardinality-k subset-selection problem was
+    // solved exactly. Conditional tour polishing/lower bounds do not set it.
+    bool exact_optimal = false;
     // One typed record per executed restart, in restart-index order.
     // `length` is in raw distance units. Kind codes/names are defined once in
     // restart_kinds.def and shared by the API, JSON schema, and analysis tools.

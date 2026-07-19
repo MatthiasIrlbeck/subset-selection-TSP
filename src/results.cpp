@@ -296,6 +296,7 @@ void write_phase_timing(std::ostream& out, const SearchPhaseTiming& phases, cons
     write_seconds("pair_exchange_seconds", phases.pair_exchange_seconds);
     write_seconds("ruin_recreate_seconds", phases.ruin_recreate_seconds);
     write_seconds("ejection_chain_seconds", phases.ejection_chain_seconds);
+    write_seconds("exact_subset_seconds", phases.exact_subset_seconds);
     write_seconds("path_relink_seconds", phases.path_relink_seconds);
     write_seconds("tsp_ils_seconds", phases.tsp_ils_seconds);
     write_seconds("final_polish_seconds", phases.final_polish_seconds);
@@ -309,6 +310,10 @@ void write_phase_timing(std::ostream& out, const SearchPhaseTiming& phases, cons
 
 void write_stats(std::ostream& out, const SearchStats& stats, const std::string& indent) {
     out << indent << "{\n"
+        << indent << "  \"exact_subset_calls\": " << stats.exact_subset_calls << ",\n"
+        << indent << "  \"exact_subset_solved\": " << stats.exact_subset_solved << ",\n"
+        << indent << "  \"exact_subset_states\": " << stats.exact_subset_states << ",\n"
+        << indent << "  \"exact_subset_transitions\": " << stats.exact_subset_transitions << ",\n"
         << indent << "  \"tsp_restarts\": " << stats.tsp_restarts << ",\n"
         << indent << "  \"tsp_ils_iterations\": " << stats.tsp_ils_iterations << ",\n"
         << indent << "  \"subset_restarts\": " << stats.subset_restarts << ",\n"
@@ -510,6 +515,8 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
             }
             out << ",\n          \"solve_seconds\": ";
             write_json_double(out, pv.solve_seconds);
+            out << ",\n          \"exact_optimal\": "
+                << (pv.exact_optimal ? "true" : "false");
             if (pv.conditional_two_nn_bound >= 0.0) {
                 out << ",\n          \"conditional_two_nn_bound\": ";
                 write_json_double(out, pv.conditional_two_nn_bound);
@@ -609,6 +616,7 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"grid_cell\": ";
     write_json_double(out, doc.options.solver.grid_cell);
     out << ",\n"
+        << "    \"exact_subset_max_n\": " << doc.options.solver.exact_subset_max_n << ",\n"
         << "    \"tsp_restarts\": " << doc.options.solver.tsp_restarts << ",\n"
         << "    \"tsp_ils\": " << doc.options.solver.tsp_ils << ",\n"
         << "    \"tsp_patience\": " << doc.options.solver.tsp_patience << ",\n"
@@ -737,6 +745,8 @@ std::string results_to_json(const ResultsDocument& doc) {
         write_json_double(out, s.min);
         out << ",\n      \"max\": ";
         write_json_double(out, s.max);
+        out << ",\n      \"exact_optimal_instances\": "
+            << s.exact_optimal_instances;
         out << ",\n      \"n\": " << s.values.size() << ",\n      \"values\": ";
         write_double_array(out, s.values);
         out << "\n    }";
@@ -771,6 +781,8 @@ std::string results_to_json(const ResultsDocument& doc) {
         out << ",\n      \"executed_restarts_max\": " << s.executed_restarts_max;
         out << ",\n      \"solve_seconds_total\": ";
         write_json_double(out, s.solve_seconds_total);
+        out << ",\n      \"exact_optimal_instances\": "
+            << s.exact_optimal_instances;
         if (s.has_control_variate) {
             out << ",\n      \"conditional_two_nn_bound_mean\": ";
             write_json_double(out, s.conditional_two_nn_bound_mean);

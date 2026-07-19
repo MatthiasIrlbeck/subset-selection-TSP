@@ -1,8 +1,8 @@
 # Limitations
 
-- The solver is heuristic and does not certify global subset optimality.
+- The production solver is heuristic by default and does not certify global subset optimality above the exact solver's hard cap. With `--exact-subset-max-n` enabled, instances through `N = 18` are globally solved under the implemented distance metric and carry explicit proof flags.
 - **There is no plateau to find at small p.** Paired allocation scans at k=2000 (B=960, B=1920, 24 instances) show anneals converge by ~60 iterations/candidate, after which the search is pure independent multistart: doubling restarts buys a constant −0.0025 and doubling depth buys nothing (−0.0001 ± 0.0009). Reported small-p values are therefore best-of-m upper bounds that crawl logarithmically with budget, not converged estimates. Interpreting them requires extrapolating the restart-value distribution (see `restart_values` in the result schema), not running a longer ladder.
-- Per-restart values are a **mixture** across seed kinds, not iid draws from one distribution. Secondary-sweep draws are also warm-start dependent. Any tail fit must filter or stratify by both `restart_kinds` and `restart_sweeps`, or it is fitting a contaminated and potentially dependent sample.
+- Per-restart values are a **mixture** across seed kinds, not iid draws from one distribution. Secondary-sweep, continuation, elite, anytime, and raced-production draws can also be selected or dependent. Any tail fit must filter or stratify by `restart_kinds`, `restart_sweeps`, and `restart_roles`, or it is fitting a contaminated sample.
 - The internal high-performance heuristic stack is restored in the cleaner structure. Internal grid/brute-force backend parity is automated; original-prototype parity still requires a supplied baseline executable and should be run before using results in a paper or report.
 - Optional LKH/Concorde post-processing is integrated, but external solver behavior depends on the installed binary, TSPLIB interpretation, timeout settings, and integer scaling.
 - Oracle statistics are aggregate counts and gain totals; individual per-call failure reasons are not serialized yet.
@@ -20,9 +20,13 @@ Sandbox A/Bs at k=100-200 resolve ~0.005-0.007 and are the wrong instrument for 
 default. Any policy claim for the production scale must be measured AT the production
 scale.
 
-## The insertion kernel is not the bottleneck
+## Historical hotspot measurements are not current budgets
 
-At k=2000 insertion is ~5% of wall. Subset-swap descent is 28%, and buys ~0.0004 in a
-single-instance probe (it needs a paired test before anyone removes it). Ruin-recreate and
-path relinking are both ~free and, at this scale, contribute ~nothing. 2-opt is essential
-(disabling it costs 0.054 in L/k).
+Older profiles in this repository predate the canonical torus kernel, batched
+pair and membership exchange, adaptive multi-scale ruin/recreate, and membership
+ejection chains. Their phase percentages must not be used to allocate current
+campaign budgets. Use `search_stats.phase_timing` and paired fixed-seed canaries
+on the intended production geometry and cardinality. In current targeted
+canaries, adaptive ruin/recreate and ejection chains both produce measurable
+quality gains, so neither should be classified as free or inert without a new
+matched-compute ablation.

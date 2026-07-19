@@ -296,6 +296,8 @@ Solver:
                                  intended for moderate k (default: off)
   --hk-iterations <int>          Subgradient iterations for the Held-Karp bound
                                  (default: 400)
+  --exact-subset-max-n <int>     Globally solve subset choice and tour when N is at
+                                 most this value (default: 0 = off; hard max: 18)
   --tsp-restarts <int>           Full TSP restarts (default: 5)
   --tsp-ils <int>                Full-TSP ILS perturbation iterations
   --tsp-patience <int>           Full-TSP ILS stagnation patience
@@ -402,6 +404,7 @@ std::string config_summary(const RunOptions& opt) {
         << ", cv_mc_samples=" << opt.cv_mc_samples
         << ", held_karp=" << (opt.held_karp ? "true" : "false")
         << ", hk_iterations=" << opt.hk_iterations
+        << ", exact_subset_max_n=" << opt.solver.exact_subset_max_n
         << ", tsp_restarts=" << opt.solver.tsp_restarts
         << ", final_exhaustive_k=" << opt.solver.final_exhaustive_k
         << ", pair_exchange_max_k=" << opt.solver.pair_exchange_max_k
@@ -440,6 +443,11 @@ bool validate_options(RunOptions& opt, std::string& err) {
         || opt.solver.racing_min_jaccard < 0.0
         || opt.solver.racing_min_jaccard > 1.0) {
         err = "--racing-min-jaccard must be finite and in [0,1]";
+        return false;
+    }
+    if (opt.solver.exact_subset_max_n < 0
+        || opt.solver.exact_subset_max_n > kExactSubsetHardLimit) {
+        err = "--exact-subset-max-n must be in [0,18]";
         return false;
     }
     if (opt.solver.tsp_restarts < 1) { err = "--tsp-restarts must be >= 1"; return false; }
@@ -736,6 +744,7 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             }
             continue;
         }
+        if (flag == "--exact-subset-max-n") { if (!parse_int_flag(i, flag, opt.solver.exact_subset_max_n)) { return false; } continue; }
         if (flag == "--tsp-restarts") { if (!parse_int_flag(i, flag, opt.solver.tsp_restarts)) { return false; } continue; }
         if (flag == "--tsp-ils") { if (!parse_int_flag(i, flag, opt.solver.tsp_ils)) { return false; } continue; }
         if (flag == "--tsp-patience") { if (!parse_int_flag(i, flag, opt.solver.tsp_patience)) { return false; } continue; }

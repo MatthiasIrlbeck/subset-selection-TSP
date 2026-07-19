@@ -7,6 +7,7 @@ apps/aldous_tsp_main.cpp
   └── aldous_tsp::cli_main
        └── aldous_tsp::ExperimentRunner
             ├── Instance / exact KNN backend
+            ├── optional exact cardinality-k subset DP (N <= 18)
             ├── TspSolver
             │    ├── tour construction
             │    ├── candidate 2-opt
@@ -16,6 +17,7 @@ apps/aldous_tsp_main.cpp
             │    ├── simulated annealing
             │    ├── subset-swap descent
             │    ├── pair exchange and ruin/recreate LNS
+            │    ├── membership ejection chains
             │    ├── high-p deletion exchange
             │    └── path relinking
             ├── optional LKH/Concorde oracle polishing
@@ -28,6 +30,8 @@ Public headers live under `include/aldous_tsp/`. The most important types are:
 
 - `Instance`: point set, bounds, KNN data, and distance helpers.
 - `Tour`: mutable cycle with index/membership/edge-cache invariants.
+- `ExactSubsetSolution` and `exact_subset_cycle()`: global small-instance
+  cardinality-`k` subset-and-tour proof API.
 - `TspSolver`: object-oriented facade for full-TSP solves.
 - `SubsetSolver`: object-oriented facade for fixed-size subset solves.
 - `ExperimentRunner`: object-oriented facade for Monte Carlo curve estimation.
@@ -38,6 +42,8 @@ Public headers live under `include/aldous_tsp/`. The most important types are:
 Implementation files live under `src/`. The solver is split by responsibility:
 
 - `solver_construction.cpp`: initial tour construction.
+- `exact_subset.cpp`: exponential global cardinality-`k` dynamic program for
+  supported small instances.
 - `solver_local_search.cpp`: 2-opt, Or-opt, and polishing.
 - `solver_neighborhoods.cpp`: subset exchange, LNS, and relinking neighborhoods.
 - `solver_seeds.cpp`: small-p/high-p/warm-start seed generation.

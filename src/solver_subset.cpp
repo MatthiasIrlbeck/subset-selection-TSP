@@ -1,6 +1,8 @@
 #include "solver_internal.hpp"
 #include "worker.hpp"
 
+#include "aldous_tsp/exact_subset.hpp"
+
 #include <algorithm>
 #include <map>
 #include <numeric>
@@ -150,6 +152,11 @@ SolveResult solve_subset(const Instance& inst,
     SolveResult result;
     result.tour.init(inst.N);
     k = std::max(0, std::min(k, inst.N));
+    if (options.exact_subset_max_n < 0
+        || options.exact_subset_max_n > kExactSubsetHardLimit) {
+        throw std::invalid_argument(
+            "exact_subset_max_n must be in [0,kExactSubsetHardLimit]");
+    }
     if (k <= 0) { return result; }
     if (k >= inst.N) { return solve_tsp(inst, rng, options); }
 
@@ -209,6 +216,28 @@ SolveResult solve_subset(const Instance& inst,
     const bool has_warm = warm_start != nullptr && !warm_start->empty();
     if (request.continuation_only && !has_warm) {
         throw std::invalid_argument("continuation-only subset solve requires a warm start");
+    }
+
+    if (options.exact_subset_max_n > 0
+        && inst.N <= options.exact_subset_max_n) {
+        ExactSubsetSolution exact;
+        {
+            ScopedPhaseTimer phase_timer(result.stats.phases.exact_subset_seconds);
+            ++result.stats.exact_subset_calls;
+            exact = exact_subset_cycle(inst, k);
+        }
+        if (!exact.solved || !exact.proven_optimal) {
+            throw std::logic_error(
+                "exact subset oracle did not solve an enabled subset instance");
+        }
+        ++result.stats.exact_subset_solved;
+        result.stats.exact_subset_states += exact.states;
+        result.stats.exact_subset_transitions += exact.transitions;
+        result.tour.set_tour(exact.cycle, inst);
+        result.exact_optimal = true;
+        result.stats.subset_seconds =
+            std::chrono::duration<double>(Clock::now() - start).count();
+        return result;
     }
 
     // Consume exactly one caller draw. Every seed family, variant, restart, and

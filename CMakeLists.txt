@@ -126,6 +126,7 @@ configure_file(
 
 add_library(aldous_tsp_core
   src/geometry.cpp
+  src/exact_subset.cpp
   src/instance.cpp
   src/tour.cpp
   src/solver_common.cpp

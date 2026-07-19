@@ -28,6 +28,9 @@ struct PValueSummary {
     // distribution visible per curve point.
     int executed_restarts_max = -1;
     double solve_seconds_total = 0.0;
+    // Number of point-set instances for which this cardinality-k result was
+    // globally proven optimal by the exact subset oracle.
+    int exact_optimal_instances = 0;
     // Control-variate outputs (populated only when --control-variate is set).
     // conditional_two_nn_bound_mean is the mean two-NN lower bound on the tour
     // through the subset selected by the heuristic, divided by k. It is a
@@ -80,6 +83,7 @@ struct InstancePValueRow {
     int best_restart = -1;
     int executed_restarts = 0;
     double solve_seconds = 0.0;
+    bool exact_optimal = false;
     // Two-NN lower bound on the tour through this instance's selected subset,
     // divided by k (-1 when not computed). This is conditional on S_found.
     union {

@@ -1,12 +1,40 @@
 #include "solver_internal.hpp"
 
+#include "aldous_tsp/exact_subset.hpp"
+
 namespace aldous_tsp {
 
 SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& options) {
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
+    if (options.exact_subset_max_n < 0
+        || options.exact_subset_max_n > kExactSubsetHardLimit) {
+        throw std::invalid_argument(
+            "exact_subset_max_n must be in [0,kExactSubsetHardLimit]");
+    }
     if (inst.N <= 0) { return result; }
+    if (options.exact_subset_max_n > 0
+        && inst.N <= options.exact_subset_max_n) {
+        ExactSubsetSolution exact;
+        {
+            ScopedPhaseTimer phase_timer(result.stats.phases.exact_subset_seconds);
+            ++result.stats.exact_subset_calls;
+            exact = exact_subset_cycle(inst, inst.N);
+        }
+        if (!exact.solved || !exact.proven_optimal) {
+            throw std::logic_error(
+                "exact subset oracle did not solve an enabled full-TSP instance");
+        }
+        ++result.stats.exact_subset_solved;
+        result.stats.exact_subset_states += exact.states;
+        result.stats.exact_subset_transitions += exact.transitions;
+        result.tour.set_tour(exact.cycle, inst);
+        result.exact_optimal = true;
+        result.stats.tsp_seconds =
+            std::chrono::duration<double>(Clock::now() - start).count();
+        return result;
+    }
     ElitePool elite(std::max(4, std::min(24, options.tsp_restarts + 8)), EliteMode::Cycle);
     const std::vector<int> all = all_nodes(inst.N);
     const int restarts = std::max(1, options.tsp_restarts);

@@ -13,13 +13,49 @@ Two exact KNN backends are available:
 
 Use `--verify-knn <checks>` to compare sampled KNN rows against brute force. If `<checks> >= N`, verification walks all rows deterministically.
 
+## Exact small-instance subset layer
+
+`--exact-subset-max-n <threshold>` replaces the heuristic solve with a global
+cardinality-constrained dynamic program whenever `N <= threshold`. It is off by
+default and has a compile-time safety cap of `18`. The public
+`exact_subset_cycle()` API exposes the same solver directly and does not require
+KNN construction.
+
+For each nonempty membership mask `M`, let `a` be its least-numbered node and
+let `D[M,j]` be the shortest path that starts at `a`, visits every node in `M`
+once, and ends at `j`. The recurrence is
+
+```text
+D[{a},a] = 0
+D[M,j] = min_i D[M \ {j},i] + d(i,j)
+```
+
+where finite predecessor states retain the same anchor. For every mask of
+cardinality `k`, the closing edge `d(j,a)` produces a cycle candidate. Taking
+the minimum across all such masks simultaneously optimizes the selected subset
+and its tour. The `k = N` case is the full TSP; `k = 0` and `k = 1` have length
+zero. Exact ties are resolved deterministically by membership mask, endpoint,
+and predecessor identifiers.
+
+The worst-case time is `O(N^2 2^N)` and storage is `O(N 2^N)`. At `N = 18`,
+the DP, parent, and mask-cardinality tables occupy about 43 MiB before ordinary
+process overhead. Raising the hard cap therefore requires explicit memory and
+runtime evidence rather than only changing a constant. Each concurrent instance
+worker owns its own table, so exact campaigns should choose `--threads` with the
+corresponding memory multiplication in mind.
+
+A solved result proves the global optimum under the instance's implemented
+double-precision distance metric. It sets `exact_optimal`, records DP state and
+transition counts, and emits no heuristic restart records. Conditional two-NN
+or Held-Karp bounds remain separate diagnostics and are not used as proof.
+
 ## Full TSP layer
 
 For `p = 1`, the solver uses a multi-restart iterated local search:
 
 1. first restart from farthest insertion,
 2. later restarts from nearest-neighbor starts,
-3. exact small-tour ordering when `k <= 16`,
+3. exact small-tour ordering of the already fixed node set when `k <= 16`,
 4. exhaustive 2-opt up to `--final-exhaustive-k`, otherwise KNN-candidate 2-opt with don't-look bits and reverse-KNN wakeups,
 5. Or-opt-1 reinsertion,
 6. 3-cut segment-shuffle ILS perturbations controlled by `--tsp-ils` and `--tsp-patience`,
@@ -47,8 +83,9 @@ Search stages:
 4. deterministic subset swap descent,
 5. two-for-two pair exchange,
 6. ruin/recreate LNS with regret repair,
-7. elite-pool path relinking between top solutions,
-8. final fixed-subset polish.
+7. bounded variable-depth membership ejection chains,
+8. elite-pool path relinking between top solutions,
+9. final fixed-subset polish.
 
 The two-for-two stage evaluates the same regret-2 repair neighborhood without rebuilding a tour for every candidate pair. For each removal pair it batches candidate-to-cycle distances, computes stable best/second-best insertion profiles, evaluates all unordered add pairs by edge deltas, and materializes only the winning repaired cycle. `pair_exchange_max_k` defaults to `5000` as a resource safety gate while production-scale memory and runtime coverage expands; `0` removes the gate.
 

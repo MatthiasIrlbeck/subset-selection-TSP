@@ -21,6 +21,7 @@ void SearchPhaseTiming::add(const SearchPhaseTiming& other) noexcept {
     pair_exchange_seconds += other.pair_exchange_seconds;
     ruin_recreate_seconds += other.ruin_recreate_seconds;
     ejection_chain_seconds += other.ejection_chain_seconds;
+    exact_subset_seconds += other.exact_subset_seconds;
     path_relink_seconds += other.path_relink_seconds;
     tsp_ils_seconds += other.tsp_ils_seconds;
     final_polish_seconds += other.final_polish_seconds;
@@ -32,6 +33,10 @@ void SearchPhaseTiming::add(const SearchPhaseTiming& other) noexcept {
 }
 
 void SearchStats::add(const SearchStats& other) {
+    exact_subset_calls += other.exact_subset_calls;
+    exact_subset_solved += other.exact_subset_solved;
+    exact_subset_states += other.exact_subset_states;
+    exact_subset_transitions += other.exact_subset_transitions;
     tsp_restarts += other.tsp_restarts;
     tsp_ils_iterations += other.tsp_ils_iterations;
     subset_restarts += other.subset_restarts;

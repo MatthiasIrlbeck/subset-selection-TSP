@@ -114,11 +114,16 @@ def main() -> int:
     assert "region_restarts" in doc["search_stats"], doc["search_stats"]
     assert "dense_restarts" in doc["search_stats"], doc["search_stats"]
     assert doc["config"]["pair_exchange_max_k"] == 5000, doc["config"]
+    assert doc["config"]["exact_subset_max_n"] == 0, doc["config"]
     assert doc["config"]["racing_candidates"] == 0, doc["config"]
     assert doc["config"]["racing_survivors"] == 2, doc["config"]
     assert doc["config"]["racing_pilot_iters"] == 2000, doc["config"]
     assert doc["config"]["racing_min_jaccard"] == 0.05, doc["config"]
     assert "pair_exchange_skipped_large_k" in doc["search_stats"], doc["search_stats"]
+    assert doc["search_stats"]["exact_subset_calls"] == 0, doc["search_stats"]
+    assert doc["search_stats"]["exact_subset_solved"] == 0, doc["search_stats"]
+    assert "exact_subset_states" in doc["search_stats"], doc["search_stats"]
+    assert "exact_subset_transitions" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["racing_pilot_restarts"] == 0, doc["search_stats"]
     assert doc["search_stats"]["racing_promoted_restarts"] == 0, doc["search_stats"]
     phases = doc["search_stats"]["phase_timing"]
@@ -128,7 +133,7 @@ def main() -> int:
         "sa_checkpoint_polish_seconds", "post_sa_polish_seconds",
         "subset_swap_seconds", "highp_exchange_seconds",
         "pair_exchange_seconds", "ruin_recreate_seconds",
-        "ejection_chain_seconds",
+        "ejection_chain_seconds", "exact_subset_seconds",
         "path_relink_seconds", "tsp_ils_seconds",
         "final_polish_seconds", "oracle_seconds",
         "sa_proposal_samples", "sa_insertion_samples",
@@ -138,6 +143,8 @@ def main() -> int:
     assert all(value >= 0 for value in phases.values()), phases
     assert phases["sa_proposal_samples"] > 0, phases
     assert phases["sa_insertion_samples"] > 0, phases
+    assert all(row["exact_optimal_instances"] == 0 for row in doc["summary_rows"]), doc["summary_rows"]
+    assert all(not p_row["exact_optimal"] for p_row in p_results), p_results
     return 0
 
 

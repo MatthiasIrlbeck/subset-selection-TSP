@@ -18,6 +18,10 @@ inline constexpr double kDistanceEps = 1e-12;
 inline constexpr double kGeomBoundEps = 1e-15;
 inline constexpr double kBhhReference = 0.7124;
 inline constexpr int kExactSmallTourLimit = 16;
+// Exponential exact cardinality-k subset-tour oracle. N=18 requires about
+// 43 MiB for its DP and parent tables; raising this limit should be accompanied
+// by explicit memory/time benchmarks and a wider mask/parent representation.
+inline constexpr int kExactSubsetHardLimit = 18;
 inline constexpr int kDefaultSchemaVersion = 13;
 inline constexpr std::int64_t kMaxGridCells = 262144;
 
@@ -51,6 +55,7 @@ struct SearchPhaseTiming {
     double pair_exchange_seconds = 0.0;
     double ruin_recreate_seconds = 0.0;
     double ejection_chain_seconds = 0.0;
+    double exact_subset_seconds = 0.0;
     double path_relink_seconds = 0.0;
     double tsp_ils_seconds = 0.0;
     double final_polish_seconds = 0.0;
@@ -69,6 +74,12 @@ struct SearchPhaseTiming {
 };
 
 struct SearchStats {
+    // Exact subset oracle telemetry. A solved call globally proves both the
+    // selected cardinality-k subset and its cycle optimal.
+    std::uint64_t exact_subset_calls = 0;
+    std::uint64_t exact_subset_solved = 0;
+    std::uint64_t exact_subset_states = 0;
+    std::uint64_t exact_subset_transitions = 0;
     std::uint64_t tsp_restarts = 0;
     std::uint64_t tsp_ils_iterations = 0;
     std::uint64_t subset_restarts = 0;
@@ -236,6 +247,9 @@ struct SolverOptions {
     int verify_knn_checks = 0;
     double grid_cell = 0.0;
 
+    // Use the global exact subset-tour dynamic program whenever N is at most
+    // this threshold. Zero disables it. The hard safety cap is 18.
+    int exact_subset_max_n = 0;
     int tsp_restarts = 5;
     int tsp_ils = 300;
     int tsp_patience = 80;

@@ -29,6 +29,9 @@ def load_rows(path: Path) -> tuple[dict, list[dict]]:
                     "n": int(row.get("n", 0)),
                     "min": float(row.get("min", row["mean"])),
                     "max": float(row.get("max", row["mean"])),
+                    "exact_optimal_instances": int(
+                        row.get("exact_optimal_instances", 0)
+                    ),
                 }
             )
     else:
@@ -44,6 +47,9 @@ def load_rows(path: Path) -> tuple[dict, list[dict]]:
                     "n": int(row.get("n", 0)),
                     "min": float(row.get("min", row["mean"])),
                     "max": float(row.get("max", row["mean"])),
+                    "exact_optimal_instances": int(
+                        row.get("exact_optimal_instances", 0)
+                    ),
                 }
             )
     if not rows:
@@ -55,7 +61,13 @@ def load_rows(path: Path) -> tuple[dict, list[dict]]:
 def write_csv(path: Path, rows: Iterable[dict]) -> None:
     rows = list(rows)
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["p", "k", "mean", "stderr", "std", "n", "min", "max"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "p", "k", "mean", "stderr", "std", "n", "min", "max",
+                "exact_optimal_instances",
+            ],
+        )
         writer.writeheader()
         writer.writerows(rows)
 

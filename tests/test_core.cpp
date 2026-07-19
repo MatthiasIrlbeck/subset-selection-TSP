@@ -1,5 +1,6 @@
 #include "aldous_tsp/config.hpp"
 #include "aldous_tsp/experiment.hpp"
+#include "aldous_tsp/exact_subset.hpp"
 #include "aldous_tsp/geometry.hpp"
 #include "aldous_tsp/instance.hpp"
 #include "aldous_tsp/oracle.hpp"
@@ -84,6 +85,7 @@ void test_search_phase_timing_add() {
     delta.sa_seconds = 2.0;
     delta.pair_exchange_seconds = 3.0;
     delta.ejection_chain_seconds = 4.0;
+    delta.exact_subset_seconds = 5.0;
     delta.sa_proposal_samples = 4;
     delta.sa_insertion_samples = 5;
     delta.sa_proposal_sample_seconds = 0.006;
@@ -95,6 +97,8 @@ void test_search_phase_timing_add() {
     require(total.pair_exchange_seconds == 6.0, "phase timings accumulate neighborhood time");
     require(total.ejection_chain_seconds == 8.0,
             "phase timings accumulate ejection-chain time");
+    require(total.exact_subset_seconds == 10.0,
+            "phase timings accumulate exact-subset time");
     require(total.sa_proposal_samples == 8, "phase timing proposal samples accumulate");
     require(total.sa_insertion_samples == 10, "phase timing insertion samples accumulate");
     require(std::fabs(total.sa_proposal_sample_seconds - 0.012) < 1e-15,
@@ -115,6 +119,10 @@ void test_search_phase_timing_add() {
     part.ejection_chain_steps = 7;
     part.ejection_chain_improvements = 1;
     part.ejection_chain_accepted_depth = 4;
+    part.exact_subset_calls = 1;
+    part.exact_subset_solved = 1;
+    part.exact_subset_states = 11;
+    part.exact_subset_transitions = 23;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
@@ -134,6 +142,11 @@ void test_search_phase_timing_add() {
                 && aggregate.ejection_chain_improvements == 2
                 && aggregate.ejection_chain_accepted_depth == 8,
             "ejection-chain telemetry accumulates across workers");
+    require(aggregate.exact_subset_calls == 2
+                && aggregate.exact_subset_solved == 2
+                && aggregate.exact_subset_states == 22
+                && aggregate.exact_subset_transitions == 46,
+            "exact-subset telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -737,6 +750,208 @@ void test_exact_small_tsp_randomized() {
         } while (std::next_permutation(perm.begin(), perm.end()));
         require(std::fabs(exact - brute) < 1e-9, "exact small TSP matches brute-force permutation search");
     }
+}
+
+
+ExactSubsetSolution brute_force_exact_subset(const Instance& inst, const int k) {
+    ExactSubsetSolution best;
+    best.n = inst.N;
+    best.k = k;
+    if (k == 0) {
+        best.solved = true;
+        best.proven_optimal = true;
+        best.length = 0.0;
+        return best;
+    }
+    std::vector<int> combination(static_cast<std::size_t>(k));
+    std::iota(combination.begin(), combination.end(), 0);
+    for (;;) {
+        std::vector<int> cycle;
+        double length = 0.0;
+        require(exact_small_tsp_cycle(inst, combination, cycle, length),
+                "brute-force subset cycle remains within exact small-TSP limit");
+        std::vector<int> selected = canonical_set_key(cycle);
+        const std::vector<int> incumbent = canonical_set_key(best.cycle);
+        if (!best.solved || length < best.length
+            || (length == best.length && selected < incumbent)) {
+            best.solved = true;
+            best.proven_optimal = true;
+            best.length = length;
+            best.cycle = std::move(cycle);
+        }
+        int position = k - 1;
+        while (position >= 0
+               && combination[static_cast<std::size_t>(position)]
+                      == inst.N - k + position) {
+            --position;
+        }
+        if (position < 0) {
+            break;
+        }
+        ++combination[static_cast<std::size_t>(position)];
+        for (int next = position + 1; next < k; ++next) {
+            combination[static_cast<std::size_t>(next)] =
+                combination[static_cast<std::size_t>(next - 1)] + 1;
+        }
+    }
+    return best;
+}
+
+void test_exact_subset_oracle() {
+    for (int periodic = 0; periodic < 2; ++periodic) {
+        for (int n = 3; n <= 9; ++n) {
+            Rng rng(static_cast<std::uint64_t>(91000 + periodic * 100 + n));
+            Instance inst;
+            inst.periodic = periodic != 0;
+            inst.generate(n, rng);
+            for (int k = 0; k <= n; ++k) {
+                const ExactSubsetSolution exact = exact_subset_cycle(inst, k);
+                const ExactSubsetSolution brute = brute_force_exact_subset(inst, k);
+                require(exact.solved && exact.proven_optimal,
+                        "exact subset oracle proves supported instances");
+                require(static_cast<int>(exact.cycle.size()) == k,
+                        "exact subset oracle returns the requested cardinality");
+                require(std::fabs(exact.length - brute.length)
+                            <= 1e-10 * (1.0 + brute.length),
+                        "exact subset oracle matches exhaustive subset enumeration");
+                require(std::fabs(cycle_length(inst, exact.cycle) - exact.length)
+                            <= 1e-10 * (1.0 + exact.length),
+                        "exact subset oracle cycle length is self-consistent");
+                std::vector<int> selected = exact.cycle;
+                std::sort(selected.begin(), selected.end());
+                require(std::adjacent_find(selected.begin(), selected.end())
+                            == selected.end(),
+                        "exact subset oracle cycle contains unique nodes");
+                require(selected.empty()
+                            || (selected.front() >= 0 && selected.back() < inst.N),
+                        "exact subset oracle cycle nodes stay in range");
+                const ExactSubsetSolution repeated = exact_subset_cycle(inst, k);
+                require(repeated.cycle == exact.cycle
+                            && repeated.length == exact.length
+                            && repeated.states == exact.states
+                            && repeated.transitions == exact.transitions,
+                        "exact subset oracle tie resolution is deterministic");
+            }
+        }
+    }
+
+    Instance tied;
+    tied.set_points({{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0},
+                     {0.0, 0.0}, {0.0, 0.0}});
+    const ExactSubsetSolution tie = exact_subset_cycle(tied, 3);
+    require(tie.length == 0.0
+                && canonical_set_key(tie.cycle) == std::vector<int>({0, 1, 2}),
+            "exact subset oracle uses the lowest membership mask on an exact tie");
+
+    Rng large_rng(123);
+    Instance unsupported;
+    unsupported.generate(kExactSubsetHardLimit + 1, large_rng);
+    const ExactSubsetSolution large = exact_subset_cycle(unsupported, 4);
+    require(!large.solved && !large.proven_optimal && large.cycle.empty(),
+            "exact subset oracle refuses instances above its hard safety limit");
+
+    bool rejected = false;
+    try {
+        (void)exact_subset_cycle(tied, tied.N + 1);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    require(rejected, "exact subset oracle rejects invalid cardinalities");
+}
+
+void test_exact_subset_solver_integration() {
+    Rng point_rng(44001);
+    Instance inst;
+    inst.periodic = true;
+    inst.generate(10, point_rng);
+    inst.build_knn(9, KnnBackend::GridExact);
+    const ExactSubsetSolution reference = exact_subset_cycle(inst, 5);
+
+    SolverOptions options;
+    options.exact_subset_max_n = 10;
+    options.subset_restarts = 7;
+    options.sa_iters = 5000;
+    Rng solve_rng(55001);
+    Rng untouched_rng(55001);
+    const SolveResult subset = solve_subset(inst, 5, solve_rng, options);
+    require(subset.exact_optimal, "subset solver exposes the global exact proof");
+    require(subset.restarts.empty() && subset.best_restart == -1,
+            "exact subset solve does not fabricate heuristic restart diagnostics");
+    require(subset.tour.nodes == reference.cycle
+                && subset.tour.length == reference.length,
+            "subset solver returns the public exact-oracle solution");
+    require(subset.stats.exact_subset_calls == 1
+                && subset.stats.exact_subset_solved == 1
+                && subset.stats.exact_subset_states == reference.states
+                && subset.stats.exact_subset_transitions == reference.transitions,
+            "subset solver reports exact-oracle work");
+    require(subset.stats.phases.exact_subset_seconds >= 0.0,
+            "subset solver reports exact-oracle phase time");
+    require(solve_rng.next_u64() == untouched_rng.next_u64(),
+            "exact subset solve does not consume the caller RNG stream");
+
+    Rng tsp_rng(66001);
+    const SolveResult tsp = solve_tsp(inst, tsp_rng, options);
+    const ExactSubsetSolution tsp_reference = exact_subset_cycle(inst, inst.N);
+    require(tsp.exact_optimal && tsp.restarts.empty(),
+            "full TSP uses the exact subset oracle as the k=N special case");
+    require(tsp.tour.nodes == tsp_reference.cycle
+                && tsp.tour.length == tsp_reference.length,
+            "exact full TSP matches the global oracle");
+
+    SolverOptions disabled = options;
+    disabled.exact_subset_max_n = 0;
+    disabled.subset_restarts = 1;
+    disabled.sa_iters = 0;
+    disabled.disable_pair_exchange = true;
+    disabled.disable_ruin_recreate = true;
+    disabled.disable_ejection_chain = true;
+    disabled.disable_path_relink = true;
+    Rng heuristic_rng(77001);
+    const SolveResult heuristic = solve_subset(inst, 5, heuristic_rng, disabled);
+    require(!heuristic.exact_optimal && heuristic.stats.exact_subset_calls == 0,
+            "disabled exact oracle leaves heuristic proof status false");
+
+    bool rejected = false;
+    try {
+        SolverOptions invalid = options;
+        invalid.exact_subset_max_n = kExactSubsetHardLimit + 1;
+        Rng invalid_rng(1);
+        (void)solve_subset(inst, 5, invalid_rng, invalid);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    require(rejected, "solver rejects exact-oracle thresholds above the hard cap");
+
+    RunOptions run;
+    run.N = 9;
+    run.instances = 2;
+    run.threads = 1;
+    run.p_values = {0.56, 1.0};
+    run.include_instance_rows = true;
+    run.second_sweep = true;
+    run.solver.exact_subset_max_n = 9;
+    run.solver.knn_k = 8;
+    const ResultsDocument doc = ExperimentRunner(run).run();
+    require(doc.stats.exact_subset_calls == 4
+                && doc.stats.exact_subset_solved == 4,
+            "exact experiment performs one proof per instance/p row even with the second sweep");
+    require(doc.summary.at(p_value_key(0.56)).exact_optimal_instances == 2
+                && doc.summary.at(p_value_key(1.0)).exact_optimal_instances == 2,
+            "experiment summary counts global exact proofs per p");
+    require(doc.instance_rows.size() == 2U,
+            "exact experiment retains requested instance rows");
+    for (const InstanceResultRow& row : doc.instance_rows) {
+        require(row.p_results.size() == 2U
+                    && row.p_results[0].exact_optimal
+                    && row.p_results[1].exact_optimal,
+                "instance p rows retain exact proof status");
+    }
+    const std::string json = results_to_json(doc);
+    require(json.find("\"exact_subset_max_n\": 9") != std::string::npos
+                && json.find("\"exact_optimal\": true") != std::string::npos
+                && json.find("\"exact_optimal_instances\": 2") != std::string::npos,
+            "JSON exposes exact-oracle configuration and proof status");
 }
 
 void test_two_opt_shorter_side_reversal() {
@@ -3686,6 +3901,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_tour_incremental_mutation_property);
     RUN_TEST(test_exact_small_tsp);
     RUN_TEST(test_exact_small_tsp_randomized);
+    RUN_TEST(test_exact_subset_oracle);
+    RUN_TEST(test_exact_subset_solver_integration);
     RUN_TEST(test_two_opt_shorter_side_reversal);
     RUN_TEST(test_two_opt_property);
     RUN_TEST(test_incremental_tour_mutation_property);
