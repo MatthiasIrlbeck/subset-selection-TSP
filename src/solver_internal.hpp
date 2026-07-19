@@ -255,6 +255,14 @@ bool regret_repair_cycle(std::vector<int>& cycle,
                          int target_k,
                          const std::vector<int>& pool,
                          const std::vector<unsigned char>& banned);
+// Exact regret-2 repair with incrementally maintained insertion profiles. It
+// reproduces regret_repair_cycle's candidate and edge tie ordering while
+// avoiding a complete candidate-by-edge rescan after every insertion.
+bool cached_regret_repair_cycle(std::vector<int>& cycle,
+                                const Instance& inst,
+                                int target_k,
+                                const std::vector<int>& pool,
+                                const std::vector<unsigned char>& banned);
 struct PairRepairResult {
     bool valid = false;
     double length = std::numeric_limits<double>::infinity();

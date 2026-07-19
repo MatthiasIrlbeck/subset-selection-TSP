@@ -103,6 +103,8 @@ void test_search_phase_timing_add() {
     part.pair_exchange_skipped_large_k = 3;
     part.racing_pilot_restarts = 2;
     part.racing_promoted_restarts = 1;
+    part.ruin_recreate_removed_nodes = 7;
+    part.ruin_recreate_spatial_attempts = 1;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
@@ -110,6 +112,9 @@ void test_search_phase_timing_add() {
     require(aggregate.racing_pilot_restarts == 4
                 && aggregate.racing_promoted_restarts == 2,
             "restart-racing telemetry accumulates across workers");
+    require(aggregate.ruin_recreate_removed_nodes == 14
+                && aggregate.ruin_recreate_spatial_attempts == 2,
+            "adaptive LNS telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -2724,6 +2729,67 @@ void test_batched_pair_repair_matches_legacy() {
     check_case(tied, {0, 1, 2, 3}, {4, 5, 6, 7});
 }
 
+void test_cached_regret_repair_and_adaptive_lns() {
+    for (const bool periodic : {false, true}) {
+        Instance inst;
+        inst.periodic = periodic;
+        Rng rng(periodic ? 39117U : 39116U);
+        inst.generate(72, rng);
+        inst.build_knn(24, KnnBackend::GridExact);
+        for (int rep = 0; rep < 80; ++rep) {
+            std::vector<int> shuffled = all_nodes(inst.N);
+            rng.partial_shuffle(shuffled.begin(), shuffled.end(), 34U);
+            const int start_size = 12 + (rep % 7);
+            const int add_count = 3 + (rep % 8);
+            std::vector<int> legacy(shuffled.begin(), shuffled.begin() + start_size);
+            std::vector<int> cached = legacy;
+            std::vector<int> pool(shuffled.begin() + start_size,
+                                  shuffled.begin() + start_size + 14);
+            std::vector<unsigned char> banned(static_cast<std::size_t>(inst.N), 0U);
+            for (const int node : legacy) {
+                banned[static_cast<std::size_t>(node)] = 1U;
+            }
+            require(regret_repair_cycle(legacy, inst, start_size + add_count,
+                                        pool, banned),
+                    "legacy regret repair succeeds");
+            require(cached_regret_repair_cycle(cached, inst,
+                                               start_size + add_count,
+                                               pool, banned),
+                    "cached regret repair succeeds");
+            require(cached == legacy,
+                    "cached regret repair preserves exact candidate and edge ties");
+        }
+
+        Tour tour;
+        tour.init(inst.N);
+        tour.set_tour(random_subset(inst.N, 36, rng), inst);
+        const double before = tour.length;
+        SolverOptions options;
+        options.ruin_recreate_rounds = 5;
+        options.ruin_recreate_max_fraction = 0.20;
+        options.ruin_recreate_max_nodes = 12;
+        options.ruin_recreate_pool_cap = 96;
+        options.final_exhaustive_k = 0;
+        SearchStats stats;
+        (void)subset_ruin_recreate_lns(tour, inst, rng, options, &stats,
+                                       options.ruin_recreate_rounds);
+        require(tour.check_invariants() && tour.k == 36,
+                "adaptive LNS preserves tour membership invariants");
+        require(tour.length <= before + kImprovementEps,
+                "adaptive LNS accepts only improving reconstructions");
+        require(stats.ruin_recreate_attempts == 10,
+                "adaptive LNS records legacy-floor and portfolio rounds");
+        require(stats.ruin_recreate_worst_attempts == 3
+                    && stats.ruin_recreate_segment_attempts == 4
+                    && stats.ruin_recreate_spatial_attempts == 1
+                    && stats.ruin_recreate_long_edge_attempts == 1
+                    && stats.ruin_recreate_random_attempts == 1,
+                "adaptive LNS preserves the legacy floor and cycles through every new operator");
+        require(stats.ruin_recreate_removed_nodes >= 15,
+                "adaptive LNS records multi-scale ruined cardinalities");
+    }
+}
+
 void test_pair_exchange_large_k_gate() {
     Instance inst;
     Rng rng(77123);
@@ -3556,6 +3622,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_elite_anytime_restarts);
     RUN_TEST(test_two_opt_candidate_table_property);
     RUN_TEST(test_batched_pair_repair_matches_legacy);
+    RUN_TEST(test_cached_regret_repair_and_adaptive_lns);
     RUN_TEST(test_pair_exchange_large_k_gate);
     RUN_TEST(test_batched_swap_matches_scalar);
     RUN_TEST(test_path_relink_step_matches_bruteforce);

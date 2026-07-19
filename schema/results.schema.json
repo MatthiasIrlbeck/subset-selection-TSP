@@ -432,6 +432,24 @@
           "type": "integer",
           "minimum": 0
         },
+        "adaptive_ruin_recreate": {
+          "type": "boolean",
+          "description": "Use the multi-scale ruin/recreate operator portfolio instead of the legacy tiny alternating operators."
+        },
+        "ruin_recreate_max_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ruin_recreate_max_nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Absolute adaptive ruin-size cap; 0 removes the absolute cap."
+        },
+        "ruin_recreate_pool_cap": {
+          "type": "integer",
+          "minimum": 1
+        },
         "path_relink_top": {
           "type": "integer",
           "minimum": 0
@@ -787,6 +805,50 @@
           "minimum": 0
         },
         "ruin_recreate_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_removed_nodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_worst_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_worst_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_segment_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_segment_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_spatial_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_spatial_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_long_edge_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_long_edge_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_random_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_random_improvements": {
           "type": "integer",
           "minimum": 0
         },

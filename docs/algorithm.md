@@ -52,6 +52,15 @@ Search stages:
 
 The two-for-two stage evaluates the same regret-2 repair neighborhood without rebuilding a tour for every candidate pair. For each removal pair it batches candidate-to-cycle distances, computes stable best/second-best insertion profiles, evaluates all unordered add pairs by edge deltas, and materializes only the winning repaired cycle. `pair_exchange_max_k` defaults to `5000` as a resource safety gate while production-scale memory and runtime coverage expands; `0` removes the gate.
 
+The ruin/recreate stage is multi-scale by default. Successive rounds cycle
+through worst-marginal, contiguous-segment, spatial-cluster, long-edge, and
+uniform-random ruin operators while increasing the ruined fraction from 0.25%
+through 5%. Absolute and fractional caps bound production working sets. Repair
+uses exact regret-2 candidate and edge tie ordering with incrementally maintained
+insertion profiles, so larger ruins do not require rescanning every candidate
+against every tour edge after every insertion. The legacy tiny alternating
+segment/worst policy remains available with `--adaptive-ruin-recreate=false`.
+
 The annealing temperature schedule is computed from the iteration index directly:
 
 ```text

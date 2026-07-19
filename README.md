@@ -146,6 +146,10 @@ Important flags:
 - `--pair-exchange-passes <int>`
 - `--pair-exchange-max-k <int>` (`5000` by default; `0` removes the large-`k` safety gate)
 - `--ruin-recreate-rounds <int>`
+- `--adaptive-ruin-recreate[=true|false]`
+- `--ruin-recreate-max-fraction <float>`
+- `--ruin-recreate-max-nodes <int>` (`0` removes the absolute cap)
+- `--ruin-recreate-pool-cap <int>`
 - `--path-relink-top <int>`
 - `--disable-two-opt[=true|false]`
 - `--disable-or-opt[=true|false]`

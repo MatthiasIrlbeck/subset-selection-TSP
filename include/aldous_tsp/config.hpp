@@ -103,6 +103,17 @@ struct SearchStats {
     std::uint64_t pair_exchange_skipped_large_k = 0;
     std::uint64_t ruin_recreate_attempts = 0;
     std::uint64_t ruin_recreate_improvements = 0;
+    std::uint64_t ruin_recreate_removed_nodes = 0;
+    std::uint64_t ruin_recreate_worst_attempts = 0;
+    std::uint64_t ruin_recreate_worst_improvements = 0;
+    std::uint64_t ruin_recreate_segment_attempts = 0;
+    std::uint64_t ruin_recreate_segment_improvements = 0;
+    std::uint64_t ruin_recreate_spatial_attempts = 0;
+    std::uint64_t ruin_recreate_spatial_improvements = 0;
+    std::uint64_t ruin_recreate_long_edge_attempts = 0;
+    std::uint64_t ruin_recreate_long_edge_improvements = 0;
+    std::uint64_t ruin_recreate_random_attempts = 0;
+    std::uint64_t ruin_recreate_random_improvements = 0;
     std::uint64_t path_relink_attempts = 0;
     std::uint64_t path_relink_feasible = 0;
     std::uint64_t path_relink_elite_insertions = 0;
@@ -366,6 +377,15 @@ struct SolverOptions {
     // 0 removes the gate.
     int pair_exchange_max_k = 5000;
     int ruin_recreate_rounds = 4;
+    // Adaptive large-neighborhood search cycles through worst-marginal,
+    // contiguous-segment, spatial-cluster, long-edge, and random ruin
+    // operators while increasing the ruined cardinality across rounds.
+    // The absolute and fractional caps keep the repair working set bounded at
+    // very large k; 0 for max_nodes removes only the absolute cap.
+    bool adaptive_ruin_recreate = true;
+    double ruin_recreate_max_fraction = 0.05;
+    int ruin_recreate_max_nodes = 96;
+    int ruin_recreate_pool_cap = 640;
     int path_relink_top = 3;
     int seed = 2024;
     SolverMode mode = SolverMode::Balanced;

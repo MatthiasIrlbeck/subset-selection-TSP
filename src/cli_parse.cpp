@@ -305,6 +305,13 @@ Solver:
   --pair-exchange-passes <int>   Two-for-two subset exchange passes
   --pair-exchange-max-k <int>    Skip pair exchange above k (default: 5000; 0 = unlimited)
   --ruin-recreate-rounds <int>   LNS ruin/recreate rounds
+  --adaptive-ruin-recreate[=bool]
+                                 Use multi-scale operator portfolio (default: true)
+  --ruin-recreate-max-fraction <x>
+                                 Maximum ruined fraction of k (default: 0.05)
+  --ruin-recreate-max-nodes <int>
+                                 Absolute ruin-size cap (default: 96; 0 = unlimited)
+  --ruin-recreate-pool-cap <int> Candidate repair pool cap (default: 640)
   --path-relink-top <int>        Elite-pool path relinking width
 
 External oracle:
@@ -444,6 +451,14 @@ bool validate_options(RunOptions& opt, std::string& err) {
     if (opt.solver.pair_exchange_passes < 0) { err = "--pair-exchange-passes must be >= 0"; return false; }
     if (opt.solver.pair_exchange_max_k < 0) { err = "--pair-exchange-max-k must be >= 0"; return false; }
     if (opt.solver.ruin_recreate_rounds < 0) { err = "--ruin-recreate-rounds must be >= 0"; return false; }
+    if (!std::isfinite(opt.solver.ruin_recreate_max_fraction)
+        || opt.solver.ruin_recreate_max_fraction < 0.0
+        || opt.solver.ruin_recreate_max_fraction > 1.0) {
+        err = "--ruin-recreate-max-fraction must be finite and in [0,1]";
+        return false;
+    }
+    if (opt.solver.ruin_recreate_max_nodes < 0) { err = "--ruin-recreate-max-nodes must be >= 0"; return false; }
+    if (opt.solver.ruin_recreate_pool_cap < 1) { err = "--ruin-recreate-pool-cap must be >= 1"; return false; }
     if (opt.solver.path_relink_top < 0) { err = "--path-relink-top must be >= 0"; return false; }
     if (opt.solver.verify_knn_checks < 0) { err = "--verify-knn must be >= 0"; return false; }
     if (opt.solver.grid_cell < 0.0 || !std::isfinite(opt.solver.grid_cell)) { err = "--grid-cell must be finite and >= 0"; return false; }
@@ -590,6 +605,7 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             if (consume_bool(handle_bool("--disable-pair-exchange", opt.solver.disable_pair_exchange))) { continue; }
             if (consume_bool(handle_bool("--disable-elite-restarts", opt.solver.disable_elite_restarts))) { continue; }
             if (consume_bool(handle_bool("--disable-ruin-recreate", opt.solver.disable_ruin_recreate))) { continue; }
+            if (consume_bool(handle_bool("--adaptive-ruin-recreate", opt.solver.adaptive_ruin_recreate))) { continue; }
             if (consume_bool(handle_bool("--disable-path-relink", opt.solver.disable_path_relink))) { continue; }
             if (consume_bool(handle_bool("--disable-smallp-seeds", opt.solver.disable_smallp_seeds))) { continue; }
             if (consume_bool(handle_bool("--disable-highp-delete", opt.solver.disable_highp_delete))) { continue; }
@@ -701,6 +717,17 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
         if (flag == "--pair-exchange-passes") { if (!parse_int_flag(i, flag, opt.solver.pair_exchange_passes)) { return false; } continue; }
         if (flag == "--pair-exchange-max-k") { if (!parse_int_flag(i, flag, opt.solver.pair_exchange_max_k)) { return false; } continue; }
         if (flag == "--ruin-recreate-rounds") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_rounds)) { return false; } continue; }
+        if (flag == "--ruin-recreate-max-fraction") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.ruin_recreate_max_fraction)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n", flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
+        if (flag == "--ruin-recreate-max-nodes") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_max_nodes)) { return false; } continue; }
+        if (flag == "--ruin-recreate-pool-cap") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_pool_cap)) { return false; } continue; }
         if (flag == "--path-relink-top") { if (!parse_int_flag(i, flag, opt.solver.path_relink_top)) { return false; } continue; }
         if (flag == "--verify-knn") {
             if (!parse_int_flag(i, flag, opt.solver.verify_knn_checks)) { return false; }

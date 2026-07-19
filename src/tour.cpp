@@ -60,6 +60,17 @@ void SearchStats::add(const SearchStats& other) {
     pair_exchange_skipped_large_k += other.pair_exchange_skipped_large_k;
     ruin_recreate_attempts += other.ruin_recreate_attempts;
     ruin_recreate_improvements += other.ruin_recreate_improvements;
+    ruin_recreate_removed_nodes += other.ruin_recreate_removed_nodes;
+    ruin_recreate_worst_attempts += other.ruin_recreate_worst_attempts;
+    ruin_recreate_worst_improvements += other.ruin_recreate_worst_improvements;
+    ruin_recreate_segment_attempts += other.ruin_recreate_segment_attempts;
+    ruin_recreate_segment_improvements += other.ruin_recreate_segment_improvements;
+    ruin_recreate_spatial_attempts += other.ruin_recreate_spatial_attempts;
+    ruin_recreate_spatial_improvements += other.ruin_recreate_spatial_improvements;
+    ruin_recreate_long_edge_attempts += other.ruin_recreate_long_edge_attempts;
+    ruin_recreate_long_edge_improvements += other.ruin_recreate_long_edge_improvements;
+    ruin_recreate_random_attempts += other.ruin_recreate_random_attempts;
+    ruin_recreate_random_improvements += other.ruin_recreate_random_improvements;
     path_relink_attempts += other.path_relink_attempts;
     path_relink_feasible += other.path_relink_feasible;
     path_relink_elite_insertions += other.path_relink_elite_insertions;
