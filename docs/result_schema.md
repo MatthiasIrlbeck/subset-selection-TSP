@@ -22,6 +22,8 @@ The schema constrains solver/oracle strings with explicit enums: `mode`, `distan
 
 Path-relink instrumentation is split into separate counters: `path_relink_attempts`, `path_relink_feasible`, `path_relink_elite_insertions`, and `path_relink_best_improvements`. The legacy `path_relink_improvements` field is retained as an alias for best-solution improvements.
 
+The optional diversity-aware subset archive is configured by `elite_diversity_slots`, `elite_min_jaccard`, and `elite_quality_slack`. Its supplemental entries never replace the ordinary length-ranked archive capacity. `elite_diversity_candidates`, `elite_diversity_retained`, and `elite_diversity_rejected` report how unique set candidates passed through that supplemental policy. Relinking still includes the complete ordinary `path_relink_top` prefix before considering any supplemental entry.
+
 The top-level `oracle_call_records` array contains one object per attempted external oracle polish. Each record includes the problem type (`tsp` or `subset`), `k`, solver, TSPLIB format, status, executable path, error detail, before/after length, gain, and elapsed seconds.
 
 `summary` is retained for compatibility as an object keyed by full-precision p-value strings. `summary_rows` is the preferred research/analysis shape: it is an array where every entry explicitly contains `p`, the legacy `key`, `k`, `mean`, `std`, `stderr`, `min`, `max`, `n`, and `values`.

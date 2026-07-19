@@ -312,6 +312,9 @@ Solver:
   --ruin-recreate-max-nodes <int>
                                  Absolute ruin-size cap (default: 96; 0 = unlimited)
   --ruin-recreate-pool-cap <int> Candidate repair pool cap (default: 640)
+  --elite-diversity-slots <int>  Supplemental set-diverse archive slots (default: 4)
+  --elite-min-jaccard <x>        Minimum Jaccard distance for diverse slots (default: 0.02)
+  --elite-quality-slack <x>      Relative quality window for diverse slots (default: 0.03)
   --path-relink-top <int>        Elite-pool path relinking width
 
 External oracle:
@@ -459,6 +462,18 @@ bool validate_options(RunOptions& opt, std::string& err) {
     }
     if (opt.solver.ruin_recreate_max_nodes < 0) { err = "--ruin-recreate-max-nodes must be >= 0"; return false; }
     if (opt.solver.ruin_recreate_pool_cap < 1) { err = "--ruin-recreate-pool-cap must be >= 1"; return false; }
+    if (opt.solver.elite_diversity_slots < 0) { err = "--elite-diversity-slots must be >= 0"; return false; }
+    if (!std::isfinite(opt.solver.elite_min_jaccard)
+        || opt.solver.elite_min_jaccard < 0.0
+        || opt.solver.elite_min_jaccard > 1.0) {
+        err = "--elite-min-jaccard must be finite and in [0,1]";
+        return false;
+    }
+    if (!std::isfinite(opt.solver.elite_quality_slack)
+        || opt.solver.elite_quality_slack < 0.0) {
+        err = "--elite-quality-slack must be finite and >= 0";
+        return false;
+    }
     if (opt.solver.path_relink_top < 0) { err = "--path-relink-top must be >= 0"; return false; }
     if (opt.solver.verify_knn_checks < 0) { err = "--verify-knn must be >= 0"; return false; }
     if (opt.solver.grid_cell < 0.0 || !std::isfinite(opt.solver.grid_cell)) { err = "--grid-cell must be finite and >= 0"; return false; }
@@ -728,6 +743,25 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
         }
         if (flag == "--ruin-recreate-max-nodes") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_max_nodes)) { return false; } continue; }
         if (flag == "--ruin-recreate-pool-cap") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_pool_cap)) { return false; } continue; }
+        if (flag == "--elite-diversity-slots") { if (!parse_int_flag(i, flag, opt.solver.elite_diversity_slots)) { return false; } continue; }
+        if (flag == "--elite-min-jaccard") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.elite_min_jaccard)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n", flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
+        if (flag == "--elite-quality-slack") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.elite_quality_slack)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n", flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
         if (flag == "--path-relink-top") { if (!parse_int_flag(i, flag, opt.solver.path_relink_top)) { return false; } continue; }
         if (flag == "--verify-knn") {
             if (!parse_int_flag(i, flag, opt.solver.verify_knn_checks)) { return false; }

@@ -450,6 +450,20 @@
           "type": "integer",
           "minimum": 1
         },
+        "elite_diversity_slots": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Supplemental set-diverse archive slots beyond the protected length-ranked archive."
+        },
+        "elite_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "elite_quality_slack": {
+          "type": "number",
+          "minimum": 0
+        },
         "path_relink_top": {
           "type": "integer",
           "minimum": 0
@@ -740,6 +754,21 @@
         },
         "racing_promoted_restarts": {
           "description": "Raced candidates promoted to a full-depth rerun after screening.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_candidates": {
+          "description": "Unique candidates considered by the supplemental diversity archive.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_retained": {
+          "description": "Considered candidates retained in either the protected quality archive or a diverse slot.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_rejected": {
+          "description": "Considered candidates rejected from the bounded quality-plus-diversity archive.",
           "type": "integer",
           "minimum": 0
         },

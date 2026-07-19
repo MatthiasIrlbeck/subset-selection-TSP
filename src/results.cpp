@@ -321,6 +321,9 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"racing_promoted_restarts\": " << stats.racing_promoted_restarts << ",\n"
         << indent << "  \"elite_restarts\": " << stats.elite_restarts << ",\n"
         << indent << "  \"kick_restarts\": " << stats.kick_restarts << ",\n"
+        << indent << "  \"elite_diversity_candidates\": " << stats.elite_diversity_candidates << ",\n"
+        << indent << "  \"elite_diversity_retained\": " << stats.elite_diversity_retained << ",\n"
+        << indent << "  \"elite_diversity_rejected\": " << stats.elite_diversity_rejected << ",\n"
         << indent << "  \"two_opt_scans\": " << stats.two_opt_scans << ",\n"
         << indent << "  \"two_opt_improvements\": " << stats.two_opt_improvements << ",\n"
         << indent << "  \"or_opt_scans\": " << stats.or_opt_scans << ",\n"
@@ -661,6 +664,12 @@ std::string results_to_json(const ResultsDocument& doc) {
     out << ",\n"
         << "    \"ruin_recreate_max_nodes\": " << doc.options.solver.ruin_recreate_max_nodes << ",\n"
         << "    \"ruin_recreate_pool_cap\": " << doc.options.solver.ruin_recreate_pool_cap << ",\n"
+        << "    \"elite_diversity_slots\": " << doc.options.solver.elite_diversity_slots << ",\n"
+        << "    \"elite_min_jaccard\": ";
+    write_json_double(out, doc.options.solver.elite_min_jaccard);
+    out << ",\n    \"elite_quality_slack\": ";
+    write_json_double(out, doc.options.solver.elite_quality_slack);
+    out << ",\n"
         << "    \"path_relink_top\": " << doc.options.solver.path_relink_top << ",\n"
         << "    \"verify_knn_checks\": " << doc.options.solver.verify_knn_checks << ",\n"
         << "    \"oracle_mode\": \"" << external_oracle_mode_name(doc.options.solver.oracle.cfg.mode) << "\",\n"

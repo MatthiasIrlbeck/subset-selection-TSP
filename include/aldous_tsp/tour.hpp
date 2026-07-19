@@ -27,18 +27,54 @@ enum class EliteMode {
 
 class ElitePool {
 public:
-    explicit ElitePool(int keep = 0, EliteMode mode = EliteMode::Set) : keep_(keep), mode_(mode) {}
+    explicit ElitePool(int keep = 0,
+                       EliteMode mode = EliteMode::Set,
+                       int diversity_slots = 0,
+                       double min_jaccard_distance = 0.0,
+                       double quality_slack = 0.0)
+        : keep_(keep), mode_(mode), diversity_slots_(diversity_slots),
+          min_jaccard_distance_(min_jaccard_distance),
+          quality_slack_(quality_slack) {}
 
     void try_add(const std::vector<int>& nodes, double length);
     [[nodiscard]] const std::vector<EliteEntry>& entries() const noexcept { return entries_; }
     [[nodiscard]] std::vector<std::vector<int>> export_nodes() const;
+    // Exports the ordinary length-ranked prefix, then appends up to the
+    // configured number of supplemental set-diverse entries that remain within
+    // the supplied one-way symmetric-difference cap of at least one selected
+    // entry. This preserves every relinking pair the legacy quality archive
+    // would have considered and can only add extra basins.
+    [[nodiscard]] std::vector<std::vector<int>> export_relink_nodes(
+        int limit, int max_removed) const;
+    [[nodiscard]] std::uint64_t diversity_candidates() const noexcept {
+        return diversity_candidates_;
+    }
+    [[nodiscard]] std::uint64_t diversity_retained() const noexcept {
+        return diversity_retained_;
+    }
+    [[nodiscard]] std::uint64_t diversity_rejected() const noexcept {
+        return diversity_rejected_;
+    }
 
 private:
     int keep_ = 0;
     EliteMode mode_ = EliteMode::Set;
+    int diversity_slots_ = 0;
+    double min_jaccard_distance_ = 0.0;
+    double quality_slack_ = 0.0;
     std::vector<EliteEntry> entries_;
+    std::uint64_t diversity_candidates_ = 0;
+    std::uint64_t diversity_retained_ = 0;
+    std::uint64_t diversity_rejected_ = 0;
 
     [[nodiscard]] std::vector<int> make_key(const std::vector<int>& nodes) const;
+    [[nodiscard]] static int set_removed_count(const std::vector<int>& lhs,
+                                               const std::vector<int>& rhs) noexcept;
+    [[nodiscard]] static double set_jaccard_distance(const std::vector<int>& lhs,
+                                                     const std::vector<int>& rhs) noexcept;
+    void prune_diversity_archive(std::uint64_t inserted_hash,
+                                 const std::vector<int>& inserted_key,
+                                 bool account_candidate);
 };
 
 class Tour {

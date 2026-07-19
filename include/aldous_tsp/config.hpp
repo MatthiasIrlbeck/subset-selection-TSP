@@ -87,6 +87,9 @@ struct SearchStats {
     // additionally counted by kick_restarts for exact kick accounting.
     std::uint64_t elite_restarts = 0;
     std::uint64_t kick_restarts = 0;
+    std::uint64_t elite_diversity_candidates = 0;
+    std::uint64_t elite_diversity_retained = 0;
+    std::uint64_t elite_diversity_rejected = 0;
     std::uint64_t two_opt_scans = 0;
     std::uint64_t two_opt_improvements = 0;
     std::uint64_t or_opt_scans = 0;
@@ -386,6 +389,12 @@ struct SolverOptions {
     double ruin_recreate_max_fraction = 0.05;
     int ruin_recreate_max_nodes = 96;
     int ruin_recreate_pool_cap = 640;
+    // Additional archive slots selected for set diversity. The ordinary
+    // length-ranked `keep` entries remain protected, so enabling these slots
+    // cannot evict a solution the legacy archive would have retained.
+    int elite_diversity_slots = 4;
+    double elite_min_jaccard = 0.02;
+    double elite_quality_slack = 0.03;
     int path_relink_top = 3;
     int seed = 2024;
     SolverMode mode = SolverMode::Balanced;

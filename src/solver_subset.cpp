@@ -176,6 +176,18 @@ SolveResult solve_subset(const Instance& inst,
         throw std::invalid_argument(
             "deterministic restart racing is incompatible with time_budget_per_p");
     }
+    if (options.elite_diversity_slots < 0) {
+        throw std::invalid_argument("elite_diversity_slots must be >= 0");
+    }
+    if (!std::isfinite(options.elite_min_jaccard)
+        || options.elite_min_jaccard < 0.0
+        || options.elite_min_jaccard > 1.0) {
+        throw std::invalid_argument("elite_min_jaccard must be finite and in [0,1]");
+    }
+    if (!std::isfinite(options.elite_quality_slack)
+        || options.elite_quality_slack < 0.0) {
+        throw std::invalid_argument("elite_quality_slack must be finite and >= 0");
+    }
     // Explicit values configure the base population. AUTO reproduces the
     // historical effective count. Supplemental continuation is deliberately
     // outside this population so adding neighboring p-values cannot remove an
@@ -391,7 +403,11 @@ SolveResult solve_subset(const Instance& inst,
     // Keep the scheduled-search archive capacity unchanged when racing is
     // enabled. This preserves kick and continuation behavior bit-for-bit;
     // raced outcomes are merged only after the complete scheduled population.
-    ElitePool elite(std::max(8, total_restarts + 8), EliteMode::Set);
+    ElitePool elite(std::max(8, total_restarts + 8),
+                    EliteMode::Set,
+                    options.elite_diversity_slots,
+                    options.elite_min_jaccard,
+                    options.elite_quality_slack);
     // Prime only from independent seeds before the kick snapshot. Continuation
     // seeds are deliberately excluded so scheduled kicks are invariant to the
     // presence of neighboring p-values.
@@ -894,8 +910,9 @@ SolveResult solve_subset(const Instance& inst,
         Rng relink_rng(make_stream_seed(solve_stream_base,
                                         0x510e527fade682d1ULL,
                                         0x1f83d9abfb41bd6bULL));
-        auto elite_nodes = elite.export_nodes();
-        const int top = std::min(static_cast<int>(elite_nodes.size()), std::max(0, options.path_relink_top));
+        auto elite_nodes = elite.export_relink_nodes(
+            std::max(0, options.path_relink_top), kPathRelinkMaxDiff);
+        const int top = static_cast<int>(elite_nodes.size());
         for (int i = 0; i < top; ++i) {
             for (int j = i + 1; j < top; ++j) {
                 std::vector<int> rel_nodes;
@@ -929,6 +946,9 @@ SolveResult solve_subset(const Instance& inst,
         ScopedPhaseTimer phase_timer(result.stats.phases.final_polish_seconds);
         final_polish_tour(result.tour, inst, options, &result.stats, 2);
     }
+    result.stats.elite_diversity_candidates += elite.diversity_candidates();
+    result.stats.elite_diversity_retained += elite.diversity_retained();
+    result.stats.elite_diversity_rejected += elite.diversity_rejected();
     result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
     return result;
 }

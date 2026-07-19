@@ -105,6 +105,9 @@ void test_search_phase_timing_add() {
     part.racing_promoted_restarts = 1;
     part.ruin_recreate_removed_nodes = 7;
     part.ruin_recreate_spatial_attempts = 1;
+    part.elite_diversity_candidates = 3;
+    part.elite_diversity_retained = 2;
+    part.elite_diversity_rejected = 1;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
@@ -115,6 +118,10 @@ void test_search_phase_timing_add() {
     require(aggregate.ruin_recreate_removed_nodes == 14
                 && aggregate.ruin_recreate_spatial_attempts == 2,
             "adaptive LNS telemetry accumulates across workers");
+    require(aggregate.elite_diversity_candidates == 6
+                && aggregate.elite_diversity_retained == 4
+                && aggregate.elite_diversity_rejected == 2,
+            "elite diversity telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -852,6 +859,28 @@ void test_elite_collision_safe_key() {
         }
     }
     require(found_improved, "ElitePool keeps improved duplicate");
+
+    ElitePool diverse(2, EliteMode::Set, 2, 0.5, 1.0);
+    diverse.try_add({0, 1, 2, 3}, 10.0);
+    diverse.try_add({0, 1, 2, 4}, 11.0);
+    diverse.try_add({4, 5, 6, 7}, 12.0);
+    diverse.try_add({0, 1, 2, 5}, 13.0);
+    diverse.try_add({8, 9, 10, 11}, 14.0);
+    require(diverse.entries().size() == 4U,
+            "supplemental diversity slots extend rather than replace the quality archive");
+    require(diverse.entries()[0].canonical_key == std::vector<int>({0, 1, 2, 3})
+                && diverse.entries()[1].canonical_key == std::vector<int>({0, 1, 2, 4}),
+            "diversity pruning protects the complete legacy length-ranked capacity");
+    require(diverse.diversity_candidates() == 5
+                && diverse.diversity_retained() == 4
+                && diverse.diversity_rejected() == 1,
+            "diversity archive reports retained and rejected candidates");
+    const auto relink_near = diverse.export_relink_nodes(2, 1);
+    require(relink_near.size() == 2U,
+            "relink export preserves the ordinary quality-ranked prefix");
+    const auto relink_wide = diverse.export_relink_nodes(2, 4);
+    require(relink_wide.size() == 4U,
+            "relink export appends supplemental diverse basins when feasible");
 }
 
 void test_solver_smoke() {

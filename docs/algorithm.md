@@ -121,7 +121,7 @@ Measured effect at default budgets: quality-neutral, like the candidate-table an
 
 ## Elite pool
 
-Elite deduplication is collision-safe. Each entry stores both a 64-bit hash and a canonical key. Set-mode keys are sorted node IDs; cycle-mode keys canonicalize rotation and direction.
+Elite deduplication is collision-safe. Each entry stores both a 64-bit hash and a canonical key. Set-mode keys are sorted node IDs; cycle-mode keys canonicalize rotation and direction. The subset archive protects the complete legacy length-ranked capacity and can retain additional set-diverse entries inside a configurable relative quality window. Diversity is measured by selected-set Jaccard distance, so supplemental slots cannot evict a solution the legacy archive would have kept.
 
 ## Exact batched membership exchange
 
@@ -134,6 +134,8 @@ For `A` unique add nodes and `E` admissible pairs, evaluation costs `O(A * k + E
 Relinking walks from one elite subset to another by repeatedly applying the best (remove, add) swap toward the target set. It uses the shared exact membership-exchange decomposition, preserving add-major/remove-minor tie priority. A step therefore costs `O(|add| * k + |remove| * |add| + k)` instead of the naive `O(|remove| * |add| * k)` cross-product, and moves are applied incrementally instead of rebuilding the tour.
 
 Elite pairs whose symmetric difference exceeds 64 nodes are skipped: relink cost grows superlinearly in the difference, while its marginal value over restart/SA search collapses for distant pairs (measured on `N=1000, p=0.5`, where uncapped relinking consumed ~96% of subset wall-clock for ~0.1% quality contribution). Skipped pairs still count as `path_relink_attempts` but not as feasible relinks.
+
+Post-search relinking always includes the ordinary length-ranked prefix selected by `--path-relink-top`, then appends feasible supplemental archive entries whose one-way set difference stays inside that cap. The additional selection is diversity-first and cannot remove any relinking pair the legacy archive would have considered; it only exposes extra basins to the relink operator.
 
 ## Search statistics
 

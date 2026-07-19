@@ -150,6 +150,9 @@ Important flags:
 - `--ruin-recreate-max-fraction <float>`
 - `--ruin-recreate-max-nodes <int>` (`0` removes the absolute cap)
 - `--ruin-recreate-pool-cap <int>`
+- `--elite-diversity-slots <int>`
+- `--elite-min-jaccard <float>`
+- `--elite-quality-slack <float>`
 - `--path-relink-top <int>`
 - `--disable-two-opt[=true|false]`
 - `--disable-or-opt[=true|false]`

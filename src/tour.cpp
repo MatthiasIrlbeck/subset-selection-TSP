@@ -44,6 +44,9 @@ void SearchStats::add(const SearchStats& other) {
     racing_promoted_restarts += other.racing_promoted_restarts;
     elite_restarts += other.elite_restarts;
     kick_restarts += other.kick_restarts;
+    elite_diversity_candidates += other.elite_diversity_candidates;
+    elite_diversity_retained += other.elite_diversity_retained;
+    elite_diversity_rejected += other.elite_diversity_rejected;
     two_opt_scans += other.two_opt_scans;
     two_opt_improvements += other.two_opt_improvements;
     or_opt_scans += other.or_opt_scans;
@@ -275,36 +278,213 @@ std::vector<int> ElitePool::make_key(const std::vector<int>& nodes) const {
     return nodes;
 }
 
+int ElitePool::set_removed_count(const std::vector<int>& lhs,
+                                 const std::vector<int>& rhs) noexcept {
+    std::size_t li = 0U;
+    std::size_t ri = 0U;
+    int intersection = 0;
+    while (li < lhs.size() && ri < rhs.size()) {
+        if (lhs[li] < rhs[ri]) {
+            ++li;
+        } else if (rhs[ri] < lhs[li]) {
+            ++ri;
+        } else {
+            ++intersection;
+            ++li;
+            ++ri;
+        }
+    }
+    return static_cast<int>(lhs.size()) - intersection;
+}
+
+double ElitePool::set_jaccard_distance(const std::vector<int>& lhs,
+                                       const std::vector<int>& rhs) noexcept {
+    std::size_t li = 0U;
+    std::size_t ri = 0U;
+    int intersection = 0;
+    while (li < lhs.size() && ri < rhs.size()) {
+        if (lhs[li] < rhs[ri]) {
+            ++li;
+        } else if (rhs[ri] < lhs[li]) {
+            ++ri;
+        } else {
+            ++intersection;
+            ++li;
+            ++ri;
+        }
+    }
+    const std::size_t set_union = lhs.size() + rhs.size()
+        - static_cast<std::size_t>(intersection);
+    return set_union == 0U
+        ? 0.0
+        : 1.0 - static_cast<double>(intersection)
+                    / static_cast<double>(set_union);
+}
+
+void ElitePool::prune_diversity_archive(const std::uint64_t inserted_hash,
+                                        const std::vector<int>& inserted_key,
+                                        const bool account_candidate) {
+    std::stable_sort(entries_.begin(), entries_.end(),
+                     [](const EliteEntry& lhs, const EliteEntry& rhs) {
+        if (lhs.length != rhs.length) {
+            return lhs.length < rhs.length;
+        }
+        return lhs.canonical_key < rhs.canonical_key;
+    });
+    if (mode_ != EliteMode::Set || diversity_slots_ <= 0) {
+        if (static_cast<int>(entries_.size()) > keep_) {
+            entries_.resize(static_cast<std::size_t>(keep_));
+        }
+        return;
+    }
+
+    if (account_candidate) {
+        ++diversity_candidates_;
+    }
+    const int protected_count = std::min(keep_, static_cast<int>(entries_.size()));
+    std::vector<EliteEntry> survivors;
+    survivors.reserve(static_cast<std::size_t>(keep_ + diversity_slots_));
+    for (int index = 0; index < protected_count; ++index) {
+        survivors.push_back(entries_[static_cast<std::size_t>(index)]);
+    }
+
+    const double best_length = survivors.empty()
+        ? std::numeric_limits<double>::infinity()
+        : survivors.front().length;
+    const double quality_limit = best_length
+        + std::max(0.0, quality_slack_)
+            * std::max(std::fabs(best_length), kDistanceEps);
+    std::vector<unsigned char> selected(entries_.size(), 0U);
+    for (int index = 0; index < protected_count; ++index) {
+        selected[static_cast<std::size_t>(index)] = 1U;
+    }
+
+    for (int slot = 0; slot < diversity_slots_; ++slot) {
+        int best_index = -1;
+        double best_distance = -1.0;
+        for (int index = protected_count;
+             index < static_cast<int>(entries_.size()); ++index) {
+            if (selected[static_cast<std::size_t>(index)] != 0U) {
+                continue;
+            }
+            const EliteEntry& candidate = entries_[static_cast<std::size_t>(index)];
+            if (candidate.length > quality_limit + kImprovementEps) {
+                continue;
+            }
+            double min_distance = std::numeric_limits<double>::infinity();
+            for (const EliteEntry& retained : survivors) {
+                min_distance = std::min(
+                    min_distance,
+                    set_jaccard_distance(candidate.canonical_key,
+                                         retained.canonical_key));
+            }
+            if (survivors.empty()) {
+                min_distance = 1.0;
+            }
+            if (min_distance + kDistanceEps < min_jaccard_distance_) {
+                continue;
+            }
+            if (best_index < 0
+                || min_distance > best_distance + kDistanceEps
+                || (std::fabs(min_distance - best_distance) <= kDistanceEps
+                    && (candidate.length
+                            < entries_[static_cast<std::size_t>(best_index)].length
+                        || (candidate.length
+                                == entries_[static_cast<std::size_t>(best_index)].length
+                            && candidate.canonical_key
+                                < entries_[static_cast<std::size_t>(best_index)].canonical_key)))) {
+                best_index = index;
+                best_distance = min_distance;
+            }
+        }
+        if (best_index < 0) {
+            break;
+        }
+        selected[static_cast<std::size_t>(best_index)] = 1U;
+        survivors.push_back(entries_[static_cast<std::size_t>(best_index)]);
+    }
+
+    if (account_candidate) {
+        const bool retained = std::any_of(
+            survivors.begin(), survivors.end(),
+            [&](const EliteEntry& entry) {
+                return entry.hash == inserted_hash
+                    && entry.canonical_key == inserted_key;
+            });
+        if (retained) {
+            ++diversity_retained_;
+        } else {
+            ++diversity_rejected_;
+        }
+    }
+    std::stable_sort(survivors.begin(), survivors.end(),
+                     [](const EliteEntry& lhs, const EliteEntry& rhs) {
+        if (lhs.length != rhs.length) {
+            return lhs.length < rhs.length;
+        }
+        return lhs.canonical_key < rhs.canonical_key;
+    });
+    entries_ = std::move(survivors);
+}
+
 void ElitePool::try_add(const std::vector<int>& nodes, double length) {
     if (keep_ <= 0 || nodes.empty() || !std::isfinite(length)) {
         return;
     }
     std::vector<int> key = make_key(nodes);
     const std::uint64_t hash = subset_hash_nodes(key);
+    // Preserve the historical archive implementation exactly when diversity
+    // is disabled (and for non-set archives, where Jaccard distance is not
+    // meaningful). This makes --elite-diversity-slots=0 a true fixed-seed
+    // ablation rather than merely a similar policy.
+    if (mode_ != EliteMode::Set || diversity_slots_ <= 0) {
+        for (EliteEntry& entry : entries_) {
+            if (entry.hash == hash && entry.canonical_key == key) {
+                if (length + kImprovementEps < entry.length) {
+                    entry.length = length;
+                    entry.nodes = nodes;
+                }
+                std::sort(entries_.begin(), entries_.end(),
+                          [](const EliteEntry& lhs, const EliteEntry& rhs) {
+                    return lhs.length < rhs.length;
+                });
+                return;
+            }
+        }
+        EliteEntry entry;
+        entry.length = length;
+        entry.nodes = nodes;
+        entry.canonical_key = std::move(key);
+        entry.hash = hash;
+        const auto it = std::lower_bound(
+            entries_.begin(), entries_.end(), length,
+            [](const EliteEntry& lhs, const double value) {
+                return lhs.length < value;
+            });
+        entries_.insert(it, std::move(entry));
+        if (static_cast<int>(entries_.size()) > keep_) {
+            entries_.pop_back();
+        }
+        return;
+    }
+
     for (EliteEntry& entry : entries_) {
         if (entry.hash == hash && entry.canonical_key == key) {
             if (length + kImprovementEps < entry.length) {
                 entry.length = length;
                 entry.nodes = nodes;
             }
-            std::sort(entries_.begin(), entries_.end(), [](const EliteEntry& lhs, const EliteEntry& rhs) {
-                return lhs.length < rhs.length;
-            });
+            prune_diversity_archive(hash, key, false);
             return;
         }
     }
     EliteEntry entry;
     entry.length = length;
     entry.nodes = nodes;
-    entry.canonical_key = std::move(key);
+    entry.canonical_key = key;
     entry.hash = hash;
-    auto it = std::lower_bound(entries_.begin(), entries_.end(), length, [](const EliteEntry& lhs, double value) {
-        return lhs.length < value;
-    });
-    entries_.insert(it, std::move(entry));
-    if (static_cast<int>(entries_.size()) > keep_) {
-        entries_.pop_back();
-    }
+    entries_.push_back(std::move(entry));
+    prune_diversity_archive(hash, key, true);
 }
 
 std::vector<std::vector<int>> ElitePool::export_nodes() const {
@@ -312,6 +492,88 @@ std::vector<std::vector<int>> ElitePool::export_nodes() const {
     out.reserve(entries_.size());
     for (const EliteEntry& entry : entries_) {
         out.push_back(entry.nodes);
+    }
+    return out;
+}
+
+std::vector<std::vector<int>> ElitePool::export_relink_nodes(
+    const int limit, const int max_removed) const {
+    if (limit <= 0 || entries_.empty()) {
+        return {};
+    }
+    if (mode_ != EliteMode::Set || entries_.size() == 1U
+        || diversity_slots_ <= 0) {
+        std::vector<std::vector<int>> out;
+        const int count = std::min(limit, static_cast<int>(entries_.size()));
+        out.reserve(static_cast<std::size_t>(count));
+        for (int index = 0; index < count; ++index) {
+            out.push_back(entries_[static_cast<std::size_t>(index)].nodes);
+        }
+        return out;
+    }
+
+    const int quality_count = std::min(limit, static_cast<int>(entries_.size()));
+    std::vector<int> selected;
+    selected.reserve(static_cast<std::size_t>(quality_count + diversity_slots_));
+    std::vector<unsigned char> used(entries_.size(), 0U);
+    for (int index = 0; index < quality_count; ++index) {
+        selected.push_back(index);
+        used[static_cast<std::size_t>(index)] = 1U;
+    }
+    for (int slot = 0; slot < diversity_slots_; ++slot) {
+        int best_index = -1;
+        double best_distance = -1.0;
+        for (int index = quality_count;
+             index < static_cast<int>(entries_.size()); ++index) {
+            if (used[static_cast<std::size_t>(index)] != 0U) {
+                continue;
+            }
+            bool feasible = false;
+            double min_distance = std::numeric_limits<double>::infinity();
+            for (const int retained_index : selected) {
+                const int removed = set_removed_count(
+                    entries_[static_cast<std::size_t>(index)].canonical_key,
+                    entries_[static_cast<std::size_t>(retained_index)].canonical_key);
+                if (removed > 0 && (max_removed <= 0 || removed <= max_removed)) {
+                    feasible = true;
+                }
+                min_distance = std::min(
+                    min_distance,
+                    set_jaccard_distance(
+                        entries_[static_cast<std::size_t>(index)].canonical_key,
+                        entries_[static_cast<std::size_t>(retained_index)].canonical_key));
+            }
+            if (!feasible) {
+                continue;
+            }
+            if (min_distance + kDistanceEps < min_jaccard_distance_) {
+                continue;
+            }
+            const EliteEntry& candidate = entries_[static_cast<std::size_t>(index)];
+            if (best_index < 0
+                || min_distance > best_distance + kDistanceEps
+                || (std::fabs(min_distance - best_distance) <= kDistanceEps
+                    && (candidate.length
+                            < entries_[static_cast<std::size_t>(best_index)].length
+                        || (candidate.length
+                                == entries_[static_cast<std::size_t>(best_index)].length
+                            && candidate.canonical_key
+                                < entries_[static_cast<std::size_t>(best_index)].canonical_key)))) {
+                best_index = index;
+                best_distance = min_distance;
+            }
+        }
+        if (best_index < 0) {
+            break;
+        }
+        used[static_cast<std::size_t>(best_index)] = 1U;
+        selected.push_back(best_index);
+    }
+
+    std::vector<std::vector<int>> out;
+    out.reserve(selected.size());
+    for (const int index : selected) {
+        out.push_back(entries_[static_cast<std::size_t>(index)].nodes);
     }
     return out;
 }
