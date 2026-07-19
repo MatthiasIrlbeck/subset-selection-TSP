@@ -21,6 +21,13 @@
 - `scripts/restart_evt.py` obtains kind metadata from the shared definition, includes dense kind `7` by default, validates aligned arrays, and can filter primary versus secondary draws with `--sweeps`.
 - Schema version remains `13`; the new fields are optional so historical bundled artifacts remain valid until the next deliberate schema migration.
 
+### Performance observability and exact batched neighborhoods
+
+- Added machine-readable aggregate phase worker-seconds, sampled SA proposal/insertion latency, and a paired hot-path benchmark harness that alternates run order while enforcing both quality and runtime canaries.
+- Periodic instances now use canonical minimum-image distance kernels after one-time normalization, including a periodic AVX2 batch path when native compilation is enabled; checked arbitrary-coordinate queries retain the normalization boundary.
+- Two-for-two pair exchange preserves the legacy regret-2 neighborhood while batching candidate distances, avoiding candidate-tour reconstruction, and applying a configurable large-`k` safety gate (`pair_exchange_max_k`, default `5000`).
+- One-for-one subset descent, high-p exchange, and path relinking now share an exact batched top-three insertion evaluator. Ordered tie semantics and incremental move deltas are differential-tested against scalar enumeration on open and periodic instances.
+
 ## 0.9.6 -- what the insertion kernel actually does at production scale
 
 ### The finding

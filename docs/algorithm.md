@@ -112,9 +112,15 @@ Measured effect at default budgets: quality-neutral, like the candidate-table an
 
 Elite deduplication is collision-safe. Each entry stores both a 64-bit hash and a canonical key. Set-mode keys are sorted node IDs; cycle-mode keys canonicalize rotation and direction.
 
+## Exact batched membership exchange
+
+Deterministic one-for-one subset descent, high-p reference-guided exchange, and path relinking share one exact batched evaluator. For an ordered list of admissible `(remove position, add node)` pairs, it computes each removal gain once and performs one batched distance pass per unique add node. The three cheapest insertion edges on the unchanged tour are sufficient: deleting one node invalidates at most the removed node's outgoing edge and its predecessor's outgoing edge, while the newly merged predecessor-to-successor edge is evaluated explicitly. Every pair is then scored in O(1).
+
+For `A` unique add nodes and `E` admissible pairs, evaluation costs `O(A * k + E + k)` rather than `O(E * k)`. The implementation retains the scalar evaluator's strict ordered tie semantics, including the exact insertion predecessor, and materializes only the winning move. Randomized open-square and torus differential tests compare the batched result against exhaustive scalar enumeration, including duplicate, invalid, and exactly tied candidates.
+
 ## Path relinking
 
-Relinking walks from one elite subset to another by repeatedly applying the best (remove, add) swap toward the target set. Each step selects the exact best pair with a decomposition: removal gains are O(1) per candidate from the edge cache, and per added node one batched distance pass plus the top-3 pre-removal insertion edges suffice, because a removal invalidates at most two predecessor slots. A step therefore costs `O(|add| * k + |remove| * |add|)` instead of the naive `O(|remove| * |add| * k)` cross-product, and moves are applied incrementally instead of rebuilding the tour.
+Relinking walks from one elite subset to another by repeatedly applying the best (remove, add) swap toward the target set. It uses the shared exact membership-exchange decomposition, preserving add-major/remove-minor tie priority. A step therefore costs `O(|add| * k + |remove| * |add| + k)` instead of the naive `O(|remove| * |add| * k)` cross-product, and moves are applied incrementally instead of rebuilding the tour.
 
 Elite pairs whose symmetric difference exceeds 64 nodes are skipped: relink cost grows superlinearly in the difference, while its marginal value over restart/SA search collapses for distant pairs (measured on `N=1000, p=0.5`, where uncapped relinking consumed ~96% of subset wall-clock for ~0.1% quality contribution). Skipped pairs still count as `path_relink_attempts` but not as feasible relinks.
 

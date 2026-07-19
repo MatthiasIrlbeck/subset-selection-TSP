@@ -343,6 +343,141 @@ SwapMoveEval evaluate_swap_after_remove(const Instance& inst, const Tour& tour, 
     return best;
 }
 
+BatchedSwapResult best_batched_swap(const Instance& inst,
+                                    const Tour& tour,
+                                    const std::vector<SwapCandidatePair>& candidates) {
+    BatchedSwapResult best;
+    const int k = tour.k;
+    if (k < 3 || !tour.edge_valid || candidates.empty() || inst.N <= 0) {
+        return best;
+    }
+
+    struct RemovalProfile {
+        int prev = -1;
+        int next = -1;
+        double gap = 0.0;
+        double gain = 0.0;
+    };
+    thread_local std::vector<RemovalProfile> removals;
+    removals.resize(static_cast<std::size_t>(k));
+    for (int ri = 0; ri < k; ++ri) {
+        RemovalProfile& removal = removals[static_cast<std::size_t>(ri)];
+        removal.prev = (ri == 0) ? (k - 1) : (ri - 1);
+        removal.next = (ri + 1 == k) ? 0 : (ri + 1);
+        removal.gap = inst.dist(tour.nodes[static_cast<std::size_t>(removal.prev)],
+                                tour.nodes[static_cast<std::size_t>(removal.next)]);
+        removal.gain = tour.edge_len[static_cast<std::size_t>(removal.prev)]
+            + tour.edge_len[static_cast<std::size_t>(ri)] - removal.gap;
+    }
+
+    // Intrusive per-add linked lists avoid a vector allocation per group while
+    // retaining every candidate's original index for deterministic tie order.
+    thread_local std::vector<int> group_head;
+    thread_local std::vector<int> group_tail;
+    thread_local std::vector<int> next_candidate;
+    thread_local std::vector<int> unique_adds;
+    // Reset only add-node slots touched by the preceding invocation. Clearing
+    // all N slots would reintroduce an O(N) term for sparse candidate sets.
+    for (int add_node : unique_adds) {
+        group_head[static_cast<std::size_t>(add_node)] = -1;
+        group_tail[static_cast<std::size_t>(add_node)] = -1;
+    }
+    unique_adds.clear();
+    const std::size_t node_count = static_cast<std::size_t>(inst.N);
+    if (group_head.size() < node_count) {
+        group_head.resize(node_count, -1);
+        group_tail.resize(node_count, -1);
+    }
+    next_candidate.assign(candidates.size(), -1);
+    unique_adds.reserve(std::min<std::size_t>(candidates.size(), node_count));
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        const SwapCandidatePair& candidate = candidates[index];
+        if (candidate.remove_pos < 0 || candidate.remove_pos >= k
+            || candidate.add_node < 0 || candidate.add_node >= inst.N) {
+            continue;
+        }
+        const int removed = tour.nodes[static_cast<std::size_t>(candidate.remove_pos)];
+        if (candidate.add_node != removed
+            && tour.in_set[static_cast<std::size_t>(candidate.add_node)] != 0U) {
+            continue;
+        }
+        int& head = group_head[static_cast<std::size_t>(candidate.add_node)];
+        int& tail = group_tail[static_cast<std::size_t>(candidate.add_node)];
+        const int current = static_cast<int>(index);
+        if (head < 0) {
+            head = current;
+            unique_adds.push_back(candidate.add_node);
+        } else {
+            next_candidate[static_cast<std::size_t>(tail)] = current;
+        }
+        tail = current;
+    }
+
+    thread_local std::vector<double> add_dist;
+    add_dist.resize(static_cast<std::size_t>(k));
+    for (int add_node : unique_adds) {
+        dist_many_from(inst, add_node, tour.nodes.data(), k, add_dist.data());
+
+        double top_cost[3] = {std::numeric_limits<double>::infinity(),
+                              std::numeric_limits<double>::infinity(),
+                              std::numeric_limits<double>::infinity()};
+        int top_pred[3] = {-1, -1, -1};
+        for (int pred = 0; pred < k; ++pred) {
+            const int succ = (pred + 1 == k) ? 0 : (pred + 1);
+            const double cost = add_dist[static_cast<std::size_t>(pred)]
+                + add_dist[static_cast<std::size_t>(succ)]
+                - tour.edge_len[static_cast<std::size_t>(pred)];
+            if (cost < top_cost[2]) {
+                top_cost[2] = cost;
+                top_pred[2] = pred;
+                if (top_cost[2] < top_cost[1]) {
+                    std::swap(top_cost[1], top_cost[2]);
+                    std::swap(top_pred[1], top_pred[2]);
+                }
+                if (top_cost[1] < top_cost[0]) {
+                    std::swap(top_cost[0], top_cost[1]);
+                    std::swap(top_pred[0], top_pred[1]);
+                }
+            }
+        }
+
+        for (int index = group_head[static_cast<std::size_t>(add_node)];
+             index >= 0;
+             index = next_candidate[static_cast<std::size_t>(index)]) {
+            const SwapCandidatePair& candidate = candidates[static_cast<std::size_t>(index)];
+            const RemovalProfile& removal = removals[static_cast<std::size_t>(candidate.remove_pos)];
+            double insert_cost = add_dist[static_cast<std::size_t>(removal.prev)]
+                + add_dist[static_cast<std::size_t>(removal.next)] - removal.gap;
+            int insert_pred = removal.prev;
+            for (int rank = 0; rank < 3; ++rank) {
+                const int pred = top_pred[rank];
+                if (pred < 0 || pred == candidate.remove_pos || pred == removal.prev) {
+                    continue;
+                }
+                const double cost = top_cost[rank];
+                if (cost < insert_cost || (cost == insert_cost && pred < insert_pred)) {
+                    insert_cost = cost;
+                    insert_pred = pred;
+                }
+                break;
+            }
+            const double delta = insert_cost - removal.gain;
+            const std::size_t candidate_index = static_cast<std::size_t>(index);
+            if (!best.valid || delta < best.delta
+                || (delta == best.delta && candidate_index < best.candidate_index)) {
+                best.valid = true;
+                best.delta = delta;
+                best.remove_pos = candidate.remove_pos;
+                best.add_node = add_node;
+                best.post_remove_pred = post_index_from_current(insert_pred,
+                                                                candidate.remove_pos);
+                best.candidate_index = candidate_index;
+            }
+        }
+    }
+    return best;
+}
+
 SwapMoveEval evaluate_move_after_remove(const Instance& inst, const Tour& tour, int remove_pos, const std::vector<int>* pred_positions) {
     SwapMoveEval best;
     if (tour.k < 5 || remove_pos < 0 || remove_pos >= tour.k) {

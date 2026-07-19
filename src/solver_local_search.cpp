@@ -494,27 +494,26 @@ int subset_swap_descent_impl(Tour& tour, const Instance& inst, int max_passes, b
     if (tour.k < 3 || tour.k >= inst.N || max_passes <= 0) { return 0; }
     int improvements = 0;
     Rng local_rng(subset_hash_nodes(tour.nodes));
+    std::vector<int> add_candidates;
+    std::vector<SwapCandidatePair> swap_candidates;
+    const int candidate_cap = (inst.N <= 800) ? inst.N : 160;
     for (int pass = 0; pass < max_passes; ++pass) {
-        double best_delta = -kImprovementEps;
-        int best_remove = -1;
-        int best_add = -1;
-        int best_post = 0;
+        swap_candidates.clear();
         for (int ri = 0; ri < tour.k; ++ri) {
-            std::vector<int> candidates = collect_add_candidates(inst, tour, ri, local_rng, inst.N <= 800 ? inst.N : 160);
-            for (int add : candidates) {
+            collect_add_candidates_into(inst, tour, ri, local_rng, candidate_cap, add_candidates);
+            for (int add : add_candidates) {
                 if (add < 0 || add >= inst.N || tour.in_set[static_cast<std::size_t>(add)] != 0U) { continue; }
                 if (stats != nullptr) { ++stats->subset_swap_scans; }
-                const SwapMoveEval eval = evaluate_swap_after_remove(inst, tour, ri, add);
-                if (eval.valid && eval.delta < best_delta) {
-                    best_delta = eval.delta;
-                    best_remove = ri;
-                    best_add = add;
-                    best_post = eval.post_remove_pred;
-                }
+                swap_candidates.push_back({ri, add});
             }
         }
-        if (best_remove < 0) { break; }
-        tour.apply_swap_post_rem(best_remove, best_post, best_add, inst, best_delta);
+        const BatchedSwapResult chosen = best_batched_swap(inst, tour, swap_candidates);
+        if (!chosen.valid || chosen.delta >= -kImprovementEps) { break; }
+        tour.apply_swap_post_rem(chosen.remove_pos,
+                                 chosen.post_remove_pred,
+                                 chosen.add_node,
+                                 inst,
+                                 chosen.delta);
         if (enable_two_opt) {
             // Membership changed: build a fresh subset candidate table.
             two_opt_candidate_descent(tour, inst, 120, 40, stats, maybe_subset_candidates(inst, tour));

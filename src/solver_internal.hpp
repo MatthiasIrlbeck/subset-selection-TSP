@@ -73,6 +73,28 @@ struct SwapMoveEval {
     int post_remove_pred = 0;
 };
 
+struct SwapCandidatePair {
+    int remove_pos = -1;
+    int add_node = -1;
+};
+
+struct BatchedSwapResult {
+    bool valid = false;
+    double delta = std::numeric_limits<double>::infinity();
+    int remove_pos = -1;
+    int add_node = -1;
+    int post_remove_pred = 0;
+    std::size_t candidate_index = std::numeric_limits<std::size_t>::max();
+};
+
+// Evaluates an ordered collection of exact remove/add swaps. Candidate order
+// defines deterministic tie priority. Distances are batched once per unique
+// add node and every removal is then evaluated in O(1) from a top-three edge
+// profile plus its merged removal edge.
+BatchedSwapResult best_batched_swap(const Instance& inst,
+                                    const Tour& tour,
+                                    const std::vector<SwapCandidatePair>& candidates);
+
 SwapInsertionMove find_best_insert_after_remove(const Instance& inst, const Tour& tour, int remove_pos, int add_node);
 SwapInsertionMove find_best_insert_after_remove_windowed(const Instance& inst, const Tour& tour, int remove_pos, int add_node, int window);
 

@@ -2309,6 +2309,111 @@ void test_pair_exchange_large_k_gate() {
             "large-k pair-exchange gate performs no candidate scans");
 }
 
+void test_batched_swap_matches_scalar() {
+    auto check_case = [](const Instance& inst,
+                         const Tour& tour,
+                         const std::vector<SwapCandidatePair>& candidates) {
+        BatchedSwapResult scalar;
+        for (std::size_t index = 0; index < candidates.size(); ++index) {
+            const SwapCandidatePair& candidate = candidates[index];
+            const SwapMoveEval eval = evaluate_swap_after_remove(inst,
+                                                                 tour,
+                                                                 candidate.remove_pos,
+                                                                 candidate.add_node);
+            if (eval.valid && (!scalar.valid || eval.delta < scalar.delta)) {
+                scalar.valid = true;
+                scalar.delta = eval.delta;
+                scalar.remove_pos = candidate.remove_pos;
+                scalar.add_node = candidate.add_node;
+                scalar.post_remove_pred = eval.post_remove_pred;
+                scalar.candidate_index = index;
+            }
+        }
+
+        const BatchedSwapResult batched = best_batched_swap(inst, tour, candidates);
+        require(batched.valid == scalar.valid,
+                "batched exact swap validity matches ordered scalar enumeration");
+        if (!scalar.valid) { return; }
+        require(std::fabs(batched.delta - scalar.delta)
+                    <= 1e-12 * (1.0 + std::fabs(scalar.delta)),
+                "batched exact swap delta matches scalar enumeration");
+        require(batched.remove_pos == scalar.remove_pos,
+                "batched exact swap preserves removal tie order");
+        require(batched.add_node == scalar.add_node,
+                "batched exact swap preserves addition tie order");
+        require(batched.post_remove_pred == scalar.post_remove_pred,
+                "batched exact swap preserves insertion-edge tie order");
+        require(batched.candidate_index == scalar.candidate_index,
+                "batched exact swap preserves global candidate order");
+
+        Tour applied = tour;
+        applied.apply_swap_post_rem(batched.remove_pos,
+                                    batched.post_remove_pred,
+                                    batched.add_node,
+                                    inst,
+                                    batched.delta);
+        const double incremental_length = applied.length;
+        applied.recompute_length(inst);
+        require(std::fabs(incremental_length - applied.length)
+                    <= 1e-10 * (1.0 + applied.length),
+                "batched exact swap delta agrees with full tour recomputation");
+        require(applied.check_invariants(),
+                "batched exact swap preserves tour membership invariants");
+    };
+
+    for (bool periodic : {false, true}) {
+        Rng rng(periodic ? 819991U : 819990U);
+        Instance inst;
+        inst.periodic = periodic;
+        inst.generate(72, rng);
+        for (int trial = 0; trial < 100; ++trial) {
+            const int k = 6 + rng.randint(18);
+            Tour tour;
+            tour.init(inst.N);
+            tour.set_tour(random_subset(inst.N, k, rng), inst);
+            tour.ensure_edges(inst);
+
+            std::vector<int> outside;
+            outside.reserve(static_cast<std::size_t>(inst.N - k));
+            for (int node = 0; node < inst.N; ++node) {
+                if (tour.in_set[static_cast<std::size_t>(node)] == 0U) {
+                    outside.push_back(node);
+                }
+            }
+
+            std::vector<SwapCandidatePair> candidates;
+            candidates.reserve(220);
+            for (int sample = 0; sample < 200; ++sample) {
+                const int remove_pos = rng.randint(k);
+                int add_node = outside[static_cast<std::size_t>(rng.randint(static_cast<int>(outside.size())))];
+                const int mode = rng.randint(12);
+                if (mode == 0) {
+                    add_node = tour.nodes[static_cast<std::size_t>(remove_pos)];
+                } else if (mode == 1) {
+                    add_node = tour.nodes[static_cast<std::size_t>((remove_pos + 1) % k)];
+                }
+                candidates.push_back({remove_pos, add_node});
+                if (mode == 2) {
+                    candidates.push_back({remove_pos, add_node});
+                }
+            }
+            candidates.push_back({-1, outside.front()});
+            candidates.push_back({k, outside.front()});
+            candidates.push_back({0, -1});
+            candidates.push_back({0, inst.N});
+            check_case(inst, tour, candidates);
+        }
+    }
+
+    Instance tied;
+    tied.set_points({{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0},
+                     {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}});
+    Tour tied_tour;
+    tied_tour.init(tied.N);
+    tied_tour.set_tour({0, 1, 2, 3}, tied);
+    check_case(tied, tied_tour, {{2, 6}, {1, 5}, {3, 7}, {0, 4}});
+}
+
 void test_path_relink_step_matches_bruteforce() {
     Rng rng(9091);
     Instance inst;
@@ -2336,11 +2441,17 @@ void test_path_relink_step_matches_bruteforce() {
         if (add_nodes.empty()) { continue; }
 
         double brute_best = std::numeric_limits<double>::infinity();
-        for (int ri : remove_positions) {
-            for (int add : add_nodes) {
+        int brute_remove = -1;
+        int brute_add = -1;
+        // Path relinking has historically used add-major/remove-minor order;
+        // strict comparison makes that ordering the deterministic tie break.
+        for (int add : add_nodes) {
+            for (int ri : remove_positions) {
                 const SwapMoveEval eval = evaluate_swap_after_remove(inst, tour, ri, add);
                 if (eval.valid && eval.delta < brute_best) {
                     brute_best = eval.delta;
+                    brute_remove = ri;
+                    brute_add = add;
                 }
             }
         }
@@ -2349,6 +2460,8 @@ void test_path_relink_step_matches_bruteforce() {
         if (step.valid) {
             require(std::abs(step.delta - brute_best) <= 1e-9 * (1.0 + std::abs(brute_best)),
                     "decomposed relink step delta matches brute-force best pair");
+            require(step.remove_pos == brute_remove && step.add_node == brute_add,
+                    "decomposed relink step preserves add-major/remove-minor tie order");
             const SwapInsertionMove applied = find_best_insert_after_remove(inst, tour, step.remove_pos, step.add_node);
             require(applied.valid, "chosen relink step is applicable");
             require(std::abs(applied.delta - step.delta) <= 1e-9 * (1.0 + std::abs(step.delta)),
@@ -3007,6 +3120,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_two_opt_candidate_table_property);
     RUN_TEST(test_batched_pair_repair_matches_legacy);
     RUN_TEST(test_pair_exchange_large_k_gate);
+    RUN_TEST(test_batched_swap_matches_scalar);
     RUN_TEST(test_path_relink_step_matches_bruteforce);
 #if defined(ALDOUS_TSP_TESTS_DIR)
     RUN_TEST(test_oracle_torus_roundtrip);

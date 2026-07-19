@@ -14,14 +14,13 @@ bool highp_delete_exchange_descent(Tour& tour, const Instance& inst, const std::
     }
     bool any = false;
     tour.ensure_edges(inst);
+    std::vector<int> pool;
+    pool.reserve(128);
+    std::vector<SwapCandidatePair> swap_candidates;
     for (int pass = 0; pass < passes; ++pass) {
-        double best_delta = -kImprovementEps;
-        int best_remove = -1;
-        int best_add = -1;
-        int best_post = 0;
+        swap_candidates.clear();
         for (int ri = 0; ri < tour.k; ++ri) {
-            std::vector<int> pool;
-            pool.reserve(128);
+            pool.clear();
             const int rem = tour.nodes[static_cast<std::size_t>(ri)];
             const int rp = (rem >= 0 && rem < inst.N) ? ref_pos[static_cast<std::size_t>(rem)] : -1;
             if (rp >= 0) {
@@ -43,19 +42,18 @@ bool highp_delete_exchange_descent(Tour& tour, const Instance& inst, const std::
             }
             for (int add : pool) {
                 if (stats != nullptr) { ++stats->highp_exchange_scans; }
-                const SwapMoveEval eval = evaluate_swap_after_remove(inst, tour, ri, add);
-                if (eval.valid && eval.delta < best_delta) {
-                    best_delta = eval.delta;
-                    best_remove = ri;
-                    best_add = add;
-                    best_post = eval.post_remove_pred;
-                }
+                swap_candidates.push_back({ri, add});
             }
         }
-        if (best_remove < 0) {
+        const BatchedSwapResult chosen = best_batched_swap(inst, tour, swap_candidates);
+        if (!chosen.valid || chosen.delta >= -kImprovementEps) {
             break;
         }
-        tour.apply_swap_post_rem(best_remove, best_post, best_add, inst, best_delta);
+        tour.apply_swap_post_rem(chosen.remove_pos,
+                                 chosen.post_remove_pred,
+                                 chosen.add_node,
+                                 inst,
+                                 chosen.delta);
         polish_tour(tour, inst, options, stats, 1);
         any = true;
         if (stats != nullptr) { ++stats->highp_exchange_improvements; }
@@ -447,82 +445,22 @@ PathRelinkStep path_relink_best_step(const Instance& inst,
     if (tour.k < 4 || !tour.edge_valid || remove_positions.empty() || add_nodes.empty()) {
         return best;
     }
-    const int k = tour.k;
 
-    // Removal gains and merged-edge metadata are independent of the added node.
-    struct RemoveCand {
-        int ri = -1;
-        int prev = -1;
-        int next = -1;
-        double gap = 0.0;
-        double gain = 0.0;
-    };
-    thread_local std::vector<RemoveCand> removes;
-    removes.clear();
-    removes.reserve(remove_positions.size());
-    for (int ri : remove_positions) {
-        if (ri < 0 || ri >= k) { continue; }
-        RemoveCand rc;
-        rc.ri = ri;
-        rc.prev = (ri == 0) ? (k - 1) : (ri - 1);
-        rc.next = (ri + 1 == k) ? 0 : (ri + 1);
-        rc.gap = inst.dist(tour.nodes[static_cast<std::size_t>(rc.prev)], tour.nodes[static_cast<std::size_t>(rc.next)]);
-        rc.gain = tour.edge_len[static_cast<std::size_t>(rc.prev)] + tour.edge_len[static_cast<std::size_t>(ri)] - rc.gap;
-        removes.push_back(rc);
-    }
-    if (removes.empty()) {
-        return best;
-    }
-
-    thread_local std::vector<double> add_dist;
-    add_dist.assign(static_cast<std::size_t>(k), 0.0);
+    // Preserve the legacy add-major/remove-minor ordering: it is the stable
+    // tie priority used by path relinking on geometrically symmetric inputs.
+    std::vector<SwapCandidatePair> candidates;
+    candidates.reserve(add_nodes.size() * remove_positions.size());
     for (int add : add_nodes) {
-        if (add < 0 || add >= inst.N || tour.in_set[static_cast<std::size_t>(add)] != 0U) { continue; }
-        dist_many_from(inst, add, tour.nodes.data(), k, add_dist.data());
-
-        // Top-3 insertion edges over the unmodified tour. Any removal
-        // invalidates at most two predecessor slots ({ri, prev(ri)}), so the
-        // best valid pre-removal edge for every removal is among these three.
-        double cand_cost[3] = {std::numeric_limits<double>::infinity(),
-                               std::numeric_limits<double>::infinity(),
-                               std::numeric_limits<double>::infinity()};
-        int cand_pred[3] = {-1, -1, -1};
-        for (int pred = 0; pred < k; ++pred) {
-            const int succ = (pred + 1 == k) ? 0 : (pred + 1);
-            const double cost = add_dist[static_cast<std::size_t>(pred)]
-                + add_dist[static_cast<std::size_t>(succ)]
-                - tour.edge_len[static_cast<std::size_t>(pred)];
-            if (cost < cand_cost[2]) {
-                cand_cost[2] = cost;
-                cand_pred[2] = pred;
-                if (cand_cost[2] < cand_cost[1]) {
-                    std::swap(cand_cost[1], cand_cost[2]);
-                    std::swap(cand_pred[1], cand_pred[2]);
-                }
-                if (cand_cost[1] < cand_cost[0]) {
-                    std::swap(cand_cost[0], cand_cost[1]);
-                    std::swap(cand_pred[0], cand_pred[1]);
-                }
-            }
+        for (int remove_pos : remove_positions) {
+            candidates.push_back({remove_pos, add});
         }
-
-        for (const RemoveCand& rc : removes) {
-            double insert_cost = add_dist[static_cast<std::size_t>(rc.prev)]
-                + add_dist[static_cast<std::size_t>(rc.next)] - rc.gap;
-            for (int c = 0; c < 3; ++c) {
-                if (cand_pred[c] >= 0 && cand_pred[c] != rc.ri && cand_pred[c] != rc.prev) {
-                    insert_cost = std::min(insert_cost, cand_cost[c]);
-                    break;
-                }
-            }
-            const double delta = insert_cost - rc.gain;
-            if (delta < best.delta) {
-                best.valid = true;
-                best.delta = delta;
-                best.remove_pos = rc.ri;
-                best.add_node = add;
-            }
-        }
+    }
+    const BatchedSwapResult chosen = best_batched_swap(inst, tour, candidates);
+    if (chosen.valid) {
+        best.valid = true;
+        best.delta = chosen.delta;
+        best.remove_pos = chosen.remove_pos;
+        best.add_node = chosen.add_node;
     }
     return best;
 }
