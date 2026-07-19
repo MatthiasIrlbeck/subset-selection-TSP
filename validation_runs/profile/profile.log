@@ -1,0 +1,57 @@
++ build-validation/aldous_tsp --mode hybrid --N 120 --instances 1 --threads 1 --p-values 0.05,0.25,1.0 --output validation_runs/profile/profile.json --force --sa-iters 200 --restarts 1 --tsp-restarts 1 --tsp-ils 8
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=120, instances=1, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=200, tsp_restarts=1, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.25,1
+========================================================================
+  [done 1/1] instance 1 in 0.19s  elapsed 0s  ETA 0s
+
+FINAL (N=120, instances=1, wall=0.2s)
+                   p     k       mean     stderr        min        max
+                0.05     6    0.49426    0.00000    0.49426    0.49426
+                0.25    30    0.94902    0.00000    0.94902    0.94902
+                   1   120    0.81824    0.00000    0.81824    0.81824
+Results written to validation_runs/profile/profile.json
+
+Timing summary
+--------------
+wall_seconds      0.1869s
+knn_build_seconds 0.0003s
+tsp_seconds       0.0037s
+subset_seconds    0.1818s
+oracle_seconds    0.0000s
+
+Effective KNN
+-------------
+knn_requested_grid_instances         1
+knn_requested_bruteforce_instances   0
+knn_effective_grid_instances         1
+knn_effective_bruteforce_instances   0
+knn_bruteforce_fallback_instances    0
+knn_grid_cell_capped_instances       0
+knn_grid_cells_max                   9
+grid_cell_effective_min              3.69411477756367
+grid_cell_effective_max              3.69411477756367
+
+Move counters
+-------------
+two_opt_scans                    16465
+two_opt_improvements             134
+or_opt_scans                     86675
+or_opt_improvements              11
+sa_moves                         1800
+sa_accepted                      117
+subset_swap_scans                10188
+subset_swap_improvements         6
+highp_exchange_scans             0
+highp_exchange_improvements      0
+pair_exchange_scans              124806
+pair_exchange_improvements       4
+ruin_recreate_attempts           8
+ruin_recreate_improvements       1
+path_relink_attempts             6
+path_relink_feasible             6
+path_relink_best_improvements    1
+oracle_calls                     0
+oracle_improved                  0
+
+Result JSON: validation_runs/profile/profile.json

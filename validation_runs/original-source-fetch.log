@@ -1,0 +1,3 @@
+Attempted upstream fetch for true original-vs-current parity:
++ git ls-remote https://github.com/MatthiasIrlbeck/subset-selection-TSP.git
+fatal: unable to access 'https://github.com/MatthiasIrlbeck/subset-selection-TSP.git/': Could not resolve host: github.com

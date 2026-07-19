@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.20)
+project(aldous_tsp_consumer LANGUAGES CXX)
+find_package(aldous_tsp CONFIG REQUIRED)
+add_executable(consumer_smoke main.cpp)
+target_link_libraries(consumer_smoke PRIVATE aldous_tsp::core)

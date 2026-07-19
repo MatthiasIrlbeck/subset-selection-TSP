@@ -1,0 +1,51 @@
+Baseline compatibility mode: original
++ build-validation/aldous_tsp --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/original-compat/original-compat-tiny-grid.json --force --p-values 0.5,1.0 --knn-backend grid --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=12, instances=1, threads=1, seed=303, mode=balanced, knn=11, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=0, tsp_restarts=1, final_exhaustive_k=128, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.5,1
+========================================================================
+  [done 1/1] instance 1 in 0.00s  elapsed 0s  ETA 0s
+
+FINAL (N=12, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.5     6    0.66046    0.00000    0.66046    0.66046
+                   1    12    0.94645    0.00000    0.94645    0.94645
+Results written to validation_runs/original-compat/original-compat-tiny-grid.json
++ build-validation/aldous_tsp --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/original-compat/original-compat-tiny-bruteforce.json --force --p-values 0.5,1.0 --knn-backend bruteforce --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=12, instances=1, threads=1, seed=303, mode=balanced, knn=11, knn_backend=coords_exact_bruteforce_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=0, tsp_restarts=1, final_exhaustive_k=128, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.5,1
+========================================================================
+  [done 1/1] instance 1 in 0.00s  elapsed 0s  ETA 0s
+
+FINAL (N=12, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.5     6    0.66046    0.00000    0.66046    0.66046
+                   1    12    0.94645    0.00000    0.94645    0.94645
+Results written to validation_runs/original-compat/original-compat-tiny-bruteforce.json
++ build-validation/aldous_tsp --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/original-compat/original-compat-tiny-current-original-compatible.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=12, instances=1, threads=1, seed=303, mode=balanced, knn=11, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=0, tsp_restarts=1, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.02,0.029999999999999999,0.050000000000000003,0.070000000000000007,0.10000000000000001,0.14999999999999999,0.20000000000000001,0.25,0.29999999999999999,0.40000000000000002,0.5,0.59999999999999998,0.80000000000000004,1
+========================================================================
+  [done 1/1] instance 1 in 0.01s  elapsed 0s  ETA 0s
+
+FINAL (N=12, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                0.02     3    0.46245    0.00000    0.46245    0.46245
+                0.03     3    0.46245    0.00000    0.46245    0.46245
+                0.05     3    0.46245    0.00000    0.46245    0.46245
+                0.07     3    0.46245    0.00000    0.46245    0.46245
+                 0.1     3    0.46245    0.00000    0.46245    0.46245
+                0.15     3    0.46245    0.00000    0.46245    0.46245
+                 0.2     3    0.46245    0.00000    0.46245    0.46245
+                0.25     3    0.46245    0.00000    0.46245    0.46245
+                 0.3     4    0.60140    0.00000    0.60140    0.60140
+                 0.4     5    0.65026    0.00000    0.65026    0.65026
+                 0.5     6    0.66046    0.00000    0.66046    0.66046
+                 0.6     7    0.68090    0.00000    0.68090    0.68090
+                 0.8    10    0.91716    0.00000    0.91716    0.91716
+                   1    12    0.94645    0.00000    0.94645    0.94645
+Results written to validation_runs/original-compat/original-compat-tiny-current-original-compatible.json
++ tests/fake_original_cli.py --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/original-compat/original-compat-tiny-baseline-original.json --force
+Wrote validation_runs/original-compat/parity_manifest.csv

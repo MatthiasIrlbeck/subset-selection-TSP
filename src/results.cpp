@@ -1,0 +1,697 @@
+#include "aldous_tsp/results.hpp"
+
+#include <cstring>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#include <cpuid.h>
+#endif
+
+#include "aldous_tsp/version.hpp"
+
+#include "json_writer.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <numeric>
+#include <sstream>
+#include <thread>
+
+#ifndef ALDOUS_TSP_BUILD_TYPE
+#define ALDOUS_TSP_BUILD_TYPE "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_ENABLE_NATIVE
+#define ALDOUS_TSP_BUILD_ENABLE_NATIVE "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_ENABLE_SANITIZERS
+#define ALDOUS_TSP_BUILD_ENABLE_SANITIZERS "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_ENABLE_WARNINGS
+#define ALDOUS_TSP_BUILD_ENABLE_WARNINGS "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_ENABLE_WERROR
+#define ALDOUS_TSP_BUILD_ENABLE_WERROR "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_CXX_FLAGS
+#define ALDOUS_TSP_BUILD_CXX_FLAGS ""
+#endif
+#ifndef ALDOUS_TSP_BUILD_LOW_MEMORY
+#define ALDOUS_TSP_BUILD_LOW_MEMORY "unknown"
+#endif
+#ifndef ALDOUS_TSP_BUILD_SOURCE_COMPILE_OPTIONS
+#define ALDOUS_TSP_BUILD_SOURCE_COMPILE_OPTIONS ""
+#endif
+#ifndef ALDOUS_TSP_BUILD_TARGET_COMPILE_OPTIONS
+#define ALDOUS_TSP_BUILD_TARGET_COMPILE_OPTIONS ""
+#endif
+#ifndef ALDOUS_TSP_BUILD_EFFECTIVE_COMPILE_OPTIONS
+#define ALDOUS_TSP_BUILD_EFFECTIVE_COMPILE_OPTIONS ""
+#endif
+
+namespace aldous_tsp {
+
+std::string json_escape(const std::string& input) {
+    return json_escape_text(input);
+}
+
+std::string p_value_key(double p) {
+    std::ostringstream out;
+    out << std::setprecision(17) << p;
+    return out.str();
+}
+
+PValueSummary summarize_p_values(int N, double p, const std::vector<double>& values) {
+    PValueSummary s;
+    s.k = std::max(3, std::min(N, static_cast<int>(std::llround(p * static_cast<double>(N)))));
+    s.values = values;
+    if (values.empty()) {
+        return s;
+    }
+    s.mean = std::accumulate(values.begin(), values.end(), 0.0) / static_cast<double>(values.size());
+    double var = 0.0;
+    if (values.size() > 1U) {
+        for (double value : values) {
+            const double d = value - s.mean;
+            var += d * d;
+        }
+        var /= static_cast<double>(values.size() - 1U);
+    }
+    s.stddev = std::sqrt(var);
+    s.stderr_value = values.size() > 1U ? s.stddev / std::sqrt(static_cast<double>(values.size())) : 0.0;
+    const auto minmax = std::minmax_element(values.begin(), values.end());
+    s.min = *minmax.first;
+    s.max = *minmax.second;
+    return s;
+}
+
+namespace {
+
+std::string platform_string() {
+#if defined(__linux__)
+    return "linux";
+#elif defined(__APPLE__)
+    return "macos";
+#elif defined(_WIN32)
+    return "windows";
+#elif defined(__FreeBSD__)
+    return "freebsd";
+#else
+    return "unknown";
+#endif
+}
+
+std::string compiler_string() {
+    std::ostringstream oss;
+#if defined(__clang__)
+    oss << "Clang " << __clang_version__;
+#elif defined(__GNUC__)
+    oss << "GCC " << __VERSION__;
+#elif defined(_MSC_FULL_VER)
+    oss << "MSVC " << _MSC_FULL_VER;
+#else
+    oss << "unknown";
+#endif
+    oss << " (C++" << __cplusplus << ')';
+    return oss.str();
+}
+
+std::string trim_left(std::string value) {
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.erase(value.begin());
+    }
+    return value;
+}
+
+std::string cpuid_brand_string() {
+    // x86 processor brand string from CPUID leaves 0x80000002-0x80000004.
+    // Portable across MSVC and GCC/Clang; empty on non-x86 or unsupported.
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    int regs[4];
+    __cpuid(regs, static_cast<int>(0x80000000));
+    if (static_cast<unsigned>(regs[0]) < 0x80000004u) { return ""; }
+    char brand[49] = {0};
+    for (unsigned leaf = 0; leaf < 3; ++leaf) {
+        __cpuid(regs, static_cast<int>(0x80000002u + leaf));
+        std::memcpy(brand + leaf * 16U, regs, 16U);
+    }
+    std::string s(brand);
+#elif (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+    unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+    if (__get_cpuid(0x80000000u, &eax, &ebx, &ecx, &edx) == 0 || eax < 0x80000004u) { return ""; }
+    char brand[49] = {0};
+    for (unsigned leaf = 0; leaf < 3; ++leaf) {
+        __get_cpuid(0x80000002u + leaf, &eax, &ebx, &ecx, &edx);
+        std::memcpy(brand + leaf * 16U + 0U, &eax, 4U);
+        std::memcpy(brand + leaf * 16U + 4U, &ebx, 4U);
+        std::memcpy(brand + leaf * 16U + 8U, &ecx, 4U);
+        std::memcpy(brand + leaf * 16U + 12U, &edx, 4U);
+    }
+    std::string s(brand);
+#else
+    std::string s;
+#endif
+    // Collapse surrounding whitespace (brand strings are commonly padded).
+    const std::size_t first = s.find_first_not_of(" \t");
+    const std::size_t last = s.find_last_not_of(" \t\0");
+    if (first == std::string::npos) { return ""; }
+    return s.substr(first, last - first + 1U);
+}
+
+std::string cpu_model_string() {
+#if defined(__linux__)
+    std::ifstream in("/proc/cpuinfo");
+    std::string line;
+    while (std::getline(in, line)) {
+        for (const char* key : {"model name", "Hardware"}) {
+            const std::size_t key_len = std::char_traits<char>::length(key);
+            if (line.compare(0, key_len, key) == 0) {
+                const std::size_t colon = line.find(':');
+                if (colon != std::string::npos) {
+                    std::string value = trim_left(line.substr(colon + 1U));
+                    if (!value.empty()) {
+                        return value;
+                    }
+                }
+            }
+        }
+    }
+#endif
+    const std::string brand = cpuid_brand_string();
+    if (!brand.empty()) {
+        return brand;
+    }
+    return "unknown";
+}
+
+bool cmake_option_enabled(const char* value) {
+    const std::string text(value == nullptr ? "" : value);
+    return text == "ON" || text == "TRUE" || text == "1" || text == "YES";
+}
+
+void write_json_double(std::ostream& out, double value) {
+    JsonWriter(out).number(value);
+}
+
+void write_double_array(std::ostream& out, const std::vector<double>& values) {
+    JsonWriter(out).double_array(values);
+}
+
+template <typename ValueFn>
+void write_restart_double_array(std::ostream& out,
+                                const std::vector<RestartRecord>& records,
+                                ValueFn value_of) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        write_json_double(out, value_of(records[i]));
+    }
+    out << ']';
+}
+
+void write_restart_kind_array(std::ostream& out,
+                              const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << restart_kind_code(records[i].kind);
+    }
+    out << ']';
+}
+
+void write_restart_sweep_array(std::ostream& out,
+                               const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << restart_sweep_code(records[i].sweep);
+    }
+    out << ']';
+}
+
+std::string summary_key(double p) {
+    return p_value_key(p);
+}
+
+void write_stats(std::ostream& out, const SearchStats& stats, const std::string& indent) {
+    out << indent << "{\n"
+        << indent << "  \"tsp_restarts\": " << stats.tsp_restarts << ",\n"
+        << indent << "  \"tsp_ils_iterations\": " << stats.tsp_ils_iterations << ",\n"
+        << indent << "  \"subset_restarts\": " << stats.subset_restarts << ",\n"
+        << indent << "  \"smallp_seed_restarts\": " << stats.smallp_seed_restarts << ",\n"
+        << indent << "  \"highp_delete_restarts\": " << stats.highp_delete_restarts << ",\n"
+        << indent << "  \"warm_restarts\": " << stats.warm_restarts << ",\n"
+        << indent << "  \"random_restarts\": " << stats.random_restarts << ",\n"
+        << indent << "  \"region_restarts\": " << stats.region_restarts << ",\n"
+        << indent << "  \"dense_restarts\": " << stats.dense_restarts << ",\n"
+        << indent << "  \"elite_restarts\": " << stats.elite_restarts << ",\n"
+        << indent << "  \"kick_restarts\": " << stats.kick_restarts << ",\n"
+        << indent << "  \"two_opt_scans\": " << stats.two_opt_scans << ",\n"
+        << indent << "  \"two_opt_improvements\": " << stats.two_opt_improvements << ",\n"
+        << indent << "  \"or_opt_scans\": " << stats.or_opt_scans << ",\n"
+        << indent << "  \"or_opt_improvements\": " << stats.or_opt_improvements << ",\n"
+        << indent << "  \"sa_moves\": " << stats.sa_moves << ",\n"
+        << indent << "  \"sa_accepted\": " << stats.sa_accepted << ",\n"
+        << indent << "  \"sa_improving\": " << stats.sa_improving << ",\n"
+        << indent << "  \"subset_swap_scans\": " << stats.subset_swap_scans << ",\n"
+        << indent << "  \"subset_swap_improvements\": " << stats.subset_swap_improvements << ",\n"
+        << indent << "  \"highp_exchange_scans\": " << stats.highp_exchange_scans << ",\n"
+        << indent << "  \"highp_exchange_improvements\": " << stats.highp_exchange_improvements << ",\n"
+        << indent << "  \"pair_exchange_scans\": " << stats.pair_exchange_scans << ",\n"
+        << indent << "  \"pair_exchange_improvements\": " << stats.pair_exchange_improvements << ",\n"
+        << indent << "  \"ruin_recreate_attempts\": " << stats.ruin_recreate_attempts << ",\n"
+        << indent << "  \"ruin_recreate_improvements\": " << stats.ruin_recreate_improvements << ",\n"
+        << indent << "  \"path_relink_attempts\": " << stats.path_relink_attempts << ",\n"
+        << indent << "  \"path_relink_feasible\": " << stats.path_relink_feasible << ",\n"
+        << indent << "  \"path_relink_elite_insertions\": " << stats.path_relink_elite_insertions << ",\n"
+        << indent << "  \"path_relink_best_improvements\": " << stats.path_relink_best_improvements << ",\n"
+        << indent << "  \"path_relink_improvements\": " << stats.path_relink_improvements << ",\n";
+    out << indent << "  \"knn_build_seconds\": ";
+    write_json_double(out, stats.knn_build_seconds);
+    out << ",\n"
+        << indent << "  \"knn_requested_grid_instances\": " << stats.knn_requested_grid_instances << ",\n"
+        << indent << "  \"knn_requested_bruteforce_instances\": " << stats.knn_requested_bruteforce_instances << ",\n"
+        << indent << "  \"knn_effective_grid_instances\": " << stats.knn_effective_grid_instances << ",\n"
+        << indent << "  \"knn_effective_bruteforce_instances\": " << stats.knn_effective_bruteforce_instances << ",\n"
+        << indent << "  \"knn_bruteforce_fallback_instances\": " << stats.knn_bruteforce_fallback_instances << ",\n"
+        << indent << "  \"knn_grid_cell_capped_instances\": " << stats.knn_grid_cell_capped_instances << ",\n"
+        << indent << "  \"knn_grid_cell_samples\": " << stats.knn_grid_cell_samples << ",\n"
+        << indent << "  \"knn_grid_cells_max\": " << stats.knn_grid_cells_max << ",\n"
+        << indent << "  \"knn_grid_cells_sum\": " << stats.knn_grid_cells_sum << ",\n"
+        << indent << "  \"grid_cell_effective_min\": ";
+    write_json_double(out, stats.grid_cell_effective_min);
+    out << ",\n" << indent << "  \"grid_cell_effective_max\": ";
+    write_json_double(out, stats.grid_cell_effective_max);
+    out << ",\n" << indent << "  \"grid_cell_effective_sum\": ";
+    write_json_double(out, stats.grid_cell_effective_sum);
+    out << ",\n" << indent << "  \"tsp_seconds\": ";
+    write_json_double(out, stats.tsp_seconds);
+    out << ",\n" << indent << "  \"subset_seconds\": ";
+    write_json_double(out, stats.subset_seconds);
+    out << ",\n"
+        << indent << "  \"oracle_calls\": " << stats.oracle_calls << ",\n"
+        << indent << "  \"oracle_solved\": " << stats.oracle_solved << ",\n"
+        << indent << "  \"oracle_improved\": " << stats.oracle_improved << ",\n"
+        << indent << "  \"oracle_failed\": " << stats.oracle_failed << ",\n"
+        << indent << "  \"oracle_tsp_calls\": " << stats.oracle_tsp_calls << ",\n"
+        << indent << "  \"oracle_subset_calls\": " << stats.oracle_subset_calls << ",\n"
+        << indent << "  \"oracle_gain\": ";
+    write_json_double(out, stats.oracle_gain);
+    out << "\n" << indent << '}';
+}
+
+void write_oracle_call_records(std::ostream& out, const std::vector<OracleCallRecord>& records, const std::string& indent) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        const OracleCallRecord& r = records[i];
+        if (i != 0U) {
+            out << ',';
+        }
+        out << "\n" << indent << "  {\n"
+            << indent << "    \"type\": \"" << json_escape(r.type) << "\",\n"
+            << indent << "    \"k\": " << r.k << ",\n"
+            << indent << "    \"solver\": \"" << json_escape(r.solver) << "\",\n"
+            << indent << "    \"format\": \"" << json_escape(r.format) << "\",\n"
+            << indent << "    \"status\": \"" << json_escape(r.status) << "\",\n"
+            << indent << "    \"exec_path\": \"" << json_escape(r.exec_path) << "\",\n"
+            << indent << "    \"error\": \"" << json_escape(r.error) << "\",\n"
+            << indent << "    \"before_length\": ";
+        write_json_double(out, r.before_length);
+        out << ",\n" << indent << "    \"after_length\": ";
+        write_json_double(out, r.after_length);
+        out << ",\n" << indent << "    \"gain\": ";
+        write_json_double(out, r.gain);
+        out << ",\n" << indent << "    \"seconds\": ";
+        write_json_double(out, r.seconds);
+        out << "\n" << indent << "  }";
+    }
+    if (!records.empty()) {
+        out << '\n' << indent;
+    }
+    out << ']';
+}
+
+void write_knn_info(std::ostream& out, const KnnBuildInfo& info, const std::string& indent) {
+    out << indent << "{\n"
+        << indent << "  \"requested_backend\": \"" << knn_backend_name(info.requested_backend) << "\",\n"
+        << indent << "  \"effective_backend\": \"" << knn_backend_name(info.effective_backend) << "\",\n"
+        << indent << "  \"bruteforce_fallback\": " << (info.brute_force_fallback ? "true" : "false") << ",\n"
+        << indent << "  \"grid_cell_capped\": " << (info.grid_cell_capped ? "true" : "false") << ",\n"
+        << indent << "  \"requested_cell_size\": ";
+    write_json_double(out, info.requested_cell_size);
+    out << ",\n" << indent << "  \"effective_cell_size\": ";
+    write_json_double(out, info.effective_cell_size);
+    out << ",\n"
+        << indent << "  \"gx\": " << info.gx << ",\n"
+        << indent << "  \"gy\": " << info.gy << ",\n"
+        << indent << "  \"grid_cells\": " << info.grid_cells << ",\n"
+        << indent << "  \"coordinate_span\": ";
+    write_json_double(out, info.coordinate_span);
+    out << "\n" << indent << '}';
+}
+
+void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>& rows) {
+    out << '[';
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const InstanceResultRow& row = rows[i];
+        if (i != 0U) {
+            out << ',';
+        }
+        out << "\n    {\n"
+            << "      \"index\": " << row.index << ",\n"
+            << "      \"ok\": " << (row.ok ? "true" : "false") << ",\n"
+            << "      \"wall_seconds\": ";
+        write_json_double(out, row.wall_seconds);
+        out << ",\n      \"values\": ";
+        write_double_array(out, row.values);
+        if (row.full_bound >= 0.0) {
+            out << ",\n      \"full_bound\": ";
+            write_json_double(out, row.full_bound);
+        }
+        out << ",\n      \"p_results\": [";
+        for (std::size_t j = 0; j < row.p_results.size(); ++j) {
+            const InstancePValueRow& pv = row.p_results[j];
+            if (j != 0U) {
+                out << ',';
+            }
+            out << "\n        {\n"
+                << "          \"p\": ";
+            write_json_double(out, pv.p);
+            out << ",\n          \"key\": \"" << json_escape(pv.key) << "\",\n"
+                << "          \"k\": " << pv.k << ",\n"
+                << "          \"value\": ";
+            write_json_double(out, pv.value);
+            out << ",\n          \"best_restart\": " << pv.best_restart;
+            out << ",\n          \"executed_restarts\": " << pv.executed_restarts;
+            if (!pv.restarts.empty()) {
+                const double inv_k = 1.0 / static_cast<double>(pv.k);
+                out << ",\n          \"restart_values\": ";
+                write_restart_double_array(out, pv.restarts,
+                    [inv_k](const RestartRecord& record) { return record.length * inv_k; });
+                out << ",\n          \"restart_kinds\": ";
+                write_restart_kind_array(out, pv.restarts);
+                out << ",\n          \"restart_sweeps\": ";
+                write_restart_sweep_array(out, pv.restarts);
+                out << ",\n          \"restart_centroids_x\": ";
+                write_restart_double_array(out, pv.restarts,
+                    [](const RestartRecord& record) { return record.centroid_x; });
+                out << ",\n          \"restart_centroids_y\": ";
+                write_restart_double_array(out, pv.restarts,
+                    [](const RestartRecord& record) { return record.centroid_y; });
+                out << ",\n          \"restart_radii\": ";
+                write_restart_double_array(out, pv.restarts,
+                    [](const RestartRecord& record) { return record.radius; });
+            }
+            out << ",\n          \"solve_seconds\": ";
+            write_json_double(out, pv.solve_seconds);
+            if (pv.subset_bound >= 0.0) {
+                out << ",\n          \"subset_bound\": ";
+                write_json_double(out, pv.subset_bound);
+            }
+            if (pv.held_karp_bound >= 0.0) {
+                out << ",\n          \"held_karp_bound\": ";
+                write_json_double(out, pv.held_karp_bound);
+            }
+            out << "\n        }";
+        }
+        if (!row.p_results.empty()) {
+            out << '\n';
+        }
+        out << "      ],\n      \"knn_build\": ";
+        write_knn_info(out, row.knn_info, "      ");
+        out << ",\n      \"search_stats\": ";
+        write_stats(out, row.stats, "      ");
+        out << ",\n      \"oracle_call_records\": ";
+        write_oracle_call_records(out, row.stats.oracle_call_records, "      ");
+        out << "\n    }";
+    }
+    if (!rows.empty()) {
+        out << '\n';
+    }
+    out << "  ]";
+}
+
+} // namespace
+
+std::string results_to_json(const ResultsDocument& doc) {
+    std::ostringstream out;
+    out << "{\n"
+        << "  \"schema_version\": " << doc.schema_version << ",\n"
+        << "  \"run_metadata\": {\n"
+        << "    \"project_version\": \"" << json_escape(kProjectVersion) << "\",\n"
+        << "    \"git_commit\": \"" << json_escape(kGitCommit) << "\",\n"
+        << "    \"compiler\": \"" << json_escape(compiler_string()) << "\",\n"
+        << "    \"platform\": \"" << json_escape(platform_string()) << "\",\n"
+        << "    \"cpu_model\": \"" << json_escape(cpu_model_string()) << "\",\n"
+        << "    \"hardware_threads\": " << std::max(1U, std::thread::hardware_concurrency()) << "\n"
+        << "  },\n"
+        << "  \"build_metadata\": {\n"
+        << "    \"build_type\": \"" << json_escape(ALDOUS_TSP_BUILD_TYPE) << "\",\n"
+        << "    \"configured_build_type\": \"" << json_escape(kConfiguredBuildType) << "\",\n"
+        << "    \"cmake_generator\": \"" << json_escape(kCMakeGenerator) << "\",\n"
+        << "    \"cmake_version\": \"" << json_escape(kCMakeVersion) << "\",\n"
+        << "    \"enable_native\": " << (cmake_option_enabled(ALDOUS_TSP_BUILD_ENABLE_NATIVE) ? "true" : "false") << ",\n"
+        << "    \"enable_sanitizers\": " << (cmake_option_enabled(ALDOUS_TSP_BUILD_ENABLE_SANITIZERS) ? "true" : "false") << ",\n"
+        << "    \"enable_warnings\": " << (cmake_option_enabled(ALDOUS_TSP_BUILD_ENABLE_WARNINGS) ? "true" : "false") << ",\n"
+        << "    \"enable_werror\": " << (cmake_option_enabled(ALDOUS_TSP_BUILD_ENABLE_WERROR) ? "true" : "false") << ",\n"
+        << "    \"enable_python_tests\": " << (cmake_option_enabled(kBuildEnablePythonTests) ? "true" : "false") << ",\n"
+        << "    \"low_memory_build\": " << (cmake_option_enabled(kBuildLowMemory) ? "true" : "false") << ",\n"
+        << "    \"optimization_profile\": \"" << json_escape(kOptimizationProfile) << "\",\n"
+        << "    \"effective_optimization_level\": \"" << json_escape(kEffectiveOptimizationLevel) << "\",\n"
+        << "    \"cxx_flags\": \"" << json_escape(ALDOUS_TSP_BUILD_CXX_FLAGS) << "\",\n"
+        << "    \"cxx_flags_configured\": \"" << json_escape(kCxxFlagsConfigured) << "\",\n"
+        << "    \"cxx_flags_effective_configured\": \"" << json_escape(kCxxFlagsEffectiveConfigured) << "\",\n"
+        << "    \"core_target_compile_options\": \"" << json_escape(kCoreTargetCompileOptions) << "\",\n"
+        << "    \"cli_target_compile_options\": \"" << json_escape(kCliTargetCompileOptions) << "\",\n"
+        << "    \"source_compile_options\": \"" << json_escape(ALDOUS_TSP_BUILD_SOURCE_COMPILE_OPTIONS) << "\",\n"
+        << "    \"target_compile_options\": \"" << json_escape(ALDOUS_TSP_BUILD_TARGET_COMPILE_OPTIONS) << "\",\n"
+        << "    \"effective_compile_options\": \"" << json_escape(ALDOUS_TSP_BUILD_EFFECTIVE_COMPILE_OPTIONS) << "\",\n"
+        << "    \"cplusplus\": " << static_cast<long long>(__cplusplus) << "\n"
+        << "  },\n"
+        << "  \"N\": " << doc.N << ",\n"
+        << "  \"done\": " << doc.instances_done << ",\n"
+        << "  \"target\": " << doc.instances_target << ",\n";
+    if (doc.full_bound_expectation >= 0.0) {
+        out << "  \"full_bound_expectation\": ";
+        write_json_double(out, doc.full_bound_expectation);
+        out << ",\n  \"full_bound_expectation_stderr\": ";
+        write_json_double(out, doc.full_bound_expectation_stderr);
+        out << ",\n  \"full_bound_expectation_samples\": " << doc.full_bound_expectation_samples << ",\n";
+    }
+    out << "  \"threads\": " << doc.threads << ",\n"
+        << "  \"wall_seconds\": ";
+    write_json_double(out, doc.wall_seconds);
+    out << ",\n"
+        << "  \"mode\": \"" << solver_mode_name(doc.options.solver.mode) << "\",\n"
+        << "  \"distance_backend\": \"" << knn_backend_name(doc.options.solver.knn_backend) << "\",\n"
+        << "  \"oracle_status\": \"" << json_escape(doc.options.solver.oracle.status) << "\",\n"
+        << "  \"p_values\": ";
+    write_double_array(out, doc.p_values);
+    out << ",\n"
+        << "  \"config\": {\n"
+        << "    \"N\": " << doc.options.N << ",\n"
+        << "    \"instances\": " << doc.options.instances << ",\n"
+        << "    \"threads\": " << doc.options.threads << ",\n"
+        << "    \"include_instance_rows\": " << (doc.options.include_instance_rows ? "true" : "false") << ",\n"
+        << "    \"seed\": " << doc.options.solver.seed << ",\n"
+        << "    \"knn_k\": " << doc.options.solver.knn_k << ",\n"
+        << "    \"knn_backend\": \"" << knn_backend_name(doc.options.solver.knn_backend) << "\",\n"
+        << "    \"grid_cell\": ";
+    write_json_double(out, doc.options.solver.grid_cell);
+    out << ",\n"
+        << "    \"tsp_restarts\": " << doc.options.solver.tsp_restarts << ",\n"
+        << "    \"tsp_ils\": " << doc.options.solver.tsp_ils << ",\n"
+        << "    \"tsp_patience\": " << doc.options.solver.tsp_patience << ",\n"
+        << "    \"subset_restarts\": " << doc.options.solver.subset_restarts << ",\n"
+        << "    \"sa_iters\": " << doc.options.solver.sa_iters << ",\n"
+        << "    \"sa_iters_per_k\": " << doc.options.solver.sa_iters_per_k << ",\n"
+        << "    \"sa_iters_per_n\": " << doc.options.solver.sa_iters_per_n << ",\n"
+        << "    \"sa_exact_insertion\": " << (doc.options.solver.sa_exact_insertion ? "true" : "false") << ",\n"
+        << "    \"sa_insertion_window\": " << doc.options.solver.sa_insertion_window << ",\n"
+        << "    \"dense_exact_insertion\": " << (doc.options.solver.dense_exact_insertion ? "true" : "false") << ",\n"
+        << "    \"sa_spatial_insertion\": " << (doc.options.solver.sa_spatial_insertion ? "true" : "false") << ",\n"
+        << "    \"sa_spatial_neighbors\": " << doc.options.solver.sa_spatial_neighbors << ",\n"
+        << "    \"exploration_exact_insertion\": " << (doc.options.solver.exploration_exact_insertion ? "true" : "false") << ",\n"
+        << "    \"small_p_dense_fill\": " << (doc.options.solver.small_p_dense_fill ? "true" : "false") << ",\n"
+        << "    \"region_seeds\": " << (doc.options.solver.region_seeds ? "true" : "false") << ",\n"
+        << "    \"region_dilation\": ";
+    write_json_double(out, doc.options.solver.region_dilation);
+    out << ",\n"
+        << "    \"kick_restarts\": " << doc.options.solver.subset_kick_restarts << ",\n"
+        << "    \"kick_fraction\": ";
+    write_json_double(out, doc.options.solver.kick_fraction);
+    out << ",\n"
+        << "    \"kick_t0\": ";
+    write_json_double(out, doc.options.solver.kick_t0);
+    out << ",\n"
+        << "    \"sa_t0\": ";
+    write_json_double(out, doc.options.solver.sa_t0);
+    out << ",\n    \"sa_t1\": ";
+    write_json_double(out, doc.options.solver.sa_t1);
+    out << ",\n"
+        << "    \"time_budget_per_p\": ";
+    write_json_double(out, doc.options.solver.time_budget_per_p);
+    out << ",\n"
+        << "    \"restart_threads\": " << doc.options.solver.restart_threads << ",\n"
+        << "    \"second_sweep\": " << (doc.options.second_sweep ? "true" : "false") << ",\n"
+        << "    \"periodic\": " << (doc.options.periodic ? "true" : "false") << ",\n"
+        << "    \"control_variate\": " << (doc.options.control_variate ? "true" : "false") << ",\n"
+        << "    \"cv_mc_samples\": " << doc.options.cv_mc_samples << ",\n"
+        << "    \"held_karp\": " << (doc.options.held_karp ? "true" : "false") << ",\n"
+        << "    \"hk_iterations\": " << doc.options.hk_iterations << ",\n"
+        << "    \"final_exhaustive_k\": " << doc.options.solver.final_exhaustive_k << ",\n"
+        << "    \"exhaustive_two_opt_policy\": \"" << exhaustive_two_opt_policy_name(doc.options.solver.exhaustive_two_opt_policy) << "\",\n"
+        << "    \"subset_swap_descent_passes\": " << doc.options.solver.subset_swap_descent_passes << ",\n"
+        << "    \"pair_exchange_passes\": " << doc.options.solver.pair_exchange_passes << ",\n"
+        << "    \"ruin_recreate_rounds\": " << doc.options.solver.ruin_recreate_rounds << ",\n"
+        << "    \"path_relink_top\": " << doc.options.solver.path_relink_top << ",\n"
+        << "    \"verify_knn_checks\": " << doc.options.solver.verify_knn_checks << ",\n"
+        << "    \"oracle_mode\": \"" << external_oracle_mode_name(doc.options.solver.oracle.cfg.mode) << "\",\n"
+        << "    \"oracle_resolved\": \"" << resolved_oracle_mode_name(doc.options.solver.oracle.resolved) << "\",\n"
+        << "    \"oracle_exec_path\": \"" << json_escape(doc.options.solver.oracle.exec_path) << "\",\n"
+        << "    \"oracle_version\": \"" << json_escape(doc.options.solver.oracle.version) << "\",\n"
+        << "    \"oracle_format\": \"" << oracle_problem_format_name(doc.options.solver.oracle.cfg.problem_format) << "\",\n"
+        << "    \"oracle_time_limit_sec\": " << doc.options.solver.oracle.cfg.time_limit_sec << ",\n"
+        << "    \"oracle_scale\": " << doc.options.solver.oracle.cfg.scale << ",\n"
+        << "    \"oracle_min_k\": " << doc.options.solver.oracle.cfg.min_k << ",\n"
+        << "    \"oracle_max_k\": " << doc.options.solver.oracle.cfg.max_k << ",\n"
+        << "    \"oracle_lkh_runs\": " << doc.options.solver.oracle.cfg.lkh_runs << ",\n"
+        << "    \"oracle_lkh_max_trials\": " << doc.options.solver.oracle.cfg.lkh_max_trials << ",\n"
+        << "    \"oracle_tsp_top\": " << doc.options.solver.oracle.cfg.tsp_top << ",\n"
+        << "    \"oracle_subset_top\": " << doc.options.solver.oracle.cfg.subset_top << ",\n"
+        << "    \"disable_two_opt\": " << (doc.options.solver.disable_two_opt ? "true" : "false") << ",\n"
+        << "    \"disable_or_opt\": " << (doc.options.solver.disable_or_opt ? "true" : "false") << ",\n"
+        << "    \"disable_subset_swap\": " << (doc.options.solver.disable_subset_swap ? "true" : "false") << ",\n"
+        << "    \"disable_pair_exchange\": " << (doc.options.solver.disable_pair_exchange ? "true" : "false") << ",\n"
+        << "    \"disable_ruin_recreate\": " << (doc.options.solver.disable_ruin_recreate ? "true" : "false") << ",\n"
+        << "    \"disable_path_relink\": " << (doc.options.solver.disable_path_relink ? "true" : "false") << ",\n"
+        << "    \"disable_smallp_seeds\": " << (doc.options.solver.disable_smallp_seeds ? "true" : "false") << ",\n"
+        << "    \"disable_highp_delete\": " << (doc.options.solver.disable_highp_delete ? "true" : "false") << ",\n"
+        << "    \"oracle_use_for_tsp\": " << (doc.options.solver.oracle.cfg.use_for_tsp ? "true" : "false") << ",\n"
+        << "    \"oracle_use_for_subset\": " << (doc.options.solver.oracle.cfg.use_for_subset ? "true" : "false") << ",\n"
+        << "    \"oracle_inline_feedback\": " << (doc.options.solver.oracle.cfg.inline_feedback ? "true" : "false") << ",\n"
+        << "    \"oracle_verbose\": " << (doc.options.solver.oracle.cfg.verbose ? "true" : "false") << "\n"
+        << "  },\n"
+        << "  \"search_stats\": ";
+    write_stats(out, doc.stats, "  ");
+    out << ",\n  \"oracle_call_records\": ";
+    write_oracle_call_records(out, doc.stats.oracle_call_records, "  ");
+    out << ",\n  \"summary\": {\n";
+
+    bool first = true;
+    for (const auto& item : doc.summary) {
+        if (!first) {
+            out << ",\n";
+        }
+        first = false;
+        const PValueSummary& s = item.second;
+        out << "    \"" << json_escape(item.first) << "\": {\n"
+            << "      \"k\": " << s.k << ",\n"
+            << "      \"mean\": ";
+        write_json_double(out, s.mean);
+        out << ",\n      \"std\": ";
+        write_json_double(out, s.stddev);
+        out << ",\n      \"stderr\": ";
+        write_json_double(out, s.stderr_value);
+        out << ",\n      \"min\": ";
+        write_json_double(out, s.min);
+        out << ",\n      \"max\": ";
+        write_json_double(out, s.max);
+        out << ",\n      \"n\": " << s.values.size() << ",\n      \"values\": ";
+        write_double_array(out, s.values);
+        out << "\n    }";
+    }
+    out << "\n  },\n  \"summary_rows\": [\n";
+    bool first_row = true;
+    for (std::size_t pi = 0; pi < doc.p_values.size(); ++pi) {
+        const double p_value = doc.p_values[pi];
+        const auto found = doc.summary.find(summary_key(p_value));
+        if (found == doc.summary.end()) {
+            continue;
+        }
+        if (!first_row) {
+            out << ",\n";
+        }
+        first_row = false;
+        const PValueSummary& s = found->second;
+        out << "    {\n      \"p\": ";
+        write_json_double(out, p_value);
+        out << ",\n      \"key\": \"" << json_escape(found->first) << "\",\n"
+            << "      \"k\": " << s.k << ",\n      \"mean\": ";
+        write_json_double(out, s.mean);
+        out << ",\n      \"std\": ";
+        write_json_double(out, s.stddev);
+        out << ",\n      \"stderr\": ";
+        write_json_double(out, s.stderr_value);
+        out << ",\n      \"min\": ";
+        write_json_double(out, s.min);
+        out << ",\n      \"max\": ";
+        write_json_double(out, s.max);
+        out << ",\n      \"best_restart_max\": " << s.best_restart_max;
+        out << ",\n      \"executed_restarts_max\": " << s.executed_restarts_max;
+        out << ",\n      \"solve_seconds_total\": ";
+        write_json_double(out, s.solve_seconds_total);
+        if (s.has_control_variate) {
+            out << ",\n      \"subset_bound_mean\": ";
+            write_json_double(out, s.subset_bound_mean);
+            out << ",\n      \"lower_bound_gap_mean\": ";
+            write_json_double(out, s.lower_bound_gap_mean);
+            out << ",\n      \"cv_mean\": ";
+            write_json_double(out, s.cv_mean);
+            out << ",\n      \"cv_stderr\": ";
+            write_json_double(out, s.cv_stderr);
+            out << ",\n      \"cv_variance_reduction\": ";
+            write_json_double(out, s.cv_variance_reduction);
+        }
+        if (s.has_held_karp) {
+            out << ",\n      \"held_karp_bound_mean\": ";
+            write_json_double(out, s.held_karp_bound_mean);
+            out << ",\n      \"held_karp_gap_mean\": ";
+            write_json_double(out, s.held_karp_gap_mean);
+        }
+        out << ",\n      \"n\": " << s.values.size() << ",\n      \"values\": ";
+        write_double_array(out, s.values);
+        out << "\n    }";
+    }
+    out << "\n  ],\n  \"instance_rows\": ";
+    write_instance_rows(out, doc.instance_rows);
+    out << "\n}\n";
+    return out.str();
+}
+
+bool write_text_file_atomic(const std::string& path, const std::string& text, std::string* error) {
+    namespace fs = std::filesystem;
+    const fs::path target(path);
+    const fs::path tmp = target.string() + ".tmp";
+    {
+        std::ofstream file(tmp, std::ios::binary);
+        if (!file) {
+            if (error != nullptr) {
+                *error = "failed to open temporary file: " + tmp.string();
+            }
+            return false;
+        }
+        file << text;
+        if (!file.good()) {
+            if (error != nullptr) {
+                *error = "failed to write temporary file: " + tmp.string();
+            }
+            return false;
+        }
+    }
+    std::error_code ec;
+    fs::rename(tmp, target, ec);
+    if (ec) {
+        fs::remove(tmp);
+        if (error != nullptr) {
+            *error = "failed to rename temporary file to output: " + ec.message();
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace aldous_tsp

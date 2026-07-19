@@ -1,0 +1,32 @@
++ build-validation/aldous_tsp --mode hybrid --N 72 --instances 1 --threads 1 --p-values 0.25,1.0 --seed 2024 --restarts 1 --sa-iters 20 --tsp-restarts 1 --tsp-ils 4 --tsp-patience 8 --final-exhaustive-k 96 --exhaustive-two-opt-policy final-only --output validation_runs/exhaustive-policy/final-only.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=72, instances=1, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=20, tsp_restarts=1, final_exhaustive_k=96, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.25,1
+========================================================================
+  [done 1/1] instance 1 in 0.03s  elapsed 0s  ETA 0s
+
+FINAL (N=72, instances=1, wall=0.1s)
+                   p     k       mean     stderr        min        max
+                0.25    18    0.89600    0.00000    0.89600    0.89600
+                   1    72    0.84269    0.00000    0.84269    0.84269
+Results written to validation_runs/exhaustive-policy/final-only.json
++ build-validation/aldous_tsp --mode hybrid --N 72 --instances 1 --threads 1 --p-values 0.25,1.0 --seed 2024 --restarts 1 --sa-iters 20 --tsp-restarts 1 --tsp-ils 4 --tsp-patience 8 --final-exhaustive-k 96 --exhaustive-two-opt-policy all-polish --output validation_runs/exhaustive-policy/all-polish.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=72, instances=1, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=1, sa_iters=20, tsp_restarts=1, final_exhaustive_k=96, exhaustive_two_opt_policy=all-polish, oracle=disabled, p_values=0.25,1
+========================================================================
+  [done 1/1] instance 1 in 0.03s  elapsed 0s  ETA 0s
+
+FINAL (N=72, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                0.25    18    0.89600    0.00000    0.89600    0.89600
+                   1    72    0.84269    0.00000    0.84269    0.84269
+Results written to validation_runs/exhaustive-policy/all-polish.json
+
+Policy comparison
+-----------------
+final-only scans : 4679
+all-polish scans : 101578
+scan reduction   : 96899
+quality delta    : 0 (final-only minus all-polish best mean)
+manifest         : validation_runs/exhaustive-policy/manifest.csv

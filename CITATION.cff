@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this repository in research, please cite it."
+title: "Aldous subset-selection TSP"
+authors:
+  - family-names: "Irlbeck"
+    given-names: "Matthias"
+version: 0.8.7
+repository-code: "https://github.com/MatthiasIrlbeck/subset-selection-TSP"
+license: MIT

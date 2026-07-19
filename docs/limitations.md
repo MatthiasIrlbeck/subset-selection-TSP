@@ -1,0 +1,28 @@
+# Limitations
+
+- The solver is heuristic and does not certify global subset optimality.
+- **There is no plateau to find at small p.** Paired allocation scans at k=2000 (B=960, B=1920, 24 instances) show anneals converge by ~60 iterations/candidate, after which the search is pure independent multistart: doubling restarts buys a constant −0.0025 and doubling depth buys nothing (−0.0001 ± 0.0009). Reported small-p values are therefore best-of-m upper bounds that crawl logarithmically with budget, not converged estimates. Interpreting them requires extrapolating the restart-value distribution (see `restart_values` in the result schema), not running a longer ladder.
+- Per-restart values are a **mixture** across seed kinds, not iid draws from one distribution. Secondary-sweep draws are also warm-start dependent. Any tail fit must filter or stratify by both `restart_kinds` and `restart_sweeps`, or it is fitting a contaminated and potentially dependent sample.
+- The internal high-performance heuristic stack is restored in the cleaner structure. Internal grid/brute-force backend parity is automated; original-prototype parity still requires a supplied baseline executable and should be run before using results in a paper or report.
+- Optional LKH/Concorde post-processing is integrated, but external solver behavior depends on the installed binary, TSPLIB interpretation, timeout settings, and integer scaling.
+- Oracle statistics are aggregate counts and gain totals; individual per-call failure reasons are not serialized yet.
+- The JSON schema validates structure, not scientific adequacy of sample sizes.
+- Large runs should report seeds, p-grids, KNN backend, oracle mode, all solver budgets, and ablation settings.
+
+## Results at small k do not transfer to k=2000
+
+The 0.9.5 exploration-seed insertion fix measured -0.0109 (3.5 sigma) at k=200 and does
+exactly nothing at k=2000, where the windowed and spatial kernels produce bit-identical
+searches and the exact scan returns the same answer at +58% wall. The mechanism is scale:
+the +/-12 insertion window covers 25% of a k=100 tour, 12% of a k=200 tour, and 1.25% of a
+k=2000 tour, and the candidates are spatially local to the removal site in every case.
+Sandbox A/Bs at k=100-200 resolve ~0.005-0.007 and are the wrong instrument for a k=2000
+default. Any policy claim for the production scale must be measured AT the production
+scale.
+
+## The insertion kernel is not the bottleneck
+
+At k=2000 insertion is ~5% of wall. Subset-swap descent is 28%, and buys ~0.0004 in a
+single-instance probe (it needs a paired test before anyone removes it). Ruin-recreate and
+path relinking are both ~free and, at this scale, contribute ~nothing. 2-opt is essential
+(disabling it costs 0.054 in L/k).

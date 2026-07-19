@@ -1,0 +1,11 @@
+// name, stable integer code, stable JSON/CLI label
+ALDOUS_TSP_RESTART_KIND(Random, 0, "random")
+ALDOUS_TSP_RESTART_KIND(Warm, 1, "warm")
+ALDOUS_TSP_RESTART_KIND(SmallP, 2, "small-p")
+ALDOUS_TSP_RESTART_KIND(HighPDelete, 3, "high-p-delete")
+ALDOUS_TSP_RESTART_KIND(Elite, 4, "elite")
+ALDOUS_TSP_RESTART_KIND(Kick, 5, "kick")
+ALDOUS_TSP_RESTART_KIND(Region, 6, "region")
+ALDOUS_TSP_RESTART_KIND(Dense, 7, "dense")
+ALDOUS_TSP_RESTART_KIND(TspFarthestInsertion, 8, "tsp-farthest-insertion")
+ALDOUS_TSP_RESTART_KIND(TspNearestNeighbor, 9, "tsp-nearest-neighbor")

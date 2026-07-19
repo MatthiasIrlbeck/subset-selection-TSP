@@ -1,0 +1,3 @@
+policy,output,wall_seconds,best_mean,two_opt_scans,two_opt_improvements,or_opt_scans,knn_build_seconds,tsp_seconds,subset_seconds
+final-only,validation_runs/exhaustive-policy/final-only.json,0.062766201,0.8426889930404778,4679,19,27038,0.000200688,0.001089859,0.028416259
+all-polish,validation_runs/exhaustive-policy/all-polish.json,0.027298176,0.8426889930404778,101578,53,70128,0.000154787,0.000940062,0.024950494

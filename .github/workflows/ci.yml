@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc-release
+            cc: gcc
+            cxx: g++
+            build_type: Release
+            sanitizer: OFF
+            packages: ninja-build g++ python3-jsonschema
+            python_tests: ON
+          - name: clang-release
+            cc: clang
+            cxx: clang++
+            build_type: Release
+            sanitizer: OFF
+            packages: ninja-build clang python3-jsonschema
+            python_tests: ON
+          - name: clang-debug-asan-ubsan
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+            sanitizer: ON
+            packages: ninja-build clang python3-jsonschema
+            python_tests: ON
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }} python3 python3-matplotlib
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBUILD_TESTING=ON
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_WERROR=ON
+          -DALDOUS_TSP_ENABLE_SANITIZERS=${{ matrix.sanitizer }}
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=${{ matrix.python_tests }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure
+      - name: Low-memory build smoke
+        if: matrix.sanitizer == 'OFF'
+        run: |
+          cmake -S . -B build-low-memory -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON \
+            -DALDOUS_TSP_LOW_MEMORY_BUILD=ON
+          cmake --build build-low-memory --target aldous_tsp --parallel
+          ./build-low-memory/aldous_tsp --dry-run --N 12 --instances 1 --p-values 1.0 --threads 1
+
+      - name: Install package smoke
+        if: matrix.sanitizer == 'OFF'
+        run: |
+          cmake --install build --prefix install-tree
+          mkdir -p consumer-smoke
+          cat > consumer-smoke/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.20)
+          project(consumer_smoke LANGUAGES CXX)
+          find_package(aldous_tsp CONFIG REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE aldous_tsp::core)
+          EOF
+          cat > consumer-smoke/main.cpp <<'EOF'
+          #include "aldous_tsp/instance.hpp"
+          int main(){ aldous_tsp::Instance inst; inst.set_points({{0,0},{1,0},{0,1}}); inst.build_knn(2); return inst.N == 3 ? 0 : 1; }
+          EOF
+          cmake -S consumer-smoke -B consumer-smoke/build -G Ninja -DCMAKE_PREFIX_PATH=$PWD/install-tree
+          cmake --build consumer-smoke/build
+          ./consumer-smoke/build/consumer
+      - name: Plot smoke output
+        if: matrix.sanitizer == 'OFF'
+        run: python3 scripts/plot_results.py build/quick-smoke.json -o build/quick-smoke.png
+
+  # Portability jobs. These are marked non-blocking (continue-on-error) until
+  # they have been observed green on real runners; flip them to blocking once
+  # verified. The Windows job exercises the MSVC build that the
+  # SummaryRow::stderr -> stderr_value rename unblocked (stderr is a macro in
+  # MSVC's <cstdio>).
+  macos:
+    name: macos-appleclang-release
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packages
+        run: |
+          brew install ninja
+          python3 -m pip install --break-system-packages jsonschema
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows-msvc:
+    name: windows-msvc-release
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build
+          -DBUILD_TESTING=ON
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=OFF
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

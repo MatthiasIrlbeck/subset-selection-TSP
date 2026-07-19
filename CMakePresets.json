@@ -1,0 +1,117 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release",
+      "generator": "Ninja",
+      "binaryDir": "build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "generator": "Ninja",
+      "binaryDir": "build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "debug-asan",
+      "displayName": "Debug with ASan/UBSan",
+      "generator": "Ninja",
+      "binaryDir": "build/debug-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "ALDOUS_TSP_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "release-regression",
+      "displayName": "Release with Python regressions",
+      "generator": "Ninja",
+      "binaryDir": "build/release-regression",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "ALDOUS_TSP_ENABLE_PYTHON_TESTS": "ON"
+      }
+    },
+    {
+      "name": "release-low-memory",
+      "displayName": "Release low-memory compiler profile",
+      "generator": "Ninja",
+      "binaryDir": "build/release-low-memory",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "ALDOUS_TSP_LOW_MEMORY_BUILD": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan"
+    },
+    {
+      "name": "release-regression",
+      "configurePreset": "release-regression"
+    },
+    {
+      "name": "release-low-memory",
+      "configurePreset": "release-low-memory"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-regression",
+      "configurePreset": "release-regression",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-low-memory",
+      "configurePreset": "release-low-memory",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
