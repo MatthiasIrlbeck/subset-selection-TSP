@@ -379,6 +379,27 @@
             "fixed-budget"
           ]
         },
+        "racing_candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Supplemental restart candidates screened by deterministic racing; 0 disables racing."
+        },
+        "racing_survivors": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of pilot candidates promoted to a full-depth rerun."
+        },
+        "racing_pilot_iters": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "SA iterations per race pilot, capped by the effective full restart budget."
+        },
+        "racing_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred minimum selected-set Jaccard distance between promoted candidates."
+        },
         "sa_iters": {
           "type": "integer",
           "minimum": 0
@@ -691,6 +712,16 @@
         },
         "dense_restarts": {
           "description": "Executed subset restarts whose final kind is dense.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "racing_pilot_restarts": {
+          "description": "Unique raced candidates that received the fixed screening pilot.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "racing_promoted_restarts": {
+          "description": "Raced candidates promoted to a full-depth rerun after screening.",
           "type": "integer",
           "minimum": 0
         },
@@ -1233,6 +1264,27 @@
         "restart_variants": {
           "type": "array",
           "description": "Stable zero-based seed variant within each restart kind and role.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "restart_promotion_stages": {
+          "type": "array",
+          "description": "Restart racing stage: 0=ordinary, 1=pilot-only, 2=promoted full-depth outcome.",
+          "x-enumNames": [
+            "none",
+            "pilot-only",
+            "promoted-full"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [0, 1, 2]
+          }
+        },
+        "restart_sa_iterations": {
+          "type": "array",
+          "description": "Actual SA iterations allocated to each recorded candidate. Promoted race entries include pilot plus full-depth rerun work.",
           "items": {
             "type": "integer",
             "minimum": 0

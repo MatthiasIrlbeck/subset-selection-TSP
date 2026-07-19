@@ -226,6 +226,14 @@ Solver:
   --continuation-policy <name>   supplemental | fixed-budget (default: supplemental).
                                  Supplemental appends warm work without replacing
                                  independent draws; fixed-budget reserves a quota.
+  --racing-candidates <int>      Supplemental candidates screened by deterministic
+                                 restart racing (default: 0 = disabled)
+  --racing-survivors <int>       Pilot candidates promoted to a full-depth rerun
+                                 (default: 2)
+  --racing-pilot-iters <int>     SA iterations used to screen each race candidate;
+                                 capped at the full restart budget (default: 2000)
+  --racing-min-jaccard <float>   Minimum selected-set Jaccard distance preferred
+                                 between promoted candidates (default: 0.05)
   --sa-iters <int>               Subset SA iteration budget (default: 60000)
   --sa-iters-per-k <int>         Extra SA iterations per subset element k (default: 0)
   --sa-iters-per-n <int>         Extra SA iterations per CANDIDATE point N (default: 0).
@@ -347,6 +355,10 @@ std::string config_summary(const RunOptions& opt) {
         << ", subset_restarts=" << (opt.solver.subset_restarts >= 1 ? std::to_string(opt.solver.subset_restarts) : std::string("auto"))
         << ", continuation_restarts=" << opt.solver.continuation_restarts
         << ", continuation_policy=" << continuation_policy_name(opt.solver.continuation_policy)
+        << ", racing_candidates=" << opt.solver.racing_candidates
+        << ", racing_survivors=" << opt.solver.racing_survivors
+        << ", racing_pilot_iters=" << opt.solver.racing_pilot_iters
+        << ", racing_min_jaccard=" << opt.solver.racing_min_jaccard
         << ", sa_iters=" << opt.solver.sa_iters
         << ", sa_iters_per_k=" << opt.solver.sa_iters_per_k
         << ", sa_iters_per_n=" << opt.solver.sa_iters_per_n
@@ -395,6 +407,20 @@ bool validate_options(RunOptions& opt, std::string& err) {
     if (opt.instances < 1) { err = "--instances must be >= 1"; return false; }
     if (opt.solver.subset_restarts < 1 && opt.solver.subset_restarts != -1) { err = "--restarts must be >= 1 (or omit it for auto)"; return false; }
     if (opt.solver.continuation_restarts < 0) { err = "--continuation-restarts must be >= 0"; return false; }
+    if (opt.solver.racing_candidates < 0) { err = "--racing-candidates must be >= 0"; return false; }
+    if (opt.solver.racing_survivors < 1) { err = "--racing-survivors must be >= 1"; return false; }
+    if (opt.solver.racing_candidates > 0
+        && opt.solver.racing_survivors > opt.solver.racing_candidates) {
+        err = "--racing-survivors must not exceed --racing-candidates";
+        return false;
+    }
+    if (opt.solver.racing_pilot_iters < 0) { err = "--racing-pilot-iters must be >= 0"; return false; }
+    if (!std::isfinite(opt.solver.racing_min_jaccard)
+        || opt.solver.racing_min_jaccard < 0.0
+        || opt.solver.racing_min_jaccard > 1.0) {
+        err = "--racing-min-jaccard must be finite and in [0,1]";
+        return false;
+    }
     if (opt.solver.tsp_restarts < 1) { err = "--tsp-restarts must be >= 1"; return false; }
     if (opt.solver.sa_iters < 0) { err = "--sa-iters must be >= 0"; return false; }
     if (opt.solver.sa_iters_per_k < 0) { err = "--sa-iters-per-k must be >= 0"; return false; }
@@ -408,6 +434,10 @@ bool validate_options(RunOptions& opt, std::string& err) {
     if (opt.solver.sa_t0 <= 0.0 || !std::isfinite(opt.solver.sa_t0)) { err = "--sa-t0 must be finite and > 0"; return false; }
     if (opt.solver.sa_t1 <= 0.0 || !std::isfinite(opt.solver.sa_t1)) { err = "--sa-t1 must be finite and > 0"; return false; }
     if (opt.solver.time_budget_per_p < 0.0 || !std::isfinite(opt.solver.time_budget_per_p)) { err = "--time-budget-per-p must be finite and >= 0"; return false; }
+    if (opt.solver.racing_candidates > 0 && opt.solver.time_budget_per_p > 0.0) {
+        err = "deterministic restart racing is incompatible with --time-budget-per-p";
+        return false;
+    }
     if (opt.solver.restart_threads < 0) { err = "--restart-threads must be >= 0"; return false; }
     if (opt.solver.final_exhaustive_k < 0) { err = "--final-exhaustive-k must be >= 0"; return false; }
     if (opt.solver.subset_swap_descent_passes < 0) { err = "--subset-swap-passes must be >= 0"; return false; }
@@ -600,6 +630,28 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             if (!value_for(i, flag, value)) { return false; }
             if (!parse_continuation_policy(value, opt.solver.continuation_policy)) {
                 std::fprintf(stderr, "Invalid --continuation-policy: %s\n", value.c_str());
+                return false;
+            }
+            continue;
+        }
+        if (flag == "--racing-candidates") {
+            if (!parse_int_flag(i, flag, opt.solver.racing_candidates)) { return false; }
+            continue;
+        }
+        if (flag == "--racing-survivors") {
+            if (!parse_int_flag(i, flag, opt.solver.racing_survivors)) { return false; }
+            continue;
+        }
+        if (flag == "--racing-pilot-iters") {
+            if (!parse_int_flag(i, flag, opt.solver.racing_pilot_iters)) { return false; }
+            continue;
+        }
+        if (flag == "--racing-min-jaccard") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.racing_min_jaccard)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n",
+                             flag.c_str(), value.c_str());
                 return false;
             }
             continue;

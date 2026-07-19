@@ -39,6 +39,7 @@ def main() -> int:
         DEFAULT_KINDS,
         DEFAULT_SWEEPS,
         KIND_NAMES,
+        PROMOTION_STAGE_NAMES,
         SWEEP_NAMES,
         load_restart_kinds,
     )
@@ -47,6 +48,7 @@ def main() -> int:
     restart_properties = schema["$defs"]["instance_p_value_row"]["properties"]
     schema_kind_property = restart_properties["restart_kinds"]
     schema_sweep_property = restart_properties["restart_sweeps"]
+    schema_promotion_property = restart_properties["restart_promotion_stages"]
     assert restart_properties["restart_values"]["items"].get("minimum") == 0
     assert "exclusiveMinimum" not in restart_properties["restart_values"]["items"]
     schema_kinds = schema_kind_property["items"]["enum"]
@@ -56,6 +58,8 @@ def main() -> int:
     assert schema_kind_property["x-enumNames"] == list(shared_kinds.values())
     assert schema_sweep_property["items"]["enum"] == list(DEFAULT_SWEEPS)
     assert schema_sweep_property["x-enumNames"] == list(SWEEP_NAMES.values())
+    assert schema_promotion_property["items"]["enum"] == list(PROMOTION_STAGE_NAMES)
+    assert schema_promotion_property["x-enumNames"] == list(PROMOTION_STAGE_NAMES.values())
     errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc), key=lambda e: list(e.path))
     if errors:
         for error in errors:
@@ -80,17 +84,26 @@ def main() -> int:
             p_row["restart_values"],
             p_row["restart_kinds"],
             p_row["restart_sweeps"],
+            p_row["restart_roles"],
+            p_row["restart_variants"],
+            p_row["restart_promotion_stages"],
+            p_row["restart_sa_iterations"],
             p_row["restart_centroids_x"],
             p_row["restart_centroids_y"],
             p_row["restart_radii"],
         ]
         assert all(len(values) == p_row["executed_restarts"] for values in arrays), p_row
+        assert p_row["restart_promotion_stages"] == [0] * p_row["executed_restarts"], p_row
         assert 0 <= p_row["best_restart"] < p_row["executed_restarts"], p_row
         if p_row["k"] == doc["N"]:
             assert p_row["restart_kinds"] == [8, 9], p_row
             assert p_row["restart_sweeps"] == [0, 0], p_row
         elif index > 0:
-            assert p_row["restart_sweeps"] == [0, 1], p_row
+            # Continuation is supplemental: all primary records precede the
+            # single secondary-sweep continuation record in this smoke run.
+            assert p_row["restart_sweeps"][-1] == 1, p_row
+            assert all(code == 0 for code in p_row["restart_sweeps"][:-1]), p_row
+            assert p_row["restart_roles"][-1] == 1, p_row
     assert all("p" in row and "key" in row for row in doc["summary_rows"]), doc["summary_rows"]
     assert "knn_build_seconds" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["knn_requested_grid_instances"] == 1, doc["search_stats"]
@@ -101,7 +114,13 @@ def main() -> int:
     assert "region_restarts" in doc["search_stats"], doc["search_stats"]
     assert "dense_restarts" in doc["search_stats"], doc["search_stats"]
     assert doc["config"]["pair_exchange_max_k"] == 5000, doc["config"]
+    assert doc["config"]["racing_candidates"] == 0, doc["config"]
+    assert doc["config"]["racing_survivors"] == 2, doc["config"]
+    assert doc["config"]["racing_pilot_iters"] == 2000, doc["config"]
+    assert doc["config"]["racing_min_jaccard"] == 0.05, doc["config"]
     assert "pair_exchange_skipped_large_k" in doc["search_stats"], doc["search_stats"]
+    assert doc["search_stats"]["racing_pilot_restarts"] == 0, doc["search_stats"]
+    assert doc["search_stats"]["racing_promoted_restarts"] == 0, doc["search_stats"]
     phases = doc["search_stats"]["phase_timing"]
     expected_phase_fields = {
         "seed_construction_seconds", "tsp_construction_seconds",

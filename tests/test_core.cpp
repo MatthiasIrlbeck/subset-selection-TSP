@@ -70,6 +70,11 @@ void test_restart_kind_metadata() {
                 && restart_role_code(RestartRole::RacedProduction) == 4
                 && is_valid_restart_role_code(3),
             "restart role codes stay stable");
+    require(restart_promotion_stage_code(RestartPromotionStage::None) == 0
+                && restart_promotion_stage_code(RestartPromotionStage::PilotOnly) == 1
+                && restart_promotion_stage_code(RestartPromotionStage::PromotedFull) == 2
+                && is_valid_restart_promotion_stage_code(2),
+            "restart promotion-stage codes stay stable");
 }
 
 void test_search_phase_timing_add() {
@@ -96,10 +101,15 @@ void test_search_phase_timing_add() {
     SearchStats aggregate;
     SearchStats part;
     part.pair_exchange_skipped_large_k = 3;
+    part.racing_pilot_restarts = 2;
+    part.racing_promoted_restarts = 1;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
             "pair-exchange gate telemetry accumulates across workers");
+    require(aggregate.racing_pilot_restarts == 4
+                && aggregate.racing_promoted_restarts == 2,
+            "restart-racing telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -1445,6 +1455,9 @@ void test_restart_value_logging() {
                 "every restart kind is defined by shared metadata");
         require(record.sweep == RestartSweep::Primary,
                 "standalone solves label records as primary");
+        require(record.promotion_stage == RestartPromotionStage::None
+                    && record.sa_iterations == 0,
+                "ordinary zero-SA records expose their stage and exact budget");
         require(std::isfinite(record.centroid_x) && std::isfinite(record.centroid_y)
                     && std::isfinite(record.radius) && record.radius >= 0.0,
                 "restart geometry is finite");
@@ -1897,6 +1910,8 @@ void test_restart_thread_invariance() {
                     && a.restarts[i].kind == b.restarts[i].kind
                     && a.restarts[i].role == b.restarts[i].role
                     && a.restarts[i].seed_variant == b.restarts[i].seed_variant
+                    && a.restarts[i].promotion_stage == b.restarts[i].promotion_stage
+                    && a.restarts[i].sa_iterations == b.restarts[i].sa_iterations
                     && a.restarts[i].centroid_x == b.restarts[i].centroid_x
                     && a.restarts[i].centroid_y == b.restarts[i].centroid_y
                     && a.restarts[i].radius == b.restarts[i].radius,
@@ -2220,6 +2235,123 @@ void test_continuation_stream_contract() {
                 && count_role(supplemental, RestartRole::IndependentDiagnostic) == 4
                 && count_role(supplemental, RestartRole::Continuation) == 1,
             "supplemental continuation preserves every independent draw");
+}
+
+void test_deterministic_restart_racing() {
+    Rng point_rng(515151);
+    Instance inst;
+    inst.periodic = true;
+    inst.generate(128, point_rng);
+    inst.build_knn(20, KnnBackend::GridExact);
+
+    SolverOptions base;
+    base.subset_restarts = 3;
+    base.continuation_restarts = 0;
+    base.sa_iters = 80;
+    base.restart_threads = 1;
+    base.final_exhaustive_k = 0;
+    base.disable_or_opt = true;
+    base.disable_subset_swap = true;
+    base.disable_pair_exchange = true;
+    base.disable_ruin_recreate = true;
+    base.disable_path_relink = true;
+
+    Rng base_rng(616161);
+    const SolveResult baseline = solve_subset(inst, 48, base_rng, base);
+
+    SolverOptions raced = base;
+    raced.racing_candidates = 6;
+    raced.racing_survivors = 2;
+    raced.racing_pilot_iters = 15;
+    raced.racing_min_jaccard = 0.05;
+    Rng raced_rng(616161);
+    const SolveResult one_thread = solve_subset(inst, 48, raced_rng, raced);
+
+    require(one_thread.restarts.size() == 9U
+                && one_thread.stats.subset_restarts == 9,
+            "racing appends one final record per unique pilot candidate");
+    require(one_thread.stats.racing_pilot_restarts == 6
+                && one_thread.stats.racing_promoted_restarts == 2,
+            "racing exposes exact pilot and promotion counts");
+    require(one_thread.tour.length <= baseline.tour.length + 1e-12,
+            "supplemental racing cannot worsen the independent result");
+
+    require(baseline.restarts.size() == 3U, "baseline has its independent quota");
+    for (std::size_t i = 0; i < baseline.restarts.size(); ++i) {
+        const RestartRecord& a = baseline.restarts[i];
+        const RestartRecord& b = one_thread.restarts[i];
+        require(a.length == b.length && a.kind == b.kind && a.sweep == b.sweep
+                    && a.role == b.role && a.seed_variant == b.seed_variant
+                    && a.promotion_stage == b.promotion_stage
+                    && a.sa_iterations == b.sa_iterations
+                    && a.centroid_x == b.centroid_x
+                    && a.centroid_y == b.centroid_y && a.radius == b.radius,
+                "enabling racing leaves independent diagnostics bit-identical");
+    }
+
+    int pilot_only = 0;
+    int promoted_full = 0;
+    std::set<int> race_variants;
+    for (std::size_t i = baseline.restarts.size(); i < one_thread.restarts.size(); ++i) {
+        const RestartRecord& record = one_thread.restarts[i];
+        require(record.role == RestartRole::RacedProduction,
+                "racing records use the separate production role");
+        race_variants.insert(record.seed_variant);
+        if (record.promotion_stage == RestartPromotionStage::PilotOnly) {
+            ++pilot_only;
+            require(record.sa_iterations == static_cast<std::uint64_t>(raced.racing_pilot_iters),
+                    "non-promoted candidates report their pilot budget");
+        } else if (record.promotion_stage == RestartPromotionStage::PromotedFull) {
+            ++promoted_full;
+            require(record.sa_iterations == static_cast<std::uint64_t>(
+                    raced.racing_pilot_iters + raced.sa_iters),
+                    "promoted candidates report pilot plus full-depth work");
+        } else {
+            require(false, "racing records expose a valid promotion stage");
+        }
+    }
+    require(pilot_only == 4 && promoted_full == 2 && race_variants.size() == 6U,
+            "the stable promotion rule fills the requested survivor quota");
+
+    raced.restart_threads = 3;
+    Rng parallel_rng(616161);
+    const SolveResult parallel = solve_subset(inst, 48, parallel_rng, raced);
+    require(parallel.tour.nodes == one_thread.tour.nodes
+                && parallel.tour.length == one_thread.tour.length
+                && parallel.best_restart == one_thread.best_restart,
+            "racing result is invariant to restart worker count");
+    require(parallel.stats.subset_restarts == one_thread.stats.subset_restarts
+                && parallel.stats.racing_pilot_restarts
+                    == one_thread.stats.racing_pilot_restarts
+                && parallel.stats.racing_promoted_restarts
+                    == one_thread.stats.racing_promoted_restarts
+                && parallel.stats.sa_moves == one_thread.stats.sa_moves
+                && parallel.stats.sa_accepted == one_thread.stats.sa_accepted,
+            "racing discrete telemetry is invariant to restart worker count");
+    require(parallel.restarts.size() == one_thread.restarts.size(),
+            "racing record count is thread invariant");
+    for (std::size_t i = 0; i < one_thread.restarts.size(); ++i) {
+        const RestartRecord& a = one_thread.restarts[i];
+        const RestartRecord& b = parallel.restarts[i];
+        require(a.length == b.length && a.kind == b.kind && a.sweep == b.sweep
+                    && a.role == b.role && a.seed_variant == b.seed_variant
+                    && a.promotion_stage == b.promotion_stage
+                    && a.sa_iterations == b.sa_iterations
+                    && a.centroid_x == b.centroid_x
+                    && a.centroid_y == b.centroid_y && a.radius == b.radius,
+                "racing records are invariant to restart worker count");
+    }
+
+    SolverOptions invalid = raced;
+    invalid.time_budget_per_p = 0.01;
+    bool threw = false;
+    try {
+        Rng invalid_rng(616161);
+        (void)solve_subset(inst, 48, invalid_rng, invalid);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    require(threw, "deterministic racing rejects wall-clock anytime mode");
 }
 
 void test_second_sweep_never_worse() {
@@ -3400,6 +3532,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_best_restart_diagnostic);
     RUN_TEST(test_seed_resize_chain_differential);
     RUN_TEST(test_continuation_stream_contract);
+    RUN_TEST(test_deterministic_restart_racing);
     RUN_TEST(test_second_sweep_never_worse);
     RUN_TEST(test_control_variate_bounds);
     RUN_TEST(test_held_karp_bound);

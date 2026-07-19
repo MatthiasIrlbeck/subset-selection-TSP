@@ -154,6 +154,28 @@ SolveResult solve_subset(const Instance& inst,
     if (k >= inst.N) { return solve_tsp(inst, rng, options); }
 
     const double p = static_cast<double>(k) / static_cast<double>(std::max(1, inst.N));
+    if (options.racing_candidates < 0) {
+        throw std::invalid_argument("racing_candidates must be >= 0");
+    }
+    if (options.racing_survivors < 1) {
+        throw std::invalid_argument("racing_survivors must be >= 1");
+    }
+    if (options.racing_candidates > 0
+        && options.racing_survivors > options.racing_candidates) {
+        throw std::invalid_argument("racing_survivors must not exceed racing_candidates");
+    }
+    if (options.racing_pilot_iters < 0) {
+        throw std::invalid_argument("racing_pilot_iters must be >= 0");
+    }
+    if (!std::isfinite(options.racing_min_jaccard)
+        || options.racing_min_jaccard < 0.0
+        || options.racing_min_jaccard > 1.0) {
+        throw std::invalid_argument("racing_min_jaccard must be finite and in [0,1]");
+    }
+    if (options.racing_candidates > 0 && options.time_budget_per_p > 0.0) {
+        throw std::invalid_argument(
+            "deterministic restart racing is incompatible with time_budget_per_p");
+    }
     // Explicit values configure the base population. AUTO reproduces the
     // historical effective count. Supplemental continuation is deliberately
     // outside this population so adding neighboring p-values cannot remove an
@@ -193,6 +215,7 @@ SolveResult solve_subset(const Instance& inst,
     const int kick_begin = indep_restarts;
     const int continuation_begin = kick_begin + kick_n;
     const int total_restarts = continuation_begin + continuation_n;
+    const int racing_n = request.continuation_only ? 0 : options.racing_candidates;
     if (total_restarts <= 0) {
         result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
         return result;
@@ -328,11 +351,46 @@ SolveResult solve_subset(const Instance& inst,
     }
     std::vector<SeedCandidate> continuation_seeds =
         select_continuation_candidates(std::move(continuation_candidates), continuation_n);
+
+    // Racing is a separate supplemental population. Its role-specific streams
+    // cannot consume or perturb an independent diagnostic draw. At small p the
+    // proven compact dense seeds fill the race; elsewhere dense and random
+    // candidates alternate to preserve a broad basin sample.
+    std::vector<SeedCandidate> racing_candidates;
+    racing_candidates.reserve(static_cast<std::size_t>(racing_n));
+    for (int variant = 0; variant < racing_n; ++variant) {
+        const bool use_dense = (options.small_p_dense_fill && p <= 0.08)
+                               || ((variant & 1) == 0);
+        const RestartKind kind = use_dense ? RestartKind::Dense : RestartKind::Random;
+        Rng race_seed_rng(seed_stream(solve_stream_base,
+                                      RestartRole::RacedProduction,
+                                      kind,
+                                      variant,
+                                      0x3c6ef372fe94f82bULL));
+        std::vector<int> seed;
+        if (use_dense) {
+            seed = dense_seed(inst, k, race_seed_rng, variant);
+        } else {
+            seed = random_subset(inst.N, k, race_seed_rng);
+            seed = (k > 36)
+                ? nearest_neighbor_order(inst, seed, race_seed_rng.randint(k))
+                : farthest_insertion_order(inst, seed);
+        }
+        append_valid(racing_candidates,
+                     make_candidate(std::move(seed), kind,
+                                    RestartRole::RacedProduction, variant));
+    }
+    std::vector<SeedCandidate> racing_seeds =
+        select_seed_candidates(std::move(racing_candidates), racing_n);
     if (static_cast<int>(independent_seeds.size()) != indep_restarts
-        || static_cast<int>(continuation_seeds.size()) != continuation_n) {
+        || static_cast<int>(continuation_seeds.size()) != continuation_n
+        || static_cast<int>(racing_seeds.size()) != racing_n) {
         throw std::runtime_error("failed to construct the requested restart seed population");
     }
 
+    // Keep the scheduled-search archive capacity unchanged when racing is
+    // enabled. This preserves kick and continuation behavior bit-for-bit;
+    // raced outcomes are merged only after the complete scheduled population.
     ElitePool elite(std::max(8, total_restarts + 8), EliteMode::Set);
     // Prime only from independent seeds before the kick snapshot. Continuation
     // seeds are deliberately excluded so scheduled kicks are invariant to the
@@ -376,20 +434,33 @@ SolveResult solve_subset(const Instance& inst,
     // deterministic scheduled-restart path is unaffected.
     std::vector<std::vector<int>> elite_seeds;
 
-    auto run_restart = [&](int restart) -> RestartOutcome {
+    auto run_restart = [&](const int restart,
+                           const SeedCandidate* forced_candidate,
+                           const int sa_iterations_override,
+                           const RestartPromotionStage promotion_stage,
+                           const bool pilot_only) -> RestartOutcome {
         RestartOutcome out;
-        Rng rrng(make_stream_seed(restart_stream_base,
-                                  static_cast<std::uint64_t>(restart),
-                                  0x452821e638d01377ULL));
+        const std::uint64_t restart_seed = forced_candidate == nullptr
+            ? make_stream_seed(restart_stream_base,
+                               static_cast<std::uint64_t>(restart),
+                               0x452821e638d01377ULL)
+            : seed_stream(solve_stream_base,
+                          forced_candidate->role,
+                          forced_candidate->kind,
+                          forced_candidate->variant,
+                          0xbb67ae8584caa73bULL);
+        Rng rrng(restart_seed);
         std::vector<int> seed;
         RestartKind kind = RestartKind::Random;
         RestartRole role = RestartRole::IndependentDiagnostic;
         int seed_variant = 0;
         const auto restart_seed_start = Clock::now();
-        const bool scheduled_kick = restart >= kick_begin
+        const bool scheduled_kick = forced_candidate == nullptr
+                                    && restart >= kick_begin
                                     && restart < continuation_begin
                                     && !elite_seeds.empty();
-        const bool anytime_restart = restart >= total_restarts;
+        const bool anytime_restart = forced_candidate == nullptr
+                                     && restart >= total_restarts;
         const bool elite_ils = scheduled_kick
                                || (anytime_restart && !options.disable_elite_restarts
                                    && !elite_seeds.empty()
@@ -408,8 +479,12 @@ SolveResult solve_subset(const Instance& inst,
                                           : restart - total_restarts;
             out.elite_seed = true;
         } else {
-            const SeedCandidate* candidate = nullptr;
-            if (restart < kick_begin) {
+            const SeedCandidate* candidate = forced_candidate;
+            if (candidate != nullptr) {
+                // A race pilot and its promoted rerun use the identical seed and
+                // RNG stream. The pilot therefore screens a prefix of the exact
+                // full-depth restart rather than a differently randomized proxy.
+            } else if (restart < kick_begin) {
                 candidate = &independent_seeds[static_cast<std::size_t>(restart)];
             } else if (restart >= continuation_begin && restart < total_restarts) {
                 candidate = &continuation_seeds[
@@ -482,6 +557,8 @@ SolveResult solve_subset(const Instance& inst,
             ? std::min(sa_t0, options.kick_t0 > 0.0 ? options.kick_t0 : 0.35)
             : sa_t0;
         const double restart_log_ratio = std::log(sa_t1 / restart_t0);
+        const int restart_sa_iters = sa_iterations_override >= 0
+            ? sa_iterations_override : sa_iters_eff;
         // Insertion policy is per seed kind. Windowed insertion only offers
         // slots near the removed position or near the incoming node's in-tour
         // KNN -- perfect for seeds that start spatially concentrated (smallp,
@@ -545,8 +622,12 @@ SolveResult solve_subset(const Instance& inst,
         const int spatial_neighbors = std::max(1, options.sa_spatial_neighbors);
         {
             ScopedPhaseTimer sa_timer(out.stats.phases.sa_seconds);
-            for (int it = 0; it < sa_iters_eff; ++it) {
-                const double frac = (sa_iters_eff <= 1) ? 0.0 : static_cast<double>(it) / static_cast<double>(sa_iters_eff - 1);
+            for (int it = 0; it < restart_sa_iters; ++it) {
+                // A pilot follows the prefix of the full schedule; it does not
+                // compress the temperature range into its shorter budget.
+                const double frac = (sa_iters_eff <= 1)
+                    ? 0.0
+                    : static_cast<double>(it) / static_cast<double>(sa_iters_eff - 1);
                 const double temperature = restart_t0 * std::exp(restart_log_ratio * frac);
                 const bool timing_sample = (it & 63) == 0;
                 const Clock::time_point proposal_start = timing_sample ? Clock::now() : Clock::time_point{};
@@ -607,22 +688,22 @@ SolveResult solve_subset(const Instance& inst,
         tour.length = best_length;
         {
             ScopedPhaseTimer phase_timer(out.stats.phases.post_sa_polish_seconds);
-            polish_tour(tour, inst, options, &out.stats, 2);
+            polish_tour(tour, inst, options, &out.stats, pilot_only ? 1 : 2);
         }
-        if (!options.disable_subset_swap) {
+        if (!pilot_only && !options.disable_subset_swap) {
             ScopedPhaseTimer phase_timer(out.stats.phases.subset_swap_seconds);
             subset_swap_descent_impl(tour, inst, options.subset_swap_descent_passes, !options.disable_two_opt, &out.stats);
             polish_tour(tour, inst, options, &out.stats, 1);
         }
-        if (!options.disable_pair_exchange) {
+        if (!pilot_only && !options.disable_pair_exchange) {
             ScopedPhaseTimer phase_timer(out.stats.phases.pair_exchange_seconds);
             subset_pair_exchange_descent(tour, inst, rrng, options, &out.stats, options.pair_exchange_passes);
         }
-        if (!options.disable_ruin_recreate) {
+        if (!pilot_only && !options.disable_ruin_recreate) {
             ScopedPhaseTimer phase_timer(out.stats.phases.ruin_recreate_seconds);
             subset_ruin_recreate_lns(tour, inst, rrng, options, &out.stats, options.ruin_recreate_rounds);
         }
-        if (options.oracle.cfg.inline_feedback) {
+        if (!pilot_only && options.oracle.cfg.inline_feedback) {
             ScopedPhaseTimer phase_timer(out.stats.phases.oracle_seconds);
             (void)external_oracle_polish_tour(tour, inst, options.oracle, false, &out.stats, !options.disable_two_opt);
         }
@@ -630,6 +711,8 @@ SolveResult solve_subset(const Instance& inst,
         out.record = make_restart_record(inst, out.nodes, tour.length, kind);
         out.record.role = role;
         out.record.seed_variant = seed_variant;
+        out.record.promotion_stage = promotion_stage;
+        out.record.sa_iterations = static_cast<std::uint64_t>(restart_sa_iters);
         return out;
     };
 
@@ -637,6 +720,17 @@ SolveResult solve_subset(const Instance& inst,
     bool kick_snapshot_taken = false;
     double best_outcome_len = std::numeric_limits<double>::infinity();
     std::vector<RestartOutcome> outcomes;
+    auto merge_outcome = [&](RestartOutcome& outcome) {
+        result.stats.add(outcome.stats);
+        elite.try_add(outcome.nodes, outcome.record.length);
+        ++result.stats.subset_restarts;
+        record_subset_restart_kind(result.stats, outcome.record.kind);
+        result.restarts.push_back(outcome.record);
+        if (outcome.record.length < best_outcome_len - kImprovementEps) {
+            best_outcome_len = outcome.record.length;
+            result.best_restart = static_cast<int>(result.restarts.size()) - 1;
+        }
+    };
     for (;;) {
         int wave = 0;
         if (launched < kick_begin) {
@@ -672,23 +766,127 @@ SolveResult solve_subset(const Instance& inst,
             }
         }
         detail::run_parallel_indexed(wave, [&](int index) {
-            outcomes[static_cast<std::size_t>(index)] = run_restart(launched + index);
+            outcomes[static_cast<std::size_t>(index)] = run_restart(
+                launched + index, nullptr, -1,
+                RestartPromotionStage::None, false);
         });
         // Merge strictly in restart-index order so elite content, stats, and
         // diagnostics are independent of thread scheduling.
         for (int i = 0; i < wave; ++i) {
             RestartOutcome& outcome = outcomes[static_cast<std::size_t>(i)];
-            result.stats.add(outcome.stats);
-            elite.try_add(outcome.nodes, outcome.record.length);
-            ++result.stats.subset_restarts;
-            record_subset_restart_kind(result.stats, outcome.record.kind);
-            result.restarts.push_back(outcome.record);
-            if (outcome.record.length < best_outcome_len - kImprovementEps) {
-                best_outcome_len = outcome.record.length;
-                result.best_restart = static_cast<int>(result.restarts.size()) - 1;
-            }
+            merge_outcome(outcome);
         }
         launched += wave;
+    }
+
+    if (racing_n > 0) {
+        const int pilot_iters = std::min(options.racing_pilot_iters, sa_iters_eff);
+        std::vector<RestartOutcome> raced_outcomes(static_cast<std::size_t>(racing_n));
+
+        // Run bounded waves, then retain the original candidate order. Promotion
+        // and final merge are therefore invariant to worker completion order.
+        for (int begin = 0; begin < racing_n; begin += restart_threads) {
+            const int wave = std::min(restart_threads, racing_n - begin);
+            detail::run_parallel_indexed(wave, [&](const int offset) {
+                const int index = begin + offset;
+                RestartOutcome pilot = run_restart(
+                    total_restarts + index,
+                    &racing_seeds[static_cast<std::size_t>(index)],
+                    pilot_iters,
+                    RestartPromotionStage::PilotOnly,
+                    true);
+                pilot.stats.racing_pilot_restarts = 1;
+                raced_outcomes[static_cast<std::size_t>(index)] = std::move(pilot);
+            });
+        }
+
+        std::vector<int> ranked(static_cast<std::size_t>(racing_n));
+        std::iota(ranked.begin(), ranked.end(), 0);
+        std::stable_sort(ranked.begin(), ranked.end(), [&](const int lhs, const int rhs) {
+            const RestartRecord& a = raced_outcomes[static_cast<std::size_t>(lhs)].record;
+            const RestartRecord& b = raced_outcomes[static_cast<std::size_t>(rhs)].record;
+            if (a.length != b.length) { return a.length < b.length; }
+            if (a.kind != b.kind) {
+                return restart_kind_code(a.kind) < restart_kind_code(b.kind);
+            }
+            if (a.seed_variant != b.seed_variant) {
+                return a.seed_variant < b.seed_variant;
+            }
+            return lhs < rhs;
+        });
+
+        const int survivor_count = std::min(options.racing_survivors, racing_n);
+        std::vector<int> promoted;
+        promoted.reserve(static_cast<std::size_t>(survivor_count));
+        std::vector<unsigned char> membership(static_cast<std::size_t>(inst.N), 0U);
+        auto jaccard_distance = [&](const std::vector<int>& lhs,
+                                    const std::vector<int>& rhs) {
+            for (const int node : lhs) {
+                membership[static_cast<std::size_t>(node)] = 1U;
+            }
+            int intersection = 0;
+            for (const int node : rhs) {
+                intersection += membership[static_cast<std::size_t>(node)] != 0U ? 1 : 0;
+            }
+            for (const int node : lhs) {
+                membership[static_cast<std::size_t>(node)] = 0U;
+            }
+            const int set_union = static_cast<int>(lhs.size() + rhs.size()) - intersection;
+            return set_union > 0
+                ? 1.0 - static_cast<double>(intersection) / static_cast<double>(set_union)
+                : 0.0;
+        };
+        for (const int candidate_index : ranked) {
+            bool diverse = true;
+            for (const int selected_index : promoted) {
+                if (jaccard_distance(
+                        raced_outcomes[static_cast<std::size_t>(candidate_index)].nodes,
+                        raced_outcomes[static_cast<std::size_t>(selected_index)].nodes)
+                    + kDistanceEps < options.racing_min_jaccard) {
+                    diverse = false;
+                    break;
+                }
+            }
+            if (diverse) {
+                promoted.push_back(candidate_index);
+                if (static_cast<int>(promoted.size()) == survivor_count) { break; }
+            }
+        }
+        // Diversity is a preference, not a reason to leave compute unused.
+        for (const int candidate_index : ranked) {
+            if (static_cast<int>(promoted.size()) == survivor_count) { break; }
+            if (std::find(promoted.begin(), promoted.end(), candidate_index) == promoted.end()) {
+                promoted.push_back(candidate_index);
+            }
+        }
+
+        std::vector<RestartOutcome> promoted_outcomes(promoted.size());
+        for (int begin = 0; begin < static_cast<int>(promoted.size()); begin += restart_threads) {
+            const int wave = std::min(restart_threads,
+                                      static_cast<int>(promoted.size()) - begin);
+            detail::run_parallel_indexed(wave, [&](const int offset) {
+                const int promoted_pos = begin + offset;
+                const int candidate_index = promoted[static_cast<std::size_t>(promoted_pos)];
+                promoted_outcomes[static_cast<std::size_t>(promoted_pos)] = run_restart(
+                    total_restarts + candidate_index,
+                    &racing_seeds[static_cast<std::size_t>(candidate_index)],
+                    sa_iters_eff,
+                    RestartPromotionStage::PromotedFull,
+                    false);
+            });
+        }
+        for (std::size_t i = 0; i < promoted.size(); ++i) {
+            const int candidate_index = promoted[i];
+            RestartOutcome& full = promoted_outcomes[i];
+            full.stats.racing_promoted_restarts = 1;
+            full.stats.add(raced_outcomes[static_cast<std::size_t>(candidate_index)].stats);
+            full.record.sa_iterations += static_cast<std::uint64_t>(pilot_iters);
+            raced_outcomes[static_cast<std::size_t>(candidate_index)] = std::move(full);
+        }
+
+        for (RestartOutcome& outcome : raced_outcomes) {
+            merge_outcome(outcome);
+        }
     }
 
     if (!options.disable_path_relink) {

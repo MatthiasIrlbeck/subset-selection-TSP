@@ -252,6 +252,28 @@ void write_restart_variant_array(std::ostream& out,
     out << ']';
 }
 
+void write_restart_promotion_stage_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << restart_promotion_stage_code(records[i].promotion_stage);
+    }
+    out << ']';
+}
+
+void write_restart_sa_iteration_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << records[i].sa_iterations;
+    }
+    out << ']';
+}
+
 std::string summary_key(double p) {
     return p_value_key(p);
 }
@@ -295,6 +317,8 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"random_restarts\": " << stats.random_restarts << ",\n"
         << indent << "  \"region_restarts\": " << stats.region_restarts << ",\n"
         << indent << "  \"dense_restarts\": " << stats.dense_restarts << ",\n"
+        << indent << "  \"racing_pilot_restarts\": " << stats.racing_pilot_restarts << ",\n"
+        << indent << "  \"racing_promoted_restarts\": " << stats.racing_promoted_restarts << ",\n"
         << indent << "  \"elite_restarts\": " << stats.elite_restarts << ",\n"
         << indent << "  \"kick_restarts\": " << stats.kick_restarts << ",\n"
         << indent << "  \"two_opt_scans\": " << stats.two_opt_scans << ",\n"
@@ -450,6 +474,10 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
                 write_restart_role_array(out, pv.restarts);
                 out << ",\n          \"restart_variants\": ";
                 write_restart_variant_array(out, pv.restarts);
+                out << ",\n          \"restart_promotion_stages\": ";
+                write_restart_promotion_stage_array(out, pv.restarts);
+                out << ",\n          \"restart_sa_iterations\": ";
+                write_restart_sa_iteration_array(out, pv.restarts);
                 out << ",\n          \"restart_centroids_x\": ";
                 write_restart_double_array(out, pv.restarts,
                     [](const RestartRecord& record) { return record.centroid_x; });
@@ -568,6 +596,12 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"continuation_restarts\": " << doc.options.solver.continuation_restarts << ",\n"
         << "    \"continuation_policy\": \""
         << continuation_policy_name(doc.options.solver.continuation_policy) << "\",\n"
+        << "    \"racing_candidates\": " << doc.options.solver.racing_candidates << ",\n"
+        << "    \"racing_survivors\": " << doc.options.solver.racing_survivors << ",\n"
+        << "    \"racing_pilot_iters\": " << doc.options.solver.racing_pilot_iters << ",\n"
+        << "    \"racing_min_jaccard\": ";
+    write_json_double(out, doc.options.solver.racing_min_jaccard);
+    out << ",\n"
         << "    \"sa_iters\": " << doc.options.solver.sa_iters << ",\n"
         << "    \"sa_iters_per_k\": " << doc.options.solver.sa_iters_per_k << ",\n"
         << "    \"sa_iters_per_n\": " << doc.options.solver.sa_iters_per_n << ",\n"

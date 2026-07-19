@@ -40,6 +40,8 @@ void SearchStats::add(const SearchStats& other) {
     random_restarts += other.random_restarts;
     region_restarts += other.region_restarts;
     dense_restarts += other.dense_restarts;
+    racing_pilot_restarts += other.racing_pilot_restarts;
+    racing_promoted_restarts += other.racing_promoted_restarts;
     elite_restarts += other.elite_restarts;
     kick_restarts += other.kick_restarts;
     two_opt_scans += other.two_opt_scans;

@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 
 namespace aldous_tsp {
@@ -92,6 +93,16 @@ enum class RestartRole : int {
     RacedProduction = 4,
 };
 
+// Stable stage of a recorded restart. Ordinary restarts use None. Raced
+// candidates that stop after screening use PilotOnly; promoted candidates use
+// PromotedFull. A promoted candidate is recorded once at its final outcome,
+// not once per stage.
+enum class RestartPromotionStage : int {
+    None = 0,
+    PilotOnly = 1,
+    PromotedFull = 2,
+};
+
 [[nodiscard]] constexpr int restart_role_code(RestartRole role) noexcept {
     return static_cast<int>(role);
 }
@@ -108,6 +119,26 @@ enum class RestartRole : int {
         case RestartRole::EliteKick: return "elite-kick";
         case RestartRole::Anytime: return "anytime";
         case RestartRole::RacedProduction: return "raced-production";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr int restart_promotion_stage_code(
+    RestartPromotionStage stage) noexcept {
+    return static_cast<int>(stage);
+}
+
+[[nodiscard]] constexpr bool is_valid_restart_promotion_stage_code(int code) noexcept {
+    return code >= restart_promotion_stage_code(RestartPromotionStage::None)
+        && code <= restart_promotion_stage_code(RestartPromotionStage::PromotedFull);
+}
+
+[[nodiscard]] constexpr const char* restart_promotion_stage_name(
+    RestartPromotionStage stage) noexcept {
+    switch (stage) {
+        case RestartPromotionStage::None: return "none";
+        case RestartPromotionStage::PilotOnly: return "pilot-only";
+        case RestartPromotionStage::PromotedFull: return "promoted-full";
     }
     return "unknown";
 }
@@ -135,6 +166,11 @@ struct RestartRecord {
     // Stable zero-based variant within the seed kind/role. This is diagnostic
     // metadata and is deliberately independent of execution order or threads.
     int seed_variant = 0;
+    RestartPromotionStage promotion_stage = RestartPromotionStage::None;
+    // Actual number of SA loop iterations allocated to this recorded candidate.
+    // For a promoted raced candidate this includes its screening pilot plus the
+    // full-depth rerun used to produce the final recorded outcome.
+    std::uint64_t sa_iterations = 0;
     double centroid_x = 0.0;
     double centroid_y = 0.0;
     double radius = 0.0;

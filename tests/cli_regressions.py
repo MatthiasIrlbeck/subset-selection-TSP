@@ -35,11 +35,13 @@ def main() -> int:
         "--oracle-inline-feedback",
         "--disable-path-relink",
         "--pair-exchange-max-k",
+        "--racing-candidates",
         "Boolean flags accept plain presence as true",
     ):
         assert marker in help_run.stdout, marker
     assert "+58% wall" in help_run.stdout, help_run.stdout
-    assert "~99% of optimal" in help_run.stdout, help_run.stdout
+    assert "quality conditional on that subset" in help_run.stdout, help_run.stdout
+    assert "~99% of optimal" not in help_run.stdout, help_run.stdout
     assert "live spatial index (default: false)" in help_run.stdout, help_run.stdout
 
     with tempfile.TemporaryDirectory(prefix="aldous_cli_regressions_") as td:
@@ -110,6 +112,41 @@ def main() -> int:
         assert rows_doc["config"]["include_instance_rows"] is True, rows_doc["config"]
         assert len(rows_doc["instance_rows"]) == 2, rows_doc["instance_rows"]
         assert all(len(row["p_results"]) == 2 for row in rows_doc["instance_rows"]), rows_doc["instance_rows"]
+
+        racing_doc = run_case(
+            exe,
+            [
+                "--N", "64",
+                "--instances", "1",
+                "--threads", "1",
+                "--p-values", "0.4",
+                "--sa-iters", "20",
+                "--restarts", "2",
+                "--continuation-restarts", "0",
+                "--racing-candidates", "4",
+                "--racing-survivors", "2",
+                "--racing-pilot-iters", "5",
+                "--racing-min-jaccard", "0.1",
+                "--restart-threads", "2",
+                "--disable-subset-swap",
+                "--disable-pair-exchange",
+                "--disable-ruin-recreate",
+                "--disable-path-relink",
+                "--include-instance-rows",
+            ],
+            tmp / "restart-racing.json",
+        )
+        racing_row = racing_doc["instance_rows"][0]["p_results"][0]
+        assert racing_doc["config"]["racing_candidates"] == 4, racing_doc["config"]
+        assert racing_doc["config"]["racing_survivors"] == 2, racing_doc["config"]
+        assert racing_doc["config"]["racing_pilot_iters"] == 5, racing_doc["config"]
+        assert racing_doc["config"]["racing_min_jaccard"] == 0.1, racing_doc["config"]
+        assert racing_doc["search_stats"]["racing_pilot_restarts"] == 4, racing_doc["search_stats"]
+        assert racing_doc["search_stats"]["racing_promoted_restarts"] == 2, racing_doc["search_stats"]
+        assert racing_row["restart_roles"] == [0, 0, 4, 4, 4, 4], racing_row
+        assert racing_row["restart_promotion_stages"].count(1) == 2, racing_row
+        assert racing_row["restart_promotion_stages"].count(2) == 2, racing_row
+        assert sorted(racing_row["restart_sa_iterations"][-4:]) == [5, 5, 25, 25], racing_row
 
         tiny_p_doc = run_case(
             exe,
@@ -186,6 +223,25 @@ def main() -> int:
         )
         assert bad_pair_gate.returncode != 0, (bad_pair_gate.stdout, bad_pair_gate.stderr)
         assert "--pair-exchange-max-k must be >= 0" in bad_pair_gate.stderr, bad_pair_gate.stderr
+
+        bad_racing_quota = subprocess.run(
+            [str(exe), "--racing-candidates", "2", "--racing-survivors", "3", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert bad_racing_quota.returncode != 0, (bad_racing_quota.stdout, bad_racing_quota.stderr)
+        assert "--racing-survivors must not exceed" in bad_racing_quota.stderr, bad_racing_quota.stderr
+
+        bad_racing_anytime = subprocess.run(
+            [str(exe), "--racing-candidates", "2", "--racing-survivors", "1",
+             "--time-budget-per-p", "0.1", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert bad_racing_anytime.returncode != 0, (bad_racing_anytime.stdout, bad_racing_anytime.stderr)
+        assert "incompatible with --time-budget-per-p" in bad_racing_anytime.stderr, bad_racing_anytime.stderr
 
 
 

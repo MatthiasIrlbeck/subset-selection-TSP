@@ -77,6 +77,12 @@ struct SearchStats {
     std::uint64_t random_restarts = 0;
     std::uint64_t region_restarts = 0;
     std::uint64_t dense_restarts = 0;
+    // Deterministic supplemental restart racing. Every race candidate receives
+    // the fixed pilot budget; promoted candidates are then rerun from the same
+    // seed and RNG stream at the full budget. `subset_restarts` counts unique
+    // candidates, while these counters expose the actual staged allocation.
+    std::uint64_t racing_pilot_restarts = 0;
+    std::uint64_t racing_promoted_restarts = 0;
     // All elite-seeded restarts. Scheduled kicks are included here and are
     // additionally counted by kick_restarts for exact kick accounting.
     std::uint64_t elite_restarts = 0;
@@ -225,6 +231,14 @@ struct SolverOptions {
     // continuation restarts only rather than repeating the independent search.
     int continuation_restarts = 1;
     ContinuationPolicy continuation_policy = ContinuationPolicy::Supplemental;
+    // Optional deterministic supplemental restart racing. Independent
+    // diagnostic restarts remain unchanged; race candidates are a separate
+    // population screened with a fixed SA pilot and a diversity-aware stable
+    // promotion rule. Zero candidates disables racing (the default).
+    int racing_candidates = 0;
+    int racing_survivors = 2;
+    int racing_pilot_iters = 2000;
+    double racing_min_jaccard = 0.05;
     int sa_iters = 60000;
     // Additional SA iterations per subset element: the effective SA budget for
     // a size-k solve is sa_iters + sa_iters_per_k * k. The default 0 keeps the

@@ -63,3 +63,11 @@ ROLE_NAMES = {
     4: "raced-production",
 }
 DEFAULT_ROLES = (0,)
+
+# Stable restart-racing stages serialized by RestartPromotionStage in
+# restart.hpp. Ordinary and historical records use stage zero.
+PROMOTION_STAGE_NAMES = {
+    0: "none",
+    1: "pilot-only",
+    2: "promoted-full",
+}
