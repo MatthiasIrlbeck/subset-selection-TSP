@@ -35,6 +35,8 @@ Useful options:
 
 The solver creates a temporary working directory under `TMPDIR` when set, otherwise the platform temporary directory. It writes `problem.tsp`; for LKH it also writes `init.tour` and `run.par`. It launches the external process with an optional timeout, parses the returned tour, maps it back to original node IDs, and applies it only if it improves the internal candidate.
 
+On POSIX systems, oracle processes are launched with `posix_spawn` in a dedicated process group. When the platform provides `posix_spawn_file_actions_addchdir_np`, the solver is spawned directly with a working-directory file action; otherwise a constant `/bin/sh` command changes directory and immediately `exec`s the exact resolved solver path, with all variable values passed only as positional arguments. The parent prepares argument storage and redirections before spawning, so project C++ code never runs in a post-`fork` child. Standard input is `/dev/null`, descriptors and unreaped children have RAII cleanup, and timeouts terminate and reap the entire process group. Version capture uses nonblocking `poll` and one absolute deadline for both output collection and process reaping, avoiding busy-spins and duplicate timeout windows.
+
 Oracle metadata is recorded in JSON:
 
 - `oracle_status`

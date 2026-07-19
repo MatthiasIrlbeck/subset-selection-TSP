@@ -19,7 +19,9 @@
 
 #if !defined(_WIN32)
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
+#include <spawn.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -37,6 +39,13 @@
 #endif
 
 #include <random>
+
+#if !defined(_WIN32)
+extern char** environ;
+#ifndef ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+#define ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP 0
+#endif
+#endif
 
 namespace aldous_tsp {
 namespace {
@@ -177,43 +186,222 @@ std::string resolve_exec_in_path(const std::string& program) {
     return {};
 }
 
-int wait_for_process(pid_t pid, int timeout_sec) {
-    int status = 0;
-    if (timeout_sec <= 0) {
-        while (waitpid(pid, &status, 0) < 0) {
-            if (errno != EINTR) {
-                return -1;
-            }
+using ProcessClock = std::chrono::steady_clock;
+using ProcessDeadline = ProcessClock::time_point;
+
+class UniqueFd {
+public:
+    UniqueFd() = default;
+    explicit UniqueFd(int fd) noexcept : fd_(fd) {}
+    UniqueFd(const UniqueFd&) = delete;
+    UniqueFd& operator=(const UniqueFd&) = delete;
+    UniqueFd(UniqueFd&& other) noexcept : fd_(other.release()) {}
+    UniqueFd& operator=(UniqueFd&& other) noexcept {
+        if (this != &other) {
+            reset(other.release());
         }
-        if (WIFEXITED(status)) {
-            return WEXITSTATUS(status);
+        return *this;
+    }
+    ~UniqueFd() { reset(); }
+
+    int get() const noexcept { return fd_; }
+    int release() noexcept {
+        const int fd = fd_;
+        fd_ = -1;
+        return fd;
+    }
+    void reset(int fd = -1) noexcept {
+        if (fd_ >= 0) {
+            (void)close(fd_);
         }
-        return status == 0 ? -1 : status;
+        fd_ = fd;
     }
 
-    const auto start = std::chrono::steady_clock::now();
-    for (;;) {
-        const pid_t waited = waitpid(pid, &status, WNOHANG);
-        if (waited == pid) {
-            if (WIFEXITED(status)) {
-                return WEXITSTATUS(status);
-            }
-            return status == 0 ? -1 : status;
-        }
-        if (waited < 0 && errno != EINTR) {
-            return -1;
-        }
-        const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-        if (elapsed > static_cast<double>(timeout_sec)) {
-            kill(-pid, SIGKILL);
-            (void)waitpid(pid, &status, 0);
-            return 124;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+private:
+    int fd_ = -1;
+};
+
+ProcessDeadline process_deadline(int timeout_sec) {
+    if (timeout_sec <= 0) {
+        return ProcessDeadline::max();
+    }
+    return ProcessClock::now() + std::chrono::seconds(timeout_sec);
+}
+
+int process_exit_code(int status) noexcept {
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+void kill_process_group(pid_t pid) noexcept {
+    if (pid <= 0) {
+        return;
+    }
+    if (kill(-pid, SIGKILL) != 0) {
+        // POSIX_SPAWN_SETPGROUP should make the negative-PID form sufficient.
+        // Fall back to the direct child if the group disappeared or was not
+        // established by a non-conforming implementation.
+        (void)kill(pid, SIGKILL);
     }
 }
 
-int run_external_process(const std::vector<std::string>& argv, const std::filesystem::path& cwd, int timeout_sec, bool verbose, std::string* captured) {
+void terminate_process_group_and_reap(pid_t pid) noexcept {
+    if (pid <= 0) {
+        return;
+    }
+    kill_process_group(pid);
+    int status = 0;
+    for (;;) {
+        const pid_t waited = waitpid(pid, &status, 0);
+        if (waited == pid || (waited < 0 && errno == ECHILD)) {
+            return;
+        }
+        if (waited < 0 && errno != EINTR) {
+            return;
+        }
+    }
+}
+
+class SpawnedProcess {
+public:
+    explicit SpawnedProcess(pid_t pid) noexcept : pid_(pid) {}
+    SpawnedProcess(const SpawnedProcess&) = delete;
+    SpawnedProcess& operator=(const SpawnedProcess&) = delete;
+    ~SpawnedProcess() {
+        if (active_) {
+            terminate_process_group_and_reap(pid_);
+        }
+    }
+
+    void mark_reaped() noexcept { active_ = false; }
+
+private:
+    pid_t pid_ = -1;
+    bool active_ = true;
+};
+
+int wait_for_process_until(pid_t pid, ProcessDeadline deadline) {
+    int status = 0;
+    if (deadline == ProcessDeadline::max()) {
+        for (;;) {
+            const pid_t waited = waitpid(pid, &status, 0);
+            if (waited == pid) {
+                return process_exit_code(status);
+            }
+            if (waited < 0 && errno == ECHILD) {
+                return -1;
+            }
+            if (waited < 0 && errno != EINTR) {
+                terminate_process_group_and_reap(pid);
+                return -1;
+            }
+        }
+    }
+
+    for (;;) {
+        const pid_t waited = waitpid(pid, &status, WNOHANG);
+        if (waited == pid) {
+            return process_exit_code(status);
+        }
+        if (waited < 0 && errno == ECHILD) {
+            return -1;
+        }
+        if (waited < 0 && errno != EINTR) {
+            terminate_process_group_and_reap(pid);
+            return -1;
+        }
+        const auto now = ProcessClock::now();
+        if (now >= deadline) {
+            terminate_process_group_and_reap(pid);
+            return 124;
+        }
+        const auto remaining = deadline - now;
+        auto sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+        if (sleep_time <= std::chrono::milliseconds(0)) {
+            sleep_time = std::chrono::milliseconds(1);
+        }
+        std::this_thread::sleep_for(
+            std::min(std::chrono::milliseconds(100), sleep_time));
+    }
+}
+
+std::vector<char*> spawn_argument_pointers(const std::vector<std::string>& argv) {
+    std::vector<char*> pointers;
+    pointers.reserve(argv.size() + 1U);
+    for (const std::string& argument : argv) {
+        pointers.push_back(const_cast<char*>(argument.c_str()));
+    }
+    pointers.push_back(nullptr);
+    return pointers;
+}
+
+int spawn_in_new_process_group(const std::vector<std::string>& argv,
+                               std::vector<char*>& arguments,
+                               const posix_spawn_file_actions_t* file_actions,
+                               pid_t& pid) noexcept {
+    if (argv.empty() || arguments.size() != argv.size() + 1U) {
+        return EINVAL;
+    }
+    posix_spawnattr_t attributes;
+    int error = posix_spawnattr_init(&attributes);
+    if (error != 0) {
+        return error;
+    }
+    error = posix_spawnattr_setpgroup(&attributes, 0);
+    if (error == 0) {
+        error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    }
+    if (error == 0) {
+        // All callers provide an exact absolute executable (either the resolved
+        // oracle or /bin/sh), so avoid a second PATH lookup at launch time.
+        error = posix_spawn(&pid,
+                            argv.front().c_str(),
+                            file_actions,
+                            &attributes,
+                            arguments.data(),
+                            environ);
+    }
+    (void)posix_spawnattr_destroy(&attributes);
+    return error;
+}
+
+#if !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+std::vector<std::string> process_arguments_in_directory(
+    const std::vector<std::string>& argv,
+    const std::filesystem::path& cwd) {
+    if (cwd.empty()) {
+        return argv;
+    }
+    // POSIX has no standard working-directory file action before POSIX.1-2024.
+    // On implementations without the common addchdir_np extension, spawn a
+    // shell with a constant command and pass directory/program solely as argv;
+    // no user-controlled text is interpolated. The shell immediately execs the
+    // solver and retains the same PID/process group for timeout handling.
+    std::vector<std::string> wrapped;
+    wrapped.reserve(argv.size() + 5U);
+    wrapped.emplace_back("/bin/sh");
+    wrapped.emplace_back("-c");
+    wrapped.emplace_back(
+        "cd \"$1\" || exit 126; shift; "
+        "[ -x \"$1\" ] || { echo 'oracle executable is not runnable' >&2; exit 127; }; "
+        "exec \"$@\"");
+    wrapped.emplace_back("aldous_tsp_spawn");
+    wrapped.push_back(cwd.string());
+    wrapped.insert(wrapped.end(), argv.begin(), argv.end());
+    return wrapped;
+}
+#endif
+
+int run_external_process(const std::vector<std::string>& argv,
+                         const std::filesystem::path& cwd,
+                         int timeout_sec,
+                         bool verbose,
+                         std::string* captured) {
     if (argv.empty()) {
         return -1;
     }
@@ -221,35 +409,60 @@ int run_external_process(const std::vector<std::string>& argv, const std::filesy
         ? std::filesystem::path("oracle_output.txt")
         : (cwd / "oracle_output.txt");
     const std::string log_str = log_path.string();
-    const pid_t pid = fork();
-    if (pid < 0) {
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+    const std::vector<std::string>& spawn_argv = argv;
+#else
+    const std::vector<std::string> spawn_argv =
+        process_arguments_in_directory(argv, cwd);
+#endif
+    std::vector<char*> spawn_arguments = spawn_argument_pointers(spawn_argv);
+    const std::string cwd_str = cwd.string();
+
+    posix_spawn_file_actions_t actions;
+    int error = posix_spawn_file_actions_init(&actions);
+    if (error != 0) {
+        if (captured != nullptr) {
+            *captured = std::string("posix_spawn file-action initialization failed: ")
+                + std::strerror(error);
+        }
         return -1;
     }
-    if (pid == 0) {
-        setpgid(0, 0);
-        if (!cwd.empty() && chdir(cwd.string().c_str()) != 0) {
-            _exit(126);
-        }
-        // Capture stdout+stderr so a failing solver's own diagnostics survive.
-        const int fd = open(log_str.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
-        if (fd >= 0) {
-            dup2(fd, STDOUT_FILENO);
-            dup2(fd, STDERR_FILENO);
-            if (fd > STDERR_FILENO) {
-                close(fd);
-            }
-        }
-        std::vector<char*> args;
-        args.reserve(argv.size() + 1U);
-        for (const std::string& arg : argv) {
-            args.push_back(const_cast<char*>(arg.c_str()));
-        }
-        args.push_back(nullptr);
-        execvp(args[0], args.data());
-        _exit(127);
+    error = posix_spawn_file_actions_addopen(
+        &actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (error == 0) {
+        error = posix_spawn_file_actions_addopen(
+            &actions,
+            STDOUT_FILENO,
+            log_str.c_str(),
+            O_WRONLY | O_CREAT | O_TRUNC,
+            0600);
     }
-    setpgid(pid, pid);
-    const int rc = wait_for_process(pid, timeout_sec);
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, STDOUT_FILENO, STDERR_FILENO);
+    }
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+    if (error == 0 && !cwd_str.empty()) {
+        error = posix_spawn_file_actions_addchdir_np(&actions, cwd_str.c_str());
+    }
+#endif
+
+    pid_t pid = -1;
+    if (error == 0) {
+        error = spawn_in_new_process_group(
+            spawn_argv, spawn_arguments, &actions, pid);
+    }
+    (void)posix_spawn_file_actions_destroy(&actions);
+    if (error != 0) {
+        if (captured != nullptr) {
+            *captured = std::string("posix_spawn failed: ") + std::strerror(error);
+        }
+        return -1;
+    }
+
+    SpawnedProcess process(pid);
+    const int rc = wait_for_process_until(pid, process_deadline(timeout_sec));
+    process.mark_reaped();
     const std::string output = summarize_child_output(log_path);
     if (captured != nullptr) {
         *captured = output;
@@ -260,66 +473,146 @@ int run_external_process(const std::vector<std::string>& argv, const std::filesy
     return rc;
 }
 
-std::string capture_process_first_line(const std::vector<std::string>& argv, int timeout_sec) {
+int poll_timeout_ms(ProcessDeadline deadline) noexcept {
+    if (deadline == ProcessDeadline::max()) {
+        return -1;
+    }
+    const auto now = ProcessClock::now();
+    if (now >= deadline) {
+        return 0;
+    }
+    const auto remaining = deadline - now;
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+    const auto rounded = milliseconds + (milliseconds < remaining ? std::chrono::milliseconds(1)
+                                                                   : std::chrono::milliseconds(0));
+    const auto max_int = std::chrono::milliseconds(std::numeric_limits<int>::max());
+    return static_cast<int>(std::min(rounded, max_int).count());
+}
+
+bool prepare_pipe_descriptor(UniqueFd& descriptor) noexcept {
+    if (descriptor.get() < 0) {
+        return false;
+    }
+    if (descriptor.get() <= STDERR_FILENO) {
+        const int duplicate = fcntl(descriptor.get(), F_DUPFD, STDERR_FILENO + 1);
+        if (duplicate < 0) {
+            return false;
+        }
+        descriptor.reset(duplicate);
+    }
+    const int flags = fcntl(descriptor.get(), F_GETFD, 0);
+    return flags >= 0
+        && fcntl(descriptor.get(), F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
+std::string capture_process_first_line(const std::vector<std::string>& argv,
+                                       int timeout_sec) {
     if (argv.empty()) {
         return "unknown";
     }
+    // Build all C++ argument storage before acquiring OS resources. Once file
+    // actions are initialized, the setup path below performs only non-throwing
+    // POSIX calls until those actions have been destroyed.
+    std::vector<char*> spawn_arguments = spawn_argument_pointers(argv);
+
     int pipefd[2] = {-1, -1};
     if (pipe(pipefd) != 0) {
         return "unknown";
     }
-    const pid_t pid = fork();
-    if (pid < 0) {
-        close(pipefd[0]);
-        close(pipefd[1]);
+    UniqueFd read_end(pipefd[0]);
+    UniqueFd write_end(pipefd[1]);
+    if (!prepare_pipe_descriptor(read_end) || !prepare_pipe_descriptor(write_end)) {
         return "unknown";
     }
-    if (pid == 0) {
-        setpgid(0, 0);
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        dup2(pipefd[1], STDERR_FILENO);
-        if (pipefd[1] > STDERR_FILENO) {
-            close(pipefd[1]);
-        }
-        std::vector<char*> args;
-        args.reserve(argv.size() + 1U);
-        for (const std::string& arg : argv) {
-            args.push_back(const_cast<char*>(arg.c_str()));
-        }
-        args.push_back(nullptr);
-        execvp(args[0], args.data());
-        _exit(127);
+    const int read_flags = fcntl(read_end.get(), F_GETFL, 0);
+    if (read_flags < 0
+        || fcntl(read_end.get(), F_SETFL, read_flags | O_NONBLOCK) != 0) {
+        return "unknown";
     }
-    setpgid(pid, pid);
-    close(pipefd[1]);
-    const int flags = fcntl(pipefd[0], F_GETFL, 0);
-    if (flags >= 0) {
-        (void)fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+
+    posix_spawn_file_actions_t actions;
+    int error = posix_spawn_file_actions_init(&actions);
+    if (error != 0) {
+        return "unknown";
     }
+    error = posix_spawn_file_actions_addopen(
+        &actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (error == 0) {
+        error = posix_spawn_file_actions_addclose(&actions, read_end.get());
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, write_end.get(), STDOUT_FILENO);
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, write_end.get(), STDERR_FILENO);
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_addclose(&actions, write_end.get());
+    }
+
+    pid_t pid = -1;
+    if (error == 0) {
+        error = spawn_in_new_process_group(
+            argv, spawn_arguments, &actions, pid);
+    }
+    (void)posix_spawn_file_actions_destroy(&actions);
+    if (error != 0) {
+        return "unknown";
+    }
+
+    SpawnedProcess process(pid);
+    write_end.reset();
+    const ProcessDeadline deadline = process_deadline(timeout_sec);
     std::string output;
     std::array<char, 256> chunk{};
-    const auto start = std::chrono::steady_clock::now();
-    for (;;) {
-        const ssize_t nread = read(pipefd[0], chunk.data(), chunk.size());
-        if (nread > 0) {
-            output.append(chunk.data(), static_cast<std::size_t>(nread));
-            if (output.size() > 512U || output.find('\n') != std::string::npos) {
-                break;
-            }
-        } else if (nread == 0) {
-            break;
-        } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+    bool pipe_closed = false;
+    while (output.size() <= 512U && output.find('\n') == std::string::npos) {
+        pollfd descriptor{};
+        descriptor.fd = read_end.get();
+        descriptor.events = POLLIN | POLLHUP;
+        const int polled = poll(&descriptor, 1, poll_timeout_ms(deadline));
+        if (polled == 0) {
             break;
         }
-        const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-        if (elapsed > static_cast<double>(timeout_sec)) {
-            kill(-pid, SIGKILL);
+        if (polled < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if ((descriptor.revents & POLLNVAL) != 0) {
+            break;
+        }
+        if ((descriptor.revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
+            continue;
+        }
+        for (;;) {
+            const ssize_t nread = read(read_end.get(), chunk.data(), chunk.size());
+            if (nread > 0) {
+                output.append(chunk.data(), static_cast<std::size_t>(nread));
+                if (output.size() > 512U || output.find('\n') != std::string::npos) {
+                    break;
+                }
+                continue;
+            }
+            if (nread == 0) {
+                pipe_closed = true;
+            }
+            if (nread < 0 && errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (pipe_closed) {
             break;
         }
     }
-    close(pipefd[0]);
-    const int rc = wait_for_process(pid, timeout_sec);
+    read_end.reset();
+
+    const int rc = wait_for_process_until(pid, deadline);
+    process.mark_reaped();
     if (rc != 0 && output.empty()) {
         return "unknown";
     }

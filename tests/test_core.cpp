@@ -2538,6 +2538,188 @@ void test_oracle_top_n_matches_cli_config() {
 }
 
 
+void test_oracle_posix_spawn_timeout_and_concurrency() {
+    const std::string unique_suffix = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    // Spaces and shell metacharacters pin that cwd/executable values are passed
+    // as positional argv entries rather than interpolated into a shell command.
+    const std::filesystem::path dir = std::filesystem::temp_directory_path()
+        / ("aldous tsp $spawn test " + unique_suffix);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    require(!ec, "create POSIX spawn test directory");
+
+    auto make_executable = [&](const std::string& name, const std::string& body) {
+        const std::filesystem::path script = dir / name;
+        {
+            std::ofstream out(script);
+            require(static_cast<bool>(out), "open POSIX spawn test script");
+            out << "#!/bin/sh\n" << body;
+            require(static_cast<bool>(out), "write POSIX spawn test script");
+        }
+        ec.clear();
+        std::filesystem::permissions(
+            script,
+            std::filesystem::perms::owner_read
+                | std::filesystem::perms::owner_write
+                | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace,
+            ec);
+        require(!ec, "mark POSIX spawn test script executable");
+        return script;
+    };
+
+    // Version capture is bounded and truncates a long first line without a
+    // busy-spin. The executable also proves PATH-independent absolute launch.
+    const std::filesystem::path long_version = make_executable(
+        "long_version_lkh",
+        "if [ \"$1\" = \"--version\" ]; then\n"
+        "  i=0; while [ $i -lt 240 ]; do printf x; i=$((i + 1)); done; printf '\\n'; exit 0\n"
+        "fi\n"
+        "cp init.tour out.tour\n"
+        "exit 0\n");
+    ExternalOracleConfig version_cfg;
+    version_cfg.mode = ExternalOracleMode::Lkh;
+    version_cfg.lkh_path = long_version.string();
+    OracleContext version_ctx;
+    std::string error;
+    require(build_oracle_context(version_cfg, version_ctx, error),
+            "build long-version oracle context");
+    require(version_ctx.version.size() == 120U,
+            "oracle version capture truncates long first lines deterministically");
+    require(std::all_of(version_ctx.version.begin(), version_ctx.version.end(),
+                        [](char ch) { return ch == 'x'; }),
+            "oracle version capture preserves first-line content");
+
+    const std::filesystem::path silent_version = make_executable(
+        "silent version lkh",
+        "if [ \"$1\" = \"--version\" ]; then exit 0; fi\n"
+        "cp init.tour out.tour\n"
+        "exit 0\n");
+    ExternalOracleConfig silent_cfg;
+    silent_cfg.mode = ExternalOracleMode::Lkh;
+    silent_cfg.lkh_path = silent_version.string();
+    OracleContext silent_ctx;
+    require(build_oracle_context(silent_cfg, silent_ctx, error),
+            "build silent-version oracle context");
+    require(silent_ctx.version == "unknown",
+            "silent version probes terminate cleanly and report unknown");
+
+    Instance inst;
+    Rng point_rng(7711);
+    inst.generate(28, point_rng);
+    inst.build_knn(20, KnnBackend::GridExact);
+
+    // A hung solver is killed as a process group and reaped within one deadline.
+    const std::filesystem::path hanging = make_executable(
+        "hanging_lkh",
+        "if [ \"$1\" = \"--version\" ]; then echo hanging-lkh-1.0; exit 0; fi\n"
+        "sleep 30\n"
+        "exit 0\n");
+    ExternalOracleConfig timeout_cfg;
+    timeout_cfg.mode = ExternalOracleMode::Lkh;
+    timeout_cfg.lkh_path = hanging.string();
+    timeout_cfg.min_k = 3;
+    timeout_cfg.max_k = 64;
+    timeout_cfg.time_limit_sec = 1;
+    OracleContext timeout_ctx;
+    require(build_oracle_context(timeout_cfg, timeout_ctx, error),
+            "build timeout oracle context");
+    Tour candidate;
+    candidate.init(inst.N);
+    std::vector<int> initial(static_cast<std::size_t>(inst.N));
+    std::iota(initial.begin(), initial.end(), 0);
+    candidate.set_tour(initial, inst);
+    SearchStats timeout_stats;
+    const auto timeout_start = std::chrono::steady_clock::now();
+    require(!external_oracle_polish_tour(
+                candidate, inst, timeout_ctx, true, &timeout_stats, false),
+            "timed-out oracle cannot improve a tour");
+    const double timeout_elapsed = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - timeout_start).count();
+    require(timeout_elapsed >= 0.8 && timeout_elapsed < 4.0,
+            "oracle timeout uses one bounded deadline and reaps promptly");
+    require(timeout_stats.oracle_calls == 1 && timeout_stats.oracle_failed == 1,
+            "timed-out oracle call is recorded as a failure");
+
+    // Resolve a valid executable, then remove it before the actual call. A
+    // posix_spawn launch error must become a structured oracle failure rather
+    // than leaking descriptors, leaving a child, or throwing through a worker.
+    const std::filesystem::path disappearing = make_executable(
+        "disappearing lkh",
+        "if [ \"$1\" = \"--version\" ]; then echo disappearing-1.0; exit 0; fi\n"
+        "cp init.tour out.tour\n"
+        "exit 0\n");
+    ExternalOracleConfig missing_cfg;
+    missing_cfg.mode = ExternalOracleMode::Lkh;
+    missing_cfg.lkh_path = disappearing.string();
+    missing_cfg.min_k = 3;
+    missing_cfg.max_k = 64;
+    OracleContext missing_ctx;
+    require(build_oracle_context(missing_cfg, missing_ctx, error),
+            "build disappearing oracle context");
+    ec.clear();
+    require(std::filesystem::remove(disappearing, ec) && !ec,
+            "remove oracle executable before launch");
+    Tour missing_candidate;
+    missing_candidate.init(inst.N);
+    missing_candidate.set_tour(initial, inst);
+    SearchStats missing_stats;
+    require(!external_oracle_polish_tour(
+                missing_candidate, inst, missing_ctx, true, &missing_stats, false),
+            "spawn failure cannot improve a tour");
+    require(missing_stats.oracle_calls == 1 && missing_stats.oracle_failed == 1
+                && missing_stats.oracle_call_records.size() == 1U,
+            "spawn failure is recorded exactly once");
+    const std::string& launch_error =
+        missing_stats.oracle_call_records.front().error;
+    require(launch_error.find("posix_spawn failed") != std::string::npos
+                || launch_error.find("oracle executable is not runnable")
+                    != std::string::npos,
+            "spawn failure retains a deterministic launch diagnostic");
+
+    // Exercise posix_spawn concurrently from restart workers. The fake solver
+    // intentionally uses relative paths, pinning the native working-directory
+    // action or safe argv-only fallback as well as launch and redirection.
+    const std::filesystem::path copy_script = write_fake_lkh_copy_script(dir / "copy");
+    ExternalOracleConfig concurrent_cfg;
+    concurrent_cfg.mode = ExternalOracleMode::Lkh;
+    concurrent_cfg.lkh_path = copy_script.string();
+    concurrent_cfg.min_k = 3;
+    concurrent_cfg.max_k = 64;
+    concurrent_cfg.subset_top = 0;
+    concurrent_cfg.inline_feedback = true;
+    concurrent_cfg.time_limit_sec = 5;
+    OracleContext concurrent_ctx;
+    require(build_oracle_context(concurrent_cfg, concurrent_ctx, error),
+            "build concurrent oracle context");
+
+    SolverOptions options;
+    options.oracle = concurrent_ctx;
+    options.subset_restarts = 8;
+    options.restart_threads = 4;
+    options.sa_iters = 0;
+    options.final_exhaustive_k = 0;
+    options.disable_two_opt = true;
+    options.disable_or_opt = true;
+    options.disable_subset_swap = true;
+    options.disable_pair_exchange = true;
+    options.disable_ruin_recreate = true;
+    options.disable_path_relink = true;
+    options.disable_smallp_seeds = true;
+    options.disable_highp_delete = true;
+    Rng solve_rng(7712);
+    const SolveResult result = solve_subset(inst, 20, solve_rng, options);
+    require(result.tour.k == 20 && result.tour.check_invariants(),
+            "concurrent spawned oracle calls preserve a valid solve");
+    require(result.stats.oracle_subset_calls == 8,
+            "every concurrent restart performs its inline oracle call");
+    require(result.stats.oracle_solved == 8 && result.stats.oracle_failed == 0,
+            "concurrent spawned oracle calls all return usable tours");
+
+    std::filesystem::remove_all(dir, ec);
+}
+
 void test_json_numeric_precision() {
     ResultsDocument doc;
     doc.N = 12;
@@ -2695,6 +2877,7 @@ int main(int argc, char** argv) {
     // otherwise platform-independent; only the process-launch path is skipped.
     RUN_TEST(test_oracle_parser_and_fake_lkh);
     RUN_TEST(test_oracle_top_n_matches_cli_config);
+    RUN_TEST(test_oracle_posix_spawn_timeout_and_concurrency);
 #endif
     RUN_TEST(test_json_numeric_precision);
     RUN_TEST(test_json_escape_regression);
