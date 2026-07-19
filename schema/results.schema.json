@@ -366,7 +366,18 @@
         "subset_restarts": {
           "type": "integer",
           "minimum": -1,
-          "description": "-1 = auto (8 when p <= 0.08, else 3); values >= 1 are the exact restart count"
+          "description": "-1 = auto (8 when p <= 0.08, else 3); values >= 1 configure the base restart population"
+        },
+        "continuation_restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Warm/continuation restart quota when a parent subset is available."
+        },
+        "continuation_policy": {
+          "enum": [
+            "supplemental",
+            "fixed-budget"
+          ]
         },
         "sa_iters": {
           "type": "integer",
@@ -1202,6 +1213,29 @@
               0,
               1
             ]
+          }
+        },
+        "restart_roles": {
+          "type": "array",
+          "description": "Search-controller role per restart: 0=independent diagnostic, 1=continuation, 2=elite kick, 3=anytime, 4=raced production.",
+          "x-enumNames": [
+            "independent-diagnostic",
+            "continuation",
+            "elite-kick",
+            "anytime",
+            "raced-production"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [0, 1, 2, 3, 4]
+          }
+        },
+        "restart_variants": {
+          "type": "array",
+          "description": "Stable zero-based seed variant within each restart kind and role.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "restart_centroids_x": {

@@ -232,6 +232,26 @@ void write_restart_sweep_array(std::ostream& out,
     out << ']';
 }
 
+void write_restart_role_array(std::ostream& out,
+                              const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << restart_role_code(records[i].role);
+    }
+    out << ']';
+}
+
+void write_restart_variant_array(std::ostream& out,
+                                 const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << records[i].seed_variant;
+    }
+    out << ']';
+}
+
 std::string summary_key(double p) {
     return p_value_key(p);
 }
@@ -426,6 +446,10 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
                 write_restart_kind_array(out, pv.restarts);
                 out << ",\n          \"restart_sweeps\": ";
                 write_restart_sweep_array(out, pv.restarts);
+                out << ",\n          \"restart_roles\": ";
+                write_restart_role_array(out, pv.restarts);
+                out << ",\n          \"restart_variants\": ";
+                write_restart_variant_array(out, pv.restarts);
                 out << ",\n          \"restart_centroids_x\": ";
                 write_restart_double_array(out, pv.restarts,
                     [](const RestartRecord& record) { return record.centroid_x; });
@@ -541,6 +565,9 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"tsp_ils\": " << doc.options.solver.tsp_ils << ",\n"
         << "    \"tsp_patience\": " << doc.options.solver.tsp_patience << ",\n"
         << "    \"subset_restarts\": " << doc.options.solver.subset_restarts << ",\n"
+        << "    \"continuation_restarts\": " << doc.options.solver.continuation_restarts << ",\n"
+        << "    \"continuation_policy\": \""
+        << continuation_policy_name(doc.options.solver.continuation_policy) << "\",\n"
         << "    \"sa_iters\": " << doc.options.solver.sa_iters << ",\n"
         << "    \"sa_iters_per_k\": " << doc.options.solver.sa_iters_per_k << ",\n"
         << "    \"sa_iters_per_n\": " << doc.options.solver.sa_iters_per_n << ",\n"

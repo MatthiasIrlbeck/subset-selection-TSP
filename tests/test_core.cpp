@@ -66,6 +66,10 @@ void test_restart_kind_metadata() {
     require(restart_sweep_code(RestartSweep::Primary) == 0
                 && restart_sweep_code(RestartSweep::Secondary) == 1,
             "restart sweep codes stay stable");
+    require(restart_role_code(RestartRole::IndependentDiagnostic) == 0
+                && restart_role_code(RestartRole::RacedProduction) == 4
+                && is_valid_restart_role_code(3),
+            "restart role codes stay stable");
 }
 
 void test_search_phase_timing_add() {
@@ -1891,6 +1895,8 @@ void test_restart_thread_invariance() {
     for (std::size_t i = 0; i < a.restarts.size(); ++i) {
         require(a.restarts[i].length == b.restarts[i].length
                     && a.restarts[i].kind == b.restarts[i].kind
+                    && a.restarts[i].role == b.restarts[i].role
+                    && a.restarts[i].seed_variant == b.restarts[i].seed_variant
                     && a.restarts[i].centroid_x == b.restarts[i].centroid_x
                     && a.restarts[i].centroid_y == b.restarts[i].centroid_y
                     && a.restarts[i].radius == b.restarts[i].radius,
@@ -1936,6 +1942,114 @@ void test_best_restart_diagnostic() {
         require(tsp.restarts[i].kind == RestartKind::TspNearestNeighbor,
                 "later TSP restarts record nearest-neighbor construction");
     }
+}
+
+
+void test_continuation_stream_contract() {
+    RunOptions standalone;
+    standalone.N = 72;
+    standalone.instances = 1;
+    standalone.threads = 1;
+    standalone.p_values = {0.4};
+    standalone.include_instance_rows = true;
+    standalone.solver.seed = 424242;
+    standalone.solver.subset_restarts = 3;
+    standalone.solver.continuation_restarts = 1;
+    standalone.solver.sa_iters = 0;
+    standalone.solver.restart_threads = 2;
+    standalone.solver.final_exhaustive_k = 0;
+    standalone.solver.disable_two_opt = true;
+    standalone.solver.disable_or_opt = true;
+    standalone.solver.disable_subset_swap = true;
+    standalone.solver.disable_pair_exchange = true;
+    standalone.solver.disable_ruin_recreate = true;
+    standalone.solver.disable_path_relink = true;
+    standalone.solver.disable_smallp_seeds = true;
+    standalone.solver.disable_highp_delete = true;
+
+    RunOptions grid = standalone;
+    grid.p_values = {0.8, 0.2, 0.4, 0.4};
+    const ResultsDocument single_doc = ExperimentRunner(standalone).run();
+    const ResultsDocument grid_doc = ExperimentRunner(grid).run();
+    require(grid_doc.p_values == std::vector<double>({0.2, 0.4, 0.8}),
+            "ExperimentRunner canonicalizes direct-API p grids");
+
+    const auto find_p = [](const InstanceResultRow& row, const double target)
+        -> const InstancePValueRow& {
+        const auto found = std::find_if(
+            row.p_results.begin(), row.p_results.end(),
+            [target](const InstancePValueRow& value) {
+                return std::abs(value.p - target) <= 1e-12;
+            });
+        if (found == row.p_results.end()) {
+            throw std::runtime_error("missing p row in continuation contract test");
+        }
+        return *found;
+    };
+    const InstancePValueRow& single = find_p(single_doc.instance_rows.front(), 0.4);
+    const InstancePValueRow& embedded = find_p(grid_doc.instance_rows.front(), 0.4);
+    std::vector<RestartRecord> single_independent;
+    std::vector<RestartRecord> embedded_independent;
+    for (const RestartRecord& record : single.restarts) {
+        if (record.role == RestartRole::IndependentDiagnostic) {
+            single_independent.push_back(record);
+        }
+    }
+    for (const RestartRecord& record : embedded.restarts) {
+        if (record.role == RestartRole::IndependentDiagnostic
+            && record.sweep == RestartSweep::Primary) {
+            embedded_independent.push_back(record);
+        }
+    }
+    require(single_independent.size() == 3U
+                && embedded_independent.size() == single_independent.size(),
+            "the independent restart quota is unchanged by neighboring p values");
+    for (std::size_t i = 0; i < single_independent.size(); ++i) {
+        const RestartRecord& a = single_independent[i];
+        const RestartRecord& b = embedded_independent[i];
+        require(a.length == b.length && a.kind == b.kind && a.role == b.role
+                    && a.seed_variant == b.seed_variant
+                    && a.centroid_x == b.centroid_x
+                    && a.centroid_y == b.centroid_y && a.radius == b.radius,
+                "independent restart records are p-grid invariant");
+    }
+    require(embedded.value <= single.value + 1e-12,
+            "supplemental continuation cannot worsen the standalone result");
+    require(std::count_if(embedded.restarts.begin(), embedded.restarts.end(),
+                          [](const RestartRecord& record) {
+                              return record.role == RestartRole::Continuation;
+                          }) == 1,
+            "supplemental mode appends the configured warm quota");
+
+    Rng point_rng(9191);
+    Instance inst;
+    inst.generate(96, point_rng);
+    inst.build_knn(16, KnnBackend::GridExact);
+    std::vector<int> warm = all_nodes(inst.N);
+    warm.resize(60U);
+    SolverOptions fixed = standalone.solver;
+    fixed.subset_restarts = 4;
+    fixed.continuation_restarts = 1;
+    fixed.continuation_policy = ContinuationPolicy::FixedBudget;
+    Rng fixed_rng(8181);
+    const SolveResult fixed_result = solve_subset(inst, 40, fixed_rng, fixed, &warm);
+    const auto count_role = [](const SolveResult& value, const RestartRole role) {
+        return static_cast<int>(std::count_if(
+            value.restarts.begin(), value.restarts.end(),
+            [role](const RestartRecord& record) { return record.role == role; }));
+    };
+    require(fixed_result.restarts.size() == 4U
+                && count_role(fixed_result, RestartRole::IndependentDiagnostic) == 3
+                && count_role(fixed_result, RestartRole::Continuation) == 1,
+            "fixed-budget continuation reserves an explicit quota");
+
+    fixed.continuation_policy = ContinuationPolicy::Supplemental;
+    Rng supplemental_rng(8181);
+    const SolveResult supplemental = solve_subset(inst, 40, supplemental_rng, fixed, &warm);
+    require(supplemental.restarts.size() == 5U
+                && count_role(supplemental, RestartRole::IndependentDiagnostic) == 4
+                && count_role(supplemental, RestartRole::Continuation) == 1,
+            "supplemental continuation preserves every independent draw");
 }
 
 void test_second_sweep_never_worse() {
@@ -1988,15 +2102,23 @@ void test_second_sweep_never_worse() {
                     "best_restart indexes the combined serialized population");
 
             const bool has_secondary = pi > 0U && pv.k < base.N;
-            const std::size_t expected = has_secondary ? 4U : 2U;
-            require(pv.restarts.size() == expected,
-                    "second sweep appends rather than replacing restart records");
+            const std::size_t primary_count =
+                off.instance_rows.front().p_results[pi].restarts.size();
+            const std::size_t secondary_count = has_secondary
+                ? static_cast<std::size_t>(base.solver.continuation_restarts)
+                : 0U;
+            require(pv.restarts.size() == primary_count + secondary_count,
+                    "second sweep appends continuation-only records");
             for (std::size_t ri = 0; ri < pv.restarts.size(); ++ri) {
-                const RestartSweep expected_sweep = (has_secondary && ri >= 2U)
+                const RestartSweep expected_sweep = ri >= primary_count
                     ? RestartSweep::Secondary
                     : RestartSweep::Primary;
                 require(pv.restarts[ri].sweep == expected_sweep,
                         "restart sweep tags preserve append order");
+                if (ri >= primary_count) {
+                    require(pv.restarts[ri].role == RestartRole::Continuation,
+                            "secondary sweep records only continuation work");
+                }
             }
             if (pv.k == base.N) {
                 require(pv.restarts[0].kind == RestartKind::TspFarthestInsertion
@@ -3106,6 +3228,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_solver_ablation_flags_are_exact);
     RUN_TEST(test_restart_thread_invariance);
     RUN_TEST(test_best_restart_diagnostic);
+    RUN_TEST(test_continuation_stream_contract);
     RUN_TEST(test_second_sweep_never_worse);
     RUN_TEST(test_control_variate_bounds);
     RUN_TEST(test_held_karp_bound);

@@ -39,6 +39,8 @@ With `--include-instance-rows`, every successful `instance_rows[].p_results[]` e
 | `restart_values` | final raw restart length divided by `k`, in execution order |
 | `restart_kinds` | stable kind code for each record; the authoritative code/name table is `include/aldous_tsp/restart_kinds.def` |
 | `restart_sweeps` | `0` for the primary standalone/descending sweep and `1` for the optional ascending secondary sweep |
+| `restart_roles` | controller role: `0` independent diagnostic, `1` continuation, `2` elite kick, `3` anytime, `4` raced production |
+| `restart_variants` | stable zero-based variant within a seed kind and role; independent of execution order and worker count |
 | `restart_centroids_x`, `restart_centroids_y` | metric-aware centroid of the selected nodes: circular mean for periodic coordinates and arithmetic mean for an open domain |
 | `restart_radii` | mean metric distance of selected nodes to that centroid |
 
@@ -57,8 +59,8 @@ Restart-kind codes are:
 | 8 | `tsp-farthest-insertion` | first full-TSP restart |
 | 9 | `tsp-nearest-neighbor` | later full-TSP restarts |
 
-For an ordinary solve, records are all primary and retain restart-index order. With `--second-sweep`, the primary records are serialized first and the secondary records are appended; `best_restart` is then recomputed over that combined sequence. A `p = 1` row contains the full-TSP restart population, so its executed count and arrays are no longer zero/empty when TSP restarts ran.
+For an ordinary solve, records are all primary and retain restart-index order. Independent records are generated from streams keyed by instance, cardinality, seed kind, and variant, so their values do not change when other `p` points are added to or reordered in the campaign grid. Under the default `supplemental` continuation policy, warm records are appended without removing an independent draw; `fixed-budget` reserves the configured warm quota inside `--restarts`. With `--second-sweep`, the primary records are serialized first and continuation-only secondary records are appended; `best_restart` is then recomputed over that combined sequence. A `p = 1` row contains the full-TSP restart population, so its executed count and arrays are no longer zero/empty when TSP restarts ran.
 
 The kind counters in `search_stats` are derived from the same typed kind assigned to each subset record. `random_restarts`, `warm_restarts`, `smallp_seed_restarts`, `highp_delete_restarts`, `region_restarts`, `dense_restarts`, and `kick_restarts` count their named records exactly. `elite_restarts` intentionally counts all elite-seeded restarts, so it includes both kind `4` and kind `5`; `kick_restarts` is the exact scheduled-kick subset. `subset_restarts` and `tsp_restarts` remain the total executed counts for their respective solvers.
 
-Restart outcomes are not automatically identically distributed. Seed kinds form a mixture, and secondary-sweep draws depend on an ascending warm-start chain. Tail or endpoint analyses should therefore filter or stratify by both `restart_kinds` and `restart_sweeps`; `scripts/restart_evt.py` exposes `--kinds` and `--sweeps` for this purpose. Older result files without `restart_sweeps` are interpreted as primary-only.
+Restart outcomes are not automatically identically distributed. Seed kinds form a mixture, and continuation, elite-kick, anytime, and raced-production draws are selected or dependent. Tail or endpoint analyses should therefore filter or stratify by `restart_kinds`, `restart_sweeps`, and `restart_roles`; `scripts/restart_evt.py` exposes all three and defaults to role `0` (independent diagnostic). Older files without sweep metadata are interpreted as primary-only; files without role metadata are retained as an explicitly unknown legacy mixture.

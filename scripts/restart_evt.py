@@ -23,8 +23,9 @@ Per instance, per p:
      subset at small p never contracts and lands at L/k ~ 1.5; a dense seed lands
      at ~0.65) and, when --second-sweep is enabled, across warm-start directions.
      A tail fit on the pooled sample is a fit to a contaminated distribution, so
-     draws are filterable by --kinds and --sweeps. Excluded mass is reported, not
-     hidden.
+     draws are filterable by --kinds, --sweeps, and --roles. The default role
+     is independent diagnostic only; continuation and production-raced draws are
+     excluded from endpoint fitting. Excluded mass is reported, not hidden.
 
   2. Domain of attraction. The moment estimator (Dekkers-Einmahl-de Haan, applied
      to the reflected sample) gives the extreme-value index gamma. A finite left
@@ -49,7 +50,8 @@ USAGE
 
 Requires the run to have been made with --include-instance-rows (0.9.5+), which
 records restart_values and restart_kinds. Current outputs also record
-restart_sweeps; older outputs are interpreted as primary-only.
+restart_sweeps and restart_roles; older outputs are interpreted as primary-only
+with an unknown mixed role.
 """
 
 from __future__ import annotations
@@ -61,7 +63,8 @@ import math
 import sys
 from collections import defaultdict
 
-from restart_metadata import DEFAULT_KINDS, DEFAULT_SWEEPS, KIND_NAMES, SWEEP_NAMES
+from restart_metadata import (DEFAULT_KINDS, DEFAULT_ROLES, DEFAULT_SWEEPS,
+                              KIND_NAMES, ROLE_NAMES, SWEEP_NAMES)
 
 import numpy as np
 from scipy.optimize import minimize_scalar
@@ -82,11 +85,12 @@ def load_runs(patterns):
     return docs
 
 
-def collect(docs, p, kinds, sweeps, max_value):
+def collect(docs, p, kinds, sweeps, roles, max_value):
     """-> {instance_index: np.array of retained draws}, plus census."""
     per_instance = defaultdict(list)
     kind_census = defaultdict(int)
     sweep_census = defaultdict(int)
+    role_census = defaultdict(int)
     dropped_by_value = 0
     for fname, doc in docs:
         rows = doc.get("instance_rows")
@@ -101,6 +105,7 @@ def collect(docs, p, kinds, sweeps, max_value):
                 vals = pv.get("restart_values")
                 kds = pv.get("restart_kinds")
                 sws = pv.get("restart_sweeps")
+                rls = pv.get("restart_roles")
                 if vals is None or vals == []:
                     continue
                 if not isinstance(vals, list):
@@ -123,7 +128,8 @@ def collect(docs, p, kinds, sweeps, max_value):
 
                 malformed = False
                 for field_name in (
-                    "restart_kinds", "restart_sweeps", "restart_centroids_x",
+                    "restart_kinds", "restart_sweeps", "restart_roles",
+                    "restart_variants", "restart_centroids_x",
                     "restart_centroids_y", "restart_radii",
                 ):
                     column = pv.get(field_name)
@@ -161,6 +167,8 @@ def collect(docs, p, kinds, sweeps, max_value):
                     kds = [-1] * expected
                 if sws is None:
                     sws = [0] * expected
+                if rls is None:
+                    rls = [-1] * expected
                 if any(isinstance(code, bool) or not isinstance(code, int) for code in kds):
                     sys.stderr.write(
                         f"{fname}: instance {row.get('index')} p={p} has "
@@ -171,20 +179,28 @@ def collect(docs, p, kinds, sweeps, max_value):
                         f"{fname}: instance {row.get('index')} p={p} has "
                         "non-integer restart sweeps; skipping\n")
                     continue
+                if any(isinstance(code, bool) or not isinstance(code, int) for code in rls):
+                    sys.stderr.write(
+                        f"{fname}: instance {row.get('index')} p={p} has "
+                        "non-integer restart roles; skipping\n")
+                    continue
                 key = (fname, row.get("index"))
-                for v, kd, sw in zip(vals, kds, sws):
+                for v, kd, sw, role in zip(vals, kds, sws, rls):
                     kind_census[kd] += 1
                     sweep_census[sw] += 1
+                    role_census[role] += 1
                     if kd not in kinds and kd != -1:
                         continue
                     if sw not in sweeps:
+                        continue
+                    if role not in roles and role != -1:
                         continue
                     if max_value is not None and v > max_value:
                         dropped_by_value += 1
                         continue
                     per_instance[key].append(v)
     return ({k: np.sort(np.asarray(v)) for k, v in per_instance.items()},
-            kind_census, sweep_census, dropped_by_value)
+            kind_census, sweep_census, role_census, dropped_by_value)
 
 
 def moment_index(x_sorted, m):
@@ -315,6 +331,10 @@ def main():
                     choices=sorted(SWEEP_NAMES),
                     help="restart sweeps to keep: 0=primary, 1=secondary "
                          "(default: both; old files are primary-only)")
+    ap.add_argument("--roles", type=int, nargs="+", default=list(DEFAULT_ROLES),
+                    choices=sorted(ROLE_NAMES),
+                    help="restart roles to keep (default: independent diagnostic only; "
+                         "legacy rows without roles are retained as unknown)")
     ap.add_argument("--max-value", type=float, default=0.9,
                     help="drop draws above this L/k as non-contracted "
                          "(default: 0.9; set 0 to disable)")
@@ -329,8 +349,8 @@ def main():
     if not docs:
         sys.exit("no result files matched")
     max_value = None if args.max_value == 0 else args.max_value
-    per_instance, kind_census, sweep_census, dropped = collect(
-        docs, args.p, set(args.kinds), set(args.sweeps), max_value)
+    per_instance, kind_census, sweep_census, role_census, dropped = collect(
+        docs, args.p, set(args.kinds), set(args.sweeps), set(args.roles), max_value)
     if not per_instance:
         sys.exit(f"no restart_values found at p={args.p} "
                  f"(was the run made with --include-instance-rows?)")
@@ -348,6 +368,12 @@ def main():
         print(f"  sweep {name:21s} {sweep_census[sw]:5d} draws  "
               f"({100*sweep_census[sw]/total:4.1f}%)"
               + ("" if sw in args.sweeps else "   [EXCLUDED by --sweeps]"))
+    for role in sorted(role_census):
+        name = ROLE_NAMES.get(role, "legacy-unknown" if role == -1 else f"role{role}")
+        retained = role in args.roles or role == -1
+        print(f"  role {name:22s} {role_census[role]:5d} draws  "
+              f"({100*role_census[role]/total:4.1f}%)"
+              + ("" if retained else "   [EXCLUDED by --roles]"))
     if dropped:
         print(f"  dropped as non-contracted (L/k > {max_value}): {dropped} draws")
     print()

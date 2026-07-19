@@ -221,6 +221,11 @@ Solver:
   --restarts <int>               Subset restarts. Values >= 1 run exactly that
                                  many. Default: auto = 8 when p <= 0.08, else 3
                                  (the historical effective behavior)
+  --continuation-restarts <int>  Warm restarts when a neighboring-p parent exists
+                                 (default: 1)
+  --continuation-policy <name>   supplemental | fixed-budget (default: supplemental).
+                                 Supplemental appends warm work without replacing
+                                 independent draws; fixed-budget reserves a quota.
   --sa-iters <int>               Subset SA iteration budget (default: 60000)
   --sa-iters-per-k <int>         Extra SA iterations per subset element k (default: 0)
   --sa-iters-per-n <int>         Extra SA iterations per CANDIDATE point N (default: 0).
@@ -340,6 +345,8 @@ std::string config_summary(const RunOptions& opt) {
         << ", knn_backend=" << knn_backend_name(opt.solver.knn_backend)
         << ", verify_knn_checks=" << opt.solver.verify_knn_checks
         << ", subset_restarts=" << (opt.solver.subset_restarts >= 1 ? std::to_string(opt.solver.subset_restarts) : std::string("auto"))
+        << ", continuation_restarts=" << opt.solver.continuation_restarts
+        << ", continuation_policy=" << continuation_policy_name(opt.solver.continuation_policy)
         << ", sa_iters=" << opt.solver.sa_iters
         << ", sa_iters_per_k=" << opt.solver.sa_iters_per_k
         << ", sa_iters_per_n=" << opt.solver.sa_iters_per_n
@@ -387,6 +394,7 @@ bool validate_options(RunOptions& opt, std::string& err) {
     if (opt.N < 3) { err = "--N must be >= 3"; return false; }
     if (opt.instances < 1) { err = "--instances must be >= 1"; return false; }
     if (opt.solver.subset_restarts < 1 && opt.solver.subset_restarts != -1) { err = "--restarts must be >= 1 (or omit it for auto)"; return false; }
+    if (opt.solver.continuation_restarts < 0) { err = "--continuation-restarts must be >= 0"; return false; }
     if (opt.solver.tsp_restarts < 1) { err = "--tsp-restarts must be >= 1"; return false; }
     if (opt.solver.sa_iters < 0) { err = "--sa-iters must be >= 0"; return false; }
     if (opt.solver.sa_iters_per_k < 0) { err = "--sa-iters-per-k must be >= 0"; return false; }
@@ -583,6 +591,19 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             continue;
         }
         if (flag == "--restarts") { if (!parse_int_flag(i, flag, opt.solver.subset_restarts)) { return false; } continue; }
+        if (flag == "--continuation-restarts") {
+            if (!parse_int_flag(i, flag, opt.solver.continuation_restarts)) { return false; }
+            continue;
+        }
+        if (flag == "--continuation-policy") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_continuation_policy(value, opt.solver.continuation_policy)) {
+                std::fprintf(stderr, "Invalid --continuation-policy: %s\n", value.c_str());
+                return false;
+            }
+            continue;
+        }
         if (flag == "--cv-mc-samples") { if (!parse_int_flag(i, flag, opt.cv_mc_samples)) { return false; } continue; }
         if (flag == "--hk-iterations") { if (!parse_int_flag(i, flag, opt.hk_iterations)) { return false; } continue; }
         if (flag == "--sa-iters") { if (!parse_int_flag(i, flag, opt.solver.sa_iters)) { return false; } continue; }

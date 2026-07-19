@@ -218,7 +218,7 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
         }
     }
 
-    if (opt.second_sweep && np > 1U) {
+    if (opt.second_sweep && np > 1U && opt.solver.continuation_restarts > 0) {
         // Ascending sweep: seed each p from the (grown) best solution at the
         // next smaller p and keep the better result per p. Catches descending
         // rows that landed in a poor basin.
@@ -235,7 +235,11 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
                                         static_cast<std::uint64_t>(index),
                                         mix_hash64(static_cast<std::uint64_t>(std::llround(p * 1000000.0)) ^ 0x2b7e151628aed2a6ULL)));
             const auto solve_start = Clock::now();
-            SolveResult solved = solve_subset(inst, k, up_rng, opt.solver, grow.empty() ? nullptr : &grow);
+            SubsetSolveRequest continuation_request;
+            continuation_request.continuation_only = true;
+            SolveResult solved = solve_subset(inst, k, up_rng, opt.solver,
+                                              grow.empty() ? nullptr : &grow,
+                                              continuation_request);
             out.solve_seconds[pi] += std::chrono::duration<double>(Clock::now() - solve_start).count();
             append_restart_records(out.restarts[pi], solved.restarts, RestartSweep::Secondary);
             out.restarts_used[pi] = static_cast<int>(out.restarts[pi].size());
@@ -294,6 +298,13 @@ ExperimentRunner::ExperimentRunner(RunOptions options) : options_(std::move(opti
     if (options_.p_values.empty()) {
         options_.p_values = default_p_values();
     }
+    // The public API accepts RunOptions directly, bypassing the CLI validator.
+    // Canonicalize here as well so sweep direction and per-p seed identities do
+    // not depend on caller ordering or duplicate entries.
+    std::sort(options_.p_values.begin(), options_.p_values.end());
+    options_.p_values.erase(
+        std::unique(options_.p_values.begin(), options_.p_values.end()),
+        options_.p_values.end());
     const int requested_threads = options_.threads;
     options_.threads = resolve_thread_count(requested_threads, options_.instances);
     if (options_.solver.restart_threads <= 0) {

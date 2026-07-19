@@ -22,6 +22,14 @@ struct SolveResult {
     int best_restart = -1;
 };
 
+// Optional search-controller request used by ExperimentRunner. The default
+// public solve performs the independent population plus any configured warm
+// restarts. A secondary p-sweep sets continuation_only so it does not repeat
+// independent diagnostic draws under a different sweep seed.
+struct SubsetSolveRequest {
+    bool continuation_only = false;
+};
+
 std::vector<int> nearest_neighbor_order(const Instance& inst, const std::vector<int>& subset, int start_index);
 std::vector<int> farthest_insertion_order(const Instance& inst, const std::vector<int>& subset);
 
@@ -32,7 +40,12 @@ int or_opt_1_descent(Tour& tour, const Instance& inst, int max_passes, SearchSta
 int subset_swap_descent(Tour& tour, const Instance& inst, int max_passes, SearchStats* stats = nullptr);
 
 SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& options);
-SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOptions& options, const std::vector<int>* warm_start = nullptr);
+SolveResult solve_subset(const Instance& inst,
+                         int k,
+                         Rng& rng,
+                         const SolverOptions& options,
+                         const std::vector<int>* warm_start = nullptr,
+                         const SubsetSolveRequest& request = {});
 
 class TspSolver {
 public:

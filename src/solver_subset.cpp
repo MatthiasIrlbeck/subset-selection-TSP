@@ -8,6 +8,117 @@
 namespace aldous_tsp {
 namespace {
 
+struct SeedCandidate {
+    std::vector<int> nodes;
+    RestartKind kind = RestartKind::Random;
+    RestartRole role = RestartRole::IndependentDiagnostic;
+    int variant = 0;
+    double length = std::numeric_limits<double>::infinity();
+};
+
+std::uint64_t seed_stream(const std::uint64_t solve_stream_base,
+                          const RestartRole role,
+                          const RestartKind kind,
+                          const int variant,
+                          const std::uint64_t purpose) {
+    const std::uint64_t role_kind =
+        (static_cast<std::uint64_t>(restart_role_code(role)) << 32U)
+        ^ static_cast<std::uint64_t>(restart_kind_code(kind));
+    return make_stream_seed(
+        solve_stream_base,
+        mix_hash64(role_kind ^ purpose),
+        mix_hash64(static_cast<std::uint64_t>(variant) ^ 0x9e3779b97f4a7c15ULL));
+}
+
+// Fixed kind quotas are more stable than globally ranking raw seed-cycle
+// lengths: kind selects materially different search behavior. Round-robin by
+// kind, best-first within each kind, and repeat deterministically only when a
+// caller explicitly requests more restarts than there are distinct candidates.
+std::vector<SeedCandidate> select_seed_candidates(std::vector<SeedCandidate> candidates,
+                                                  const int target) {
+    if (target <= 0 || candidates.empty()) {
+        return {};
+    }
+    std::map<RestartKind, std::vector<SeedCandidate>> by_kind;
+    for (SeedCandidate& candidate : candidates) {
+        by_kind[candidate.kind].push_back(std::move(candidate));
+    }
+    std::vector<std::vector<SeedCandidate>*> kinds;
+    kinds.reserve(by_kind.size());
+    for (auto& entry : by_kind) {
+        std::stable_sort(entry.second.begin(), entry.second.end(),
+                         [](const SeedCandidate& lhs, const SeedCandidate& rhs) {
+            if (lhs.length != rhs.length) { return lhs.length < rhs.length; }
+            if (lhs.variant != rhs.variant) { return lhs.variant < rhs.variant; }
+            return lhs.nodes < rhs.nodes;
+        });
+        kinds.push_back(&entry.second);
+    }
+    std::stable_sort(kinds.begin(), kinds.end(), [](const auto* lhs, const auto* rhs) {
+        const SeedCandidate& a = lhs->front();
+        const SeedCandidate& b = rhs->front();
+        if (a.length != b.length) { return a.length < b.length; }
+        return restart_kind_code(a.kind) < restart_kind_code(b.kind);
+    });
+
+    std::vector<SeedCandidate> selected;
+    selected.reserve(static_cast<std::size_t>(target));
+    for (std::size_t round = 0U; static_cast<int>(selected.size()) < target; ++round) {
+        bool progressed = false;
+        for (std::vector<SeedCandidate>* group : kinds) {
+            if (group->empty()) { continue; }
+            const SeedCandidate& source = (*group)[round % group->size()];
+            selected.push_back(source);
+            progressed = true;
+            if (static_cast<int>(selected.size()) == target) { break; }
+        }
+        if (!progressed) { break; }
+    }
+    return selected;
+}
+
+std::vector<SeedCandidate> select_continuation_candidates(
+    std::vector<SeedCandidate> candidates,
+    const int target) {
+    if (target <= 0 || candidates.empty()) {
+        return {};
+    }
+    std::map<RestartKind, std::vector<SeedCandidate>> by_kind;
+    for (SeedCandidate& candidate : candidates) {
+        by_kind[candidate.kind].push_back(std::move(candidate));
+    }
+    for (auto& entry : by_kind) {
+        std::stable_sort(entry.second.begin(), entry.second.end(),
+                         [](const SeedCandidate& lhs, const SeedCandidate& rhs) {
+            if (lhs.length != rhs.length) { return lhs.length < rhs.length; }
+            if (lhs.variant != rhs.variant) { return lhs.variant < rhs.variant; }
+            return lhs.nodes < rhs.nodes;
+        });
+    }
+
+    // At high p the deletion trajectory is the specialized continuation
+    // operator; keep it before the generic resized warm seed. Round-robin then
+    // guarantees both kinds when the caller reserves at least two draws.
+    constexpr RestartKind priority[] = {
+        RestartKind::HighPDelete,
+        RestartKind::Warm,
+    };
+    std::vector<SeedCandidate> selected;
+    selected.reserve(static_cast<std::size_t>(target));
+    for (std::size_t round = 0U; static_cast<int>(selected.size()) < target; ++round) {
+        bool progressed = false;
+        for (const RestartKind kind : priority) {
+            auto found = by_kind.find(kind);
+            if (found == by_kind.end() || found->second.empty()) { continue; }
+            selected.push_back(found->second[round % found->second.size()]);
+            progressed = true;
+            if (static_cast<int>(selected.size()) == target) { break; }
+        }
+        if (!progressed) { break; }
+    }
+    return selected;
+}
+
 void record_subset_restart_kind(SearchStats& stats, RestartKind kind) noexcept {
     switch (kind) {
         case RestartKind::Random: ++stats.random_restarts; break;
@@ -29,7 +140,12 @@ void record_subset_restart_kind(SearchStats& stats, RestartKind kind) noexcept {
 
 } // namespace
 
-SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOptions& options, const std::vector<int>* warm_start) {
+SolveResult solve_subset(const Instance& inst,
+                         int k,
+                         Rng& rng,
+                         const SolverOptions& options,
+                         const std::vector<int>* warm_start,
+                         const SubsetSolveRequest& request) {
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
@@ -38,116 +154,193 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
     if (k >= inst.N) { return solve_tsp(inst, rng, options); }
 
     const double p = static_cast<double>(k) / static_cast<double>(std::max(1, inst.N));
-    // Resolve the restart count. Explicit values (>= 1) are authoritative; the
-    // AUTO default (-1) reproduces the historical effective behavior, in which
-    // the small-p seed pool forced 8 restarts at p <= 0.08 regardless of the
-    // flag, and 3 ran otherwise. Without this, fixing the flag to be honest
-    // would have silently cut default-quality at small p (measured: L/k
-    // 0.6031 -> 0.6126 at p=0.02, N=5000).
+    // Explicit values configure the base population. AUTO reproduces the
+    // historical effective count. Supplemental continuation is deliberately
+    // outside this population so adding neighboring p-values cannot remove an
+    // independent draw or worsen the best-of-restarts result.
     const int resolved_restarts = options.subset_restarts >= 1
         ? options.subset_restarts
         : (p <= 0.08 ? 8 : 3);
-    ElitePool elite(std::max(8, resolved_restarts + 8), EliteMode::Set);
-    std::vector<std::vector<int>> seed_pool;
-    std::vector<RestartKind> seed_kind;
-    std::vector<double> seed_length;
+    const bool has_warm = warm_start != nullptr && !warm_start->empty();
+    if (request.continuation_only && !has_warm) {
+        throw std::invalid_argument("continuation-only subset solve requires a warm start");
+    }
+
+    // Consume exactly one caller draw. Every seed family, variant, restart, and
+    // post-processing stream is derived from this stable base, so constructing
+    // warm candidates cannot perturb independent candidates or their anneals.
+    const std::uint64_t solve_stream_base = rng.next_u64();
+
+    const int kick_n = (request.continuation_only || options.disable_elite_restarts)
+        ? 0
+        : std::max(0, std::min(options.subset_kick_restarts, resolved_restarts - 1));
+    int continuation_n = 0;
+    int indep_restarts = 0;
+    if (request.continuation_only) {
+        continuation_n = options.continuation_restarts;
+    } else if (has_warm && options.continuation_restarts > 0
+               && options.continuation_policy == ContinuationPolicy::FixedBudget) {
+        const int non_kick_budget = resolved_restarts - kick_n;
+        continuation_n = std::min(options.continuation_restarts,
+                                  std::max(0, non_kick_budget - 1));
+        indep_restarts = non_kick_budget - continuation_n;
+    } else {
+        indep_restarts = resolved_restarts - kick_n;
+        if (has_warm && options.continuation_restarts > 0) {
+            continuation_n = options.continuation_restarts;
+        }
+    }
+    const int kick_begin = indep_restarts;
+    const int continuation_begin = kick_begin + kick_n;
+    const int total_restarts = continuation_begin + continuation_n;
+    if (total_restarts <= 0) {
+        result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
+        return result;
+    }
+
     const auto seed_pool_start = Clock::now();
-    auto add_seed = [&](std::vector<int> seed, RestartKind kind) {
-        if (static_cast<int>(seed.size()) != k) { return; }
-        Tour t;
-        t.init(inst.N);
-        t.set_tour(seed, inst);
-        elite.try_add(seed, t.length);
-        seed_pool.push_back(std::move(seed));
-        seed_kind.push_back(kind);
-        seed_length.push_back(t.length);
+    auto make_candidate = [&](std::vector<int> nodes,
+                              const RestartKind kind,
+                              const RestartRole role,
+                              const int variant) -> SeedCandidate {
+        SeedCandidate candidate;
+        if (static_cast<int>(nodes.size()) != k) {
+            return candidate;
+        }
+        Tour tour;
+        tour.init(inst.N);
+        tour.set_tour(nodes, inst);
+        candidate.nodes = std::move(nodes);
+        candidate.kind = kind;
+        candidate.role = role;
+        candidate.variant = variant;
+        candidate.length = tour.length;
+        return candidate;
+    };
+    auto append_valid = [&](std::vector<SeedCandidate>& destination,
+                            SeedCandidate candidate) {
+        if (static_cast<int>(candidate.nodes.size()) == k
+            && std::isfinite(candidate.length)) {
+            destination.push_back(std::move(candidate));
+        }
     };
 
-    if (warm_start != nullptr && !warm_start->empty()) {
-        add_seed(resize_seed(inst, *warm_start, k, rng, 0), RestartKind::Warm);
-        add_seed(resize_seed(inst, *warm_start, k, rng, 1), RestartKind::Warm);
-        if (!options.disable_highp_delete && p >= 0.50 && (options.mode == SolverMode::HighPDelete || options.mode == SolverMode::Hybrid || options.mode == SolverMode::Balanced) && static_cast<int>(warm_start->size()) > k) {
-            add_seed(highp_delete_seed(inst, *warm_start, k, rng, 0), RestartKind::HighPDelete);
-            add_seed(highp_delete_seed(inst, *warm_start, k, rng, 1), RestartKind::HighPDelete);
-            add_seed(segment_delete_seed(inst, *warm_start, k, rng), RestartKind::HighPDelete);
+    std::vector<SeedCandidate> independent_candidates;
+    if (indep_restarts > 0) {
+        if (!options.disable_smallp_seeds
+            && (options.mode == SolverMode::SmallPRegion
+                || options.mode == SolverMode::Hybrid || p <= 0.08)) {
+            Rng smallp_rng(seed_stream(solve_stream_base,
+                                       RestartRole::IndependentDiagnostic,
+                                       RestartKind::SmallP,
+                                       0,
+                                       0x2d98c47d86e6f2adULL));
+            auto seeds = make_smallp_seed_pool(inst, k, smallp_rng, 8);
+            for (std::size_t i = 0; i < seeds.size(); ++i) {
+                append_valid(independent_candidates,
+                             make_candidate(std::move(seeds[i]),
+                                            RestartKind::SmallP,
+                                            RestartRole::IndependentDiagnostic,
+                                            static_cast<int>(i)));
+            }
+        }
+
+        const bool dense_fill = options.small_p_dense_fill && p <= 0.08;
+        int fill_variant = 0;
+        while (static_cast<int>(independent_candidates.size()) < indep_restarts) {
+            const bool use_dense = dense_fill || ((fill_variant & 1) == 0);
+            const RestartKind kind = use_dense ? RestartKind::Dense : RestartKind::Random;
+            Rng seed_rng_local(seed_stream(solve_stream_base,
+                                           RestartRole::IndependentDiagnostic,
+                                           kind,
+                                           fill_variant,
+                                           0x7137449123ef65cdULL));
+            std::vector<int> seed;
+            if (use_dense) {
+                seed = dense_seed(inst, k, seed_rng_local, fill_variant);
+            } else {
+                seed = random_subset(inst.N, k, seed_rng_local);
+                seed = (k > 36)
+                    ? nearest_neighbor_order(inst, seed, seed_rng_local.randint(k))
+                    : farthest_insertion_order(inst, seed);
+            }
+            append_valid(independent_candidates,
+                         make_candidate(std::move(seed), kind,
+                                        RestartRole::IndependentDiagnostic,
+                                        fill_variant));
+            ++fill_variant;
         }
     }
-    if (!options.disable_smallp_seeds && (options.mode == SolverMode::SmallPRegion || options.mode == SolverMode::Hybrid || p <= 0.08)) {
-        auto seeds = make_smallp_seed_pool(inst, k, rng, 8);
-        for (auto& s : seeds) { add_seed(std::move(s), RestartKind::SmallP); }
-    }
-    const bool dense_fill = options.small_p_dense_fill && p <= 0.08;
-    while (static_cast<int>(seed_pool.size()) < resolved_restarts) {
-        std::vector<int> seed;
-        RestartKind fill_kind = RestartKind::Random;
-        if (dense_fill || static_cast<int>(seed_pool.size()) % 2 == 0) {
-            seed = dense_seed(inst, k, rng, static_cast<int>(seed_pool.size()));
-            fill_kind = RestartKind::Dense;  // compact, local refinement
-        } else {
-            seed = random_subset(inst.N, k, rng);
-            seed = (k > 36) ? nearest_neighbor_order(inst, seed, rng.randint(k)) : farthest_insertion_order(inst, seed);
-            fill_kind = RestartKind::Random;  // spread over the whole domain
+    std::vector<SeedCandidate> independent_seeds =
+        select_seed_candidates(std::move(independent_candidates), indep_restarts);
+
+    std::vector<SeedCandidate> continuation_candidates;
+    if (continuation_n > 0 && has_warm) {
+        const int warm_variants = std::max(2, continuation_n);
+        for (int variant = 0; variant < warm_variants; ++variant) {
+            Rng warm_rng(seed_stream(solve_stream_base,
+                                     RestartRole::Continuation,
+                                     RestartKind::Warm,
+                                     variant,
+                                     0xb5c0fbcfec4d3b2fULL));
+            append_valid(continuation_candidates,
+                         make_candidate(resize_seed(inst, *warm_start, k, warm_rng,
+                                                    variant & 1),
+                                        RestartKind::Warm,
+                                        RestartRole::Continuation,
+                                        variant));
         }
-        add_seed(std::move(seed), fill_kind);
+        if (!options.disable_highp_delete && p >= 0.50
+            && (options.mode == SolverMode::HighPDelete
+                || options.mode == SolverMode::Hybrid
+                || options.mode == SolverMode::Balanced)
+            && static_cast<int>(warm_start->size()) > k) {
+            for (int variant = 0; variant < 2; ++variant) {
+                Rng delete_rng(seed_stream(solve_stream_base,
+                                           RestartRole::Continuation,
+                                           RestartKind::HighPDelete,
+                                           variant,
+                                           0x8f1bbcdcb7a56463ULL));
+                append_valid(continuation_candidates,
+                             make_candidate(highp_delete_seed(inst, *warm_start, k,
+                                                              delete_rng, variant),
+                                            RestartKind::HighPDelete,
+                                            RestartRole::Continuation,
+                                            variant));
+            }
+            Rng segment_rng(seed_stream(solve_stream_base,
+                                        RestartRole::Continuation,
+                                        RestartKind::HighPDelete,
+                                        2,
+                                        0x8f1bbcdcb7a56463ULL));
+            append_valid(continuation_candidates,
+                         make_candidate(segment_delete_seed(inst, *warm_start, k,
+                                                            segment_rng),
+                                        RestartKind::HighPDelete,
+                                        RestartRole::Continuation,
+                                        2));
+        }
+    }
+    std::vector<SeedCandidate> continuation_seeds =
+        select_continuation_candidates(std::move(continuation_candidates), continuation_n);
+    if (static_cast<int>(independent_seeds.size()) != indep_restarts
+        || static_cast<int>(continuation_seeds.size()) != continuation_n) {
+        throw std::runtime_error("failed to construct the requested restart seed population");
     }
 
-    // --restarts is authoritative. Previously the restart count was
-    //   max(seed_pool.size(), subset_restarts)
-    // and the seed builders inject up to 8 small-p seeds at p <= 0.08, so the
-    // flag could not lower the restart count below the pool size: `--restarts 1`
-    // and `--restarts 8` ran identically. That made the search budget
-    // uncontrollable, which is fatal for a convergence study.
-    //
-    // When the pool is larger than the requested count we round-robin across seed
-    // KINDS (best-first within each kind, most promising kind first) rather than
-    // simply taking the globally shortest seeds. Kind is not cosmetic -- it
-    // selects specialised operators (high-p exchange, small-p region moves) -- so
-    // a purely length-ranked truncation could silently disable an entire operator.
-    const int total_restarts = resolved_restarts;
-    // Scheduled elite-kick restarts occupy the LAST kick_n slots; at least one
-    // independent restart always runs so the kick phase has an incumbent.
-    const int kick_n = std::max(0, std::min(options.subset_kick_restarts, total_restarts - 1));
-    const int indep_restarts = total_restarts - kick_n;
-    bool kick_snapshot_taken = false;
-    if (static_cast<int>(seed_pool.size()) > total_restarts) {
-        std::map<RestartKind, std::vector<int>> by_kind;
-        for (std::size_t i = 0; i < seed_pool.size(); ++i) {
-            by_kind[seed_kind[i]].push_back(static_cast<int>(i));
-        }
-        std::vector<std::vector<int>*> kinds;
-        for (auto& entry : by_kind) {
-            std::sort(entry.second.begin(), entry.second.end(), [&](int a, int b) {
-                return seed_length[static_cast<std::size_t>(a)] < seed_length[static_cast<std::size_t>(b)];
-            });
-            kinds.push_back(&entry.second);
-        }
-        // Most promising kind first, judged by its best seed.
-        std::stable_sort(kinds.begin(), kinds.end(), [&](const std::vector<int>* a, const std::vector<int>* b) {
-            return seed_length[static_cast<std::size_t>(a->front())] < seed_length[static_cast<std::size_t>(b->front())];
-        });
-        std::vector<int> chosen;
-        chosen.reserve(static_cast<std::size_t>(total_restarts));
-        for (std::size_t round = 0; static_cast<int>(chosen.size()) < total_restarts; ++round) {
-            bool progressed = false;
-            for (std::vector<int>* group : kinds) {
-                if (round >= group->size()) { continue; }
-                chosen.push_back((*group)[round]);
-                progressed = true;
-                if (static_cast<int>(chosen.size()) == total_restarts) { break; }
-            }
-            if (!progressed) { break; }
-        }
-        std::vector<std::vector<int>> kept_pool;
-        std::vector<RestartKind> kept_kind;
-        kept_pool.reserve(chosen.size());
-        kept_kind.reserve(chosen.size());
-        for (const int idx : chosen) {
-            kept_pool.push_back(std::move(seed_pool[static_cast<std::size_t>(idx)]));
-            kept_kind.push_back(seed_kind[static_cast<std::size_t>(idx)]);
-        }
-        seed_pool = std::move(kept_pool);
-        seed_kind = std::move(kept_kind);
+    ElitePool elite(std::max(8, total_restarts + 8), EliteMode::Set);
+    // Prime only from independent seeds before the kick snapshot. Continuation
+    // seeds are deliberately excluded so scheduled kicks are invariant to the
+    // presence of neighboring p-values.
+    for (const SeedCandidate& candidate : independent_seeds) {
+        elite.try_add(candidate.nodes, candidate.length);
     }
+    if (request.continuation_only) {
+        for (const SeedCandidate& candidate : continuation_seeds) {
+            elite.try_add(candidate.nodes, candidate.length);
+        }
+    }
+
     result.stats.phases.seed_construction_seconds +=
         std::chrono::duration<double>(Clock::now() - seed_pool_start).count();
     const int sa_iters_eff = effective_sa_iters(options, k, inst.N);
@@ -158,7 +351,10 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
     // One base draw, then a derived stream per restart: restart results are a
     // pure function of (options, instance, restart index), so the outcome is
     // deterministic and invariant to restart_threads outside budget mode.
-    const std::uint64_t restart_stream_base = rng.next_u64();
+    const std::uint64_t restart_stream_base =
+        make_stream_seed(solve_stream_base,
+                         0x9b05688c2b3e6c1fULL,
+                         0x452821e638d01377ULL);
 
     struct RestartOutcome {
         std::vector<int> nodes;
@@ -177,62 +373,103 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
 
     auto run_restart = [&](int restart) -> RestartOutcome {
         RestartOutcome out;
-        Rng rrng(make_stream_seed(restart_stream_base, static_cast<std::uint64_t>(restart), 0x452821e638d01377ULL));
+        Rng rrng(make_stream_seed(restart_stream_base,
+                                  static_cast<std::uint64_t>(restart),
+                                  0x452821e638d01377ULL));
         std::vector<int> seed;
         RestartKind kind = RestartKind::Random;
+        RestartRole role = RestartRole::IndependentDiagnostic;
+        int seed_variant = 0;
         const auto restart_seed_start = Clock::now();
-        const bool scheduled_kick = (restart >= indep_restarts) && (restart < total_restarts)
-                                    && !options.disable_elite_restarts && !elite_seeds.empty();
+        const bool scheduled_kick = restart >= kick_begin
+                                    && restart < continuation_begin
+                                    && !elite_seeds.empty();
+        const bool anytime_restart = restart >= total_restarts;
         const bool elite_ils = scheduled_kick
-                               || ((restart >= total_restarts) && !options.disable_elite_restarts
+                               || (anytime_restart && !options.disable_elite_restarts
                                    && !elite_seeds.empty()
-                                   && (((restart - total_restarts) & 1) == 0));  // anytime: alternate elite/cold
+                                   && (((restart - total_restarts) & 1) == 0));
         if (elite_ils) {
             // Pick among the top few elite members and apply a small, spatially
-            // coherent ruin-and-recreate kick: swap out ~8% of members, each
-            // replaced by a KNN neighbor of a retained member (falling back to
-            // random). Keeping the perturbation local preserves the good
-            // structure so polish + SA intensify around it.
+            // coherent ruin-and-recreate kick. Scheduled kicks are drawn only
+            // from the completed independent phase; continuation seeds cannot
+            // perturb their stream or elite snapshot.
             const int pool = std::min<int>(4, static_cast<int>(elite_seeds.size()));
             seed = elite_seeds[static_cast<std::size_t>(rrng.randint(pool))];
             apply_elite_kick(inst, seed, rrng, options.kick_fraction);
             kind = scheduled_kick ? RestartKind::Kick : RestartKind::Elite;
+            role = scheduled_kick ? RestartRole::EliteKick : RestartRole::Anytime;
+            seed_variant = scheduled_kick ? restart - kick_begin
+                                          : restart - total_restarts;
             out.elite_seed = true;
         } else {
-            seed = seed_pool[static_cast<std::size_t>(restart % static_cast<int>(seed_pool.size()))];
-            kind = seed_kind[static_cast<std::size_t>(restart % static_cast<int>(seed_kind.size()))];
+            const SeedCandidate* candidate = nullptr;
+            if (restart < kick_begin) {
+                candidate = &independent_seeds[static_cast<std::size_t>(restart)];
+            } else if (restart >= continuation_begin && restart < total_restarts) {
+                candidate = &continuation_seeds[
+                    static_cast<std::size_t>(restart - continuation_begin)];
+            } else if (anytime_restart) {
+                // The cold half of the anytime tail is deterministic given the
+                // completed scheduled populations. Prefer independent draws;
+                // a continuation-only secondary sweep falls back to its warm
+                // population.
+                const std::vector<SeedCandidate>& fallback =
+                    independent_seeds.empty() ? continuation_seeds : independent_seeds;
+                if (!fallback.empty()) {
+                    candidate = &fallback[static_cast<std::size_t>(
+                        (restart - total_restarts) % static_cast<int>(fallback.size()))];
+                }
+            }
+            if (candidate == nullptr) {
+                throw std::logic_error("restart schedule has no seed candidate");
+            }
+            seed = candidate->nodes;
+            kind = candidate->kind;
+            role = anytime_restart ? RestartRole::Anytime : candidate->role;
+            seed_variant = anytime_restart ? restart - total_restarts
+                                           : candidate->variant;
             if (options.region_seeds
+                && role == RestartRole::IndependentDiagnostic
                 && (kind == RestartKind::Random || kind == RestartKind::Dense)) {
-                // Fresh region seed per restart: uniform center, k nearest
-                // points, nearest-neighbor order. Replaces the pooled random
-                // seed (which is reused across the restart cycle anyway, and
-                // whose contraction phase fails about half the time).
+                // Fresh region seed per independent restart: uniform center, k
+                // sampled nodes from a dilated local neighborhood, then a
+                // nearest-neighbor cycle. Its random stream is restart-local.
                 const int center = rrng.randint(inst.N);
-                const double dil = options.region_dilation >= 1.0 ? options.region_dilation : 3.0;
-                const int pool_n = std::min(inst.N, std::max(k, static_cast<int>(std::lround(dil * static_cast<double>(k)))));
+                const double dil = options.region_dilation >= 1.0
+                    ? options.region_dilation : 3.0;
+                const int pool_n = std::min(
+                    inst.N,
+                    std::max(k, static_cast<int>(std::lround(
+                        dil * static_cast<double>(k)))));
                 std::vector<std::pair<double, int>> by_dist;
                 by_dist.reserve(static_cast<std::size_t>(inst.N));
                 for (int i = 0; i < inst.N; ++i) {
                     by_dist.emplace_back(inst.dist(center, i), i);
                 }
-                std::nth_element(by_dist.begin(), by_dist.begin() + pool_n, by_dist.end());
+                if (pool_n < inst.N) {
+                    std::nth_element(by_dist.begin(),
+                                     by_dist.begin() + pool_n,
+                                     by_dist.end());
+                }
                 std::vector<int> candidates;
                 candidates.reserve(static_cast<std::size_t>(pool_n));
-                for (int i = 0; i < pool_n; ++i) { candidates.push_back(by_dist[static_cast<std::size_t>(i)].second); }
-                // Random k of the dilated neighborhood: local, but free to skip
-                // awkward points instead of being forced to take every one.
+                for (int i = 0; i < pool_n; ++i) {
+                    candidates.push_back(by_dist[static_cast<std::size_t>(i)].second);
+                }
                 for (int i = 0; i < k; ++i) {
                     const int j = i + rrng.randint(pool_n - i);
-                    std::swap(candidates[static_cast<std::size_t>(i)], candidates[static_cast<std::size_t>(j)]);
+                    std::swap(candidates[static_cast<std::size_t>(i)],
+                              candidates[static_cast<std::size_t>(j)]);
                 }
                 std::vector<int> region(candidates.begin(), candidates.begin() + k);
                 seed = nearest_neighbor_order(inst, region, rrng.randint(k));
-                kind = RestartKind::Region;  // compact: windowed insertion is enough
+                kind = RestartKind::Region;
             }
         }
         out.stats.phases.seed_construction_seconds +=
             std::chrono::duration<double>(Clock::now() - restart_seed_start).count();
-        out.record.kind = kind;
+        // The complete typed record is finalized after local search.
         // Elite-seeded restarts (scheduled kicks and anytime ILS) anneal at the
         // reduced kick_t0: a full-melt t0 would erase the inherited structure
         // and reduce the kick to an independent restart with a biased seed.
@@ -386,18 +623,24 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         }
         out.nodes = tour.nodes;
         out.record = make_restart_record(inst, out.nodes, tour.length, kind);
+        out.record.role = role;
+        out.record.seed_variant = seed_variant;
         return out;
     };
 
     int launched = 0;
+    bool kick_snapshot_taken = false;
     double best_outcome_len = std::numeric_limits<double>::infinity();
     std::vector<RestartOutcome> outcomes;
     for (;;) {
         int wave = 0;
-        if (launched < indep_restarts) {
-            // Waves never straddle the independent->kick boundary: every kick
-            // must see the elite pool of the COMPLETED independent phase.
-            wave = std::min(restart_threads, indep_restarts - launched);
+        if (launched < kick_begin) {
+            // Waves never straddle role boundaries. Scheduled kicks observe the
+            // complete independent phase, and continuation starts only after
+            // the kick phase has merged deterministically.
+            wave = std::min(restart_threads, kick_begin - launched);
+        } else if (launched < continuation_begin) {
+            wave = std::min(restart_threads, continuation_begin - launched);
         } else if (launched < total_restarts) {
             wave = std::min(restart_threads, total_restarts - launched);
         } else if (time_budget > 0.0
@@ -413,7 +656,9 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
             if (launched >= total_restarts) {
                 // Anytime: refresh once per wave (documented non-reproducible).
                 elite_seeds = elite.export_nodes();
-            } else if (launched >= indep_restarts && !kick_snapshot_taken) {
+            } else if (launched >= kick_begin
+                       && launched < continuation_begin
+                       && !kick_snapshot_taken) {
                 // Scheduled kicks: snapshot EXACTLY ONCE at the phase boundary,
                 // so kick seeds are independent of restart_threads and the
                 // deterministic-path guarantee survives.
@@ -443,13 +688,16 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
 
     if (!options.disable_path_relink) {
         ScopedPhaseTimer phase_timer(result.stats.phases.path_relink_seconds);
+        Rng relink_rng(make_stream_seed(solve_stream_base,
+                                        0x510e527fade682d1ULL,
+                                        0x1f83d9abfb41bd6bULL));
         auto elite_nodes = elite.export_nodes();
         const int top = std::min(static_cast<int>(elite_nodes.size()), std::max(0, options.path_relink_top));
         for (int i = 0; i < top; ++i) {
             for (int j = i + 1; j < top; ++j) {
                 std::vector<int> rel_nodes;
                 double rel_len = std::numeric_limits<double>::infinity();
-                if (subset_path_relink_bidirectional(inst, elite_nodes[static_cast<std::size_t>(i)], elite_nodes[static_cast<std::size_t>(j)], rng, options, rel_nodes, rel_len, &result.stats)) {
+                if (subset_path_relink_bidirectional(inst, elite_nodes[static_cast<std::size_t>(i)], elite_nodes[static_cast<std::size_t>(j)], relink_rng, options, rel_nodes, rel_len, &result.stats)) {
                     const auto before_entries = elite.entries().size();
                     const double before_best = elite.entries().empty() ? std::numeric_limits<double>::infinity() : elite.entries().front().length;
                     const double before_worst = elite.entries().empty() ? std::numeric_limits<double>::infinity() : elite.entries().back().length;

@@ -13,11 +13,11 @@ SolveResult TspSolver::solve(const Instance& inst, Rng& rng) const {
 SubsetSolver::SubsetSolver(SolverOptions options) : options_(std::move(options)) {}
 
 SolveResult SubsetSolver::solve(const Instance& inst, int k, Rng& rng) const {
-    return solve_subset(inst, k, rng, options_, nullptr);
+    return solve_subset(inst, k, rng, options_, nullptr, {});
 }
 
 SolveResult SubsetSolver::solve_with_warm_start(const Instance& inst, int k, Rng& rng, const std::vector<int>& warm_start) const {
-    return solve_subset(inst, k, rng, options_, &warm_start);
+    return solve_subset(inst, k, rng, options_, &warm_start, {});
 }
 
 } // namespace aldous_tsp

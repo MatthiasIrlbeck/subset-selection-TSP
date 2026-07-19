@@ -80,6 +80,38 @@ enum class RestartSweep : int {
     Secondary = 1,
 };
 
+// Stable role of a restart in the search controller. The role is orthogonal to
+// RestartKind: e.g. a warm or high-p-delete seed is Continuation, while a dense
+// seed is normally IndependentDiagnostic. This makes independent samples
+// separable from continuation, elite, anytime, and later raced production work.
+enum class RestartRole : int {
+    IndependentDiagnostic = 0,
+    Continuation = 1,
+    EliteKick = 2,
+    Anytime = 3,
+    RacedProduction = 4,
+};
+
+[[nodiscard]] constexpr int restart_role_code(RestartRole role) noexcept {
+    return static_cast<int>(role);
+}
+
+[[nodiscard]] constexpr bool is_valid_restart_role_code(int code) noexcept {
+    return code >= restart_role_code(RestartRole::IndependentDiagnostic)
+        && code <= restart_role_code(RestartRole::RacedProduction);
+}
+
+[[nodiscard]] constexpr const char* restart_role_name(RestartRole role) noexcept {
+    switch (role) {
+        case RestartRole::IndependentDiagnostic: return "independent-diagnostic";
+        case RestartRole::Continuation: return "continuation";
+        case RestartRole::EliteKick: return "elite-kick";
+        case RestartRole::Anytime: return "anytime";
+        case RestartRole::RacedProduction: return "raced-production";
+    }
+    return "unknown";
+}
+
 [[nodiscard]] constexpr int restart_sweep_code(RestartSweep sweep) noexcept {
     return static_cast<int>(sweep);
 }
@@ -99,6 +131,10 @@ struct RestartRecord {
     double length = std::numeric_limits<double>::infinity();
     RestartKind kind = RestartKind::Random;
     RestartSweep sweep = RestartSweep::Primary;
+    RestartRole role = RestartRole::IndependentDiagnostic;
+    // Stable zero-based variant within the seed kind/role. This is diagnostic
+    // metadata and is deliberately independent of execution order or threads.
+    int seed_variant = 0;
     double centroid_x = 0.0;
     double centroid_y = 0.0;
     double radius = 0.0;

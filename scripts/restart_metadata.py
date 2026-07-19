@@ -50,3 +50,16 @@ DEFAULT_KINDS = tuple(KIND_NAMES)
 # result files that predate restart_sweeps are interpreted as primary-only.
 SWEEP_NAMES = {0: "primary", 1: "secondary"}
 DEFAULT_SWEEPS = tuple(SWEEP_NAMES)
+
+# Stable restart-controller roles serialized by RestartRole in restart.hpp.
+# Endpoint fitting defaults to independent diagnostic draws only. Files from
+# before role metadata are marked unknown (-1) and remain eligible so historical
+# campaigns do not silently disappear; their mixture cannot be decontaminated.
+ROLE_NAMES = {
+    0: "independent-diagnostic",
+    1: "continuation",
+    2: "elite-kick",
+    3: "anytime",
+    4: "raced-production",
+}
+DEFAULT_ROLES = (0,)

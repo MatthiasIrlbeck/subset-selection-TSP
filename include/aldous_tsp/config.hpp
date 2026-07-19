@@ -137,6 +137,16 @@ enum class SolverMode {
     Hybrid
 };
 
+// How warm/continuation restarts interact with the configured restart budget.
+// Supplemental preserves the complete independent population and appends warm
+// restarts, so adding neighboring p-values cannot worsen a fixed-budget result.
+// FixedBudget reserves an explicit quota inside --restarts for matched-compute
+// studies; the independent prefix remains deterministic and visible.
+enum class ContinuationPolicy {
+    Supplemental,
+    FixedBudget,
+};
+
 enum class KnnBackend {
     BruteForce,
     GridExact
@@ -209,6 +219,12 @@ struct SolverOptions {
     // flag could not lower the count below the seed-pool size, so honoring it
     // literally would have silently degraded default-quality at small p.
     int subset_restarts = -1;
+    // Number of warm/continuation restarts when a parent solution is available.
+    // Under Supplemental these are appended to --restarts. Under FixedBudget
+    // they occupy an explicit quota within --restarts. A secondary sweep runs
+    // continuation restarts only rather than repeating the independent search.
+    int continuation_restarts = 1;
+    ContinuationPolicy continuation_policy = ContinuationPolicy::Supplemental;
     int sa_iters = 60000;
     // Additional SA iterations per subset element: the effective SA budget for
     // a size-k solve is sa_iters + sa_iters_per_k * k. The default 0 keeps the
@@ -396,6 +412,8 @@ struct RunOptions {
 
 const char* solver_mode_name(SolverMode mode) noexcept;
 bool parse_solver_mode(const std::string& text, SolverMode& out) noexcept;
+const char* continuation_policy_name(ContinuationPolicy policy) noexcept;
+bool parse_continuation_policy(const std::string& text, ContinuationPolicy& out) noexcept;
 const char* knn_backend_name(KnnBackend backend) noexcept;
 bool parse_knn_backend(const std::string& text, KnnBackend& out) noexcept;
 const char* exhaustive_two_opt_policy_name(ExhaustiveTwoOptPolicy policy) noexcept;

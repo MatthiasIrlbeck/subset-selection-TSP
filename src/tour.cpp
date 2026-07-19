@@ -115,6 +115,26 @@ bool parse_solver_mode(const std::string& text, SolverMode& out) noexcept {
     return false;
 }
 
+const char* continuation_policy_name(ContinuationPolicy policy) noexcept {
+    switch (policy) {
+        case ContinuationPolicy::Supplemental: return "supplemental";
+        case ContinuationPolicy::FixedBudget: return "fixed-budget";
+    }
+    return "supplemental";
+}
+
+bool parse_continuation_policy(const std::string& text, ContinuationPolicy& out) noexcept {
+    if (text == "supplemental" || text == "append") {
+        out = ContinuationPolicy::Supplemental;
+        return true;
+    }
+    if (text == "fixed-budget" || text == "fixed" || text == "reserved") {
+        out = ContinuationPolicy::FixedBudget;
+        return true;
+    }
+    return false;
+}
+
 const char* knn_backend_name(KnnBackend backend) noexcept {
     switch (backend) {
         case KnnBackend::BruteForce: return "coords_exact_bruteforce_knn";
