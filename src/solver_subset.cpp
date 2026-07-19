@@ -51,6 +51,7 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
     std::vector<std::vector<int>> seed_pool;
     std::vector<RestartKind> seed_kind;
     std::vector<double> seed_length;
+    const auto seed_pool_start = Clock::now();
     auto add_seed = [&](std::vector<int> seed, RestartKind kind) {
         if (static_cast<int>(seed.size()) != k) { return; }
         Tour t;
@@ -147,6 +148,8 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         seed_pool = std::move(kept_pool);
         seed_kind = std::move(kept_kind);
     }
+    result.stats.phases.seed_construction_seconds +=
+        std::chrono::duration<double>(Clock::now() - seed_pool_start).count();
     const int sa_iters_eff = effective_sa_iters(options, k, inst.N);
     const double time_budget = options.time_budget_per_p;
     const double sa_t0 = options.sa_t0 > 0.0 ? options.sa_t0 : 1.4;
@@ -177,6 +180,7 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         Rng rrng(make_stream_seed(restart_stream_base, static_cast<std::uint64_t>(restart), 0x452821e638d01377ULL));
         std::vector<int> seed;
         RestartKind kind = RestartKind::Random;
+        const auto restart_seed_start = Clock::now();
         const bool scheduled_kick = (restart >= indep_restarts) && (restart < total_restarts)
                                     && !options.disable_elite_restarts && !elite_seeds.empty();
         const bool elite_ils = scheduled_kick
@@ -226,6 +230,8 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
                 kind = RestartKind::Region;  // compact: windowed insertion is enough
             }
         }
+        out.stats.phases.seed_construction_seconds +=
+            std::chrono::duration<double>(Clock::now() - restart_seed_start).count();
         out.record.kind = kind;
         // Elite-seeded restarts (scheduled kicks and anytime ILS) anneal at the
         // reduced kick_t0: a full-melt t0 would erase the inherited structure
@@ -261,9 +267,13 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         Tour tour;
         tour.init(inst.N);
         tour.set_tour(seed, inst);
-        polish_tour(tour, inst, options, &out.stats,
-                    kind == RestartKind::HighPDelete ? 2 : 1);
+        {
+            ScopedPhaseTimer phase_timer(out.stats.phases.initial_polish_seconds);
+            polish_tour(tour, inst, options, &out.stats,
+                        kind == RestartKind::HighPDelete ? 2 : 1);
+        }
         if (kind == RestartKind::HighPDelete) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.highp_exchange_seconds);
             highp_delete_exchange_descent(tour, inst, warm_start == nullptr ? seed : *warm_start, options, &out.stats, 2);
         }
         // Best-so-far snapshot. A full Tour copy drags the O(N) pos/in_set
@@ -291,42 +301,59 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         SubsetIndex sindex;
         if (use_spatial) { sindex.build(inst, tour); }
         const int spatial_neighbors = std::max(1, options.sa_spatial_neighbors);
-        for (int it = 0; it < sa_iters_eff; ++it) {
-            const double frac = (sa_iters_eff <= 1) ? 0.0 : static_cast<double>(it) / static_cast<double>(sa_iters_eff - 1);
-            const double temperature = restart_t0 * std::exp(restart_log_ratio * frac);
-            const int ri = rrng.randint(tour.k);
-            const int add = choose_swap_candidate(inst, tour, ri, rrng);
-            if (tour.in_set[static_cast<std::size_t>(add)] != 0U) { continue; }
-            SwapInsertionMove move =
-                restart_exact_insertion
-                    ? find_best_insert_after_remove(inst, tour, ri, add)
-                    : (use_spatial
-                           ? find_best_insert_after_remove_spatial(inst, tour, sindex, ri, add,
-                                                                   spatial_neighbors,
-                                                                   std::max(1, options.sa_insertion_window))
-                           : find_best_insert_after_remove_windowed(inst, tour, ri, add,
-                                                                    std::max(1, options.sa_insertion_window)));
-            if (!move.valid) { continue; }
-            const double delta = move.delta;
-            ++out.stats.sa_moves;
-            const bool improving = delta < -kImprovementEps;
-            const bool accept = improving || rrng.uniform() < std::exp(-std::max(0.0, delta) / std::max(temperature, 1e-12));
-            if (accept) {
-                const int removed_node = tour.nodes[static_cast<std::size_t>(move.remove_pos)];
-                tour.apply_swap_post_rem(move.remove_pos, move.post_pred, move.add_node, inst, move.delta);
-                if (use_spatial) {
-                    sindex.remove_member(inst, removed_node);
-                    sindex.add_member(inst, move.add_node);
+        {
+            ScopedPhaseTimer sa_timer(out.stats.phases.sa_seconds);
+            for (int it = 0; it < sa_iters_eff; ++it) {
+                const double frac = (sa_iters_eff <= 1) ? 0.0 : static_cast<double>(it) / static_cast<double>(sa_iters_eff - 1);
+                const double temperature = restart_t0 * std::exp(restart_log_ratio * frac);
+                const bool timing_sample = (it & 63) == 0;
+                const Clock::time_point proposal_start = timing_sample ? Clock::now() : Clock::time_point{};
+                const int ri = rrng.randint(tour.k);
+                const int add = choose_swap_candidate(inst, tour, ri, rrng);
+                if (timing_sample) {
+                    ++out.stats.phases.sa_proposal_samples;
+                    out.stats.phases.sa_proposal_sample_seconds +=
+                        std::chrono::duration<double>(Clock::now() - proposal_start).count();
                 }
-                ++out.stats.sa_accepted;
-                if (improving) { ++out.stats.sa_improving; }
-                if (!options.disable_two_opt && (it + 1) % 1000 == 0) {
-                    if (use_all_polish_exhaustive_two_opt(options, tour.k)) { two_opt_descent(tour, inst, 100, &out.stats); }
-                    else { two_opt_candidate_descent(tour, inst, 40, 32, &out.stats, sa_table); }
+                if (tour.in_set[static_cast<std::size_t>(add)] != 0U) { continue; }
+                const Clock::time_point insertion_start = timing_sample ? Clock::now() : Clock::time_point{};
+                SwapInsertionMove move =
+                    restart_exact_insertion
+                        ? find_best_insert_after_remove(inst, tour, ri, add)
+                        : (use_spatial
+                               ? find_best_insert_after_remove_spatial(inst, tour, sindex, ri, add,
+                                                                       spatial_neighbors,
+                                                                       std::max(1, options.sa_insertion_window))
+                               : find_best_insert_after_remove_windowed(inst, tour, ri, add,
+                                                                        std::max(1, options.sa_insertion_window)));
+                if (timing_sample) {
+                    ++out.stats.phases.sa_insertion_samples;
+                    out.stats.phases.sa_insertion_sample_seconds +=
+                        std::chrono::duration<double>(Clock::now() - insertion_start).count();
                 }
-                if (tour.length < best_length - kImprovementEps) {
-                    best_nodes = tour.nodes;
-                    best_length = tour.length;
+                if (!move.valid) { continue; }
+                const double delta = move.delta;
+                ++out.stats.sa_moves;
+                const bool improving = delta < -kImprovementEps;
+                const bool accept = improving || rrng.uniform() < std::exp(-std::max(0.0, delta) / std::max(temperature, 1e-12));
+                if (accept) {
+                    const int removed_node = tour.nodes[static_cast<std::size_t>(move.remove_pos)];
+                    tour.apply_swap_post_rem(move.remove_pos, move.post_pred, move.add_node, inst, move.delta);
+                    if (use_spatial) {
+                        sindex.remove_member(inst, removed_node);
+                        sindex.add_member(inst, move.add_node);
+                    }
+                    ++out.stats.sa_accepted;
+                    if (improving) { ++out.stats.sa_improving; }
+                    if (!options.disable_two_opt && (it + 1) % 1000 == 0) {
+                        ScopedPhaseTimer checkpoint_timer(out.stats.phases.sa_checkpoint_polish_seconds);
+                        if (use_all_polish_exhaustive_two_opt(options, tour.k)) { two_opt_descent(tour, inst, 100, &out.stats); }
+                        else { two_opt_candidate_descent(tour, inst, 40, 32, &out.stats, sa_table); }
+                    }
+                    if (tour.length < best_length - kImprovementEps) {
+                        best_nodes = tour.nodes;
+                        best_length = tour.length;
+                    }
                 }
             }
         }
@@ -336,18 +363,25 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         // best-of-restarts) see bit-identical numbers to the old Tour-copy
         // path, whose length was the incrementally maintained one.
         tour.length = best_length;
-        polish_tour(tour, inst, options, &out.stats, 2);
+        {
+            ScopedPhaseTimer phase_timer(out.stats.phases.post_sa_polish_seconds);
+            polish_tour(tour, inst, options, &out.stats, 2);
+        }
         if (!options.disable_subset_swap) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.subset_swap_seconds);
             subset_swap_descent_impl(tour, inst, options.subset_swap_descent_passes, !options.disable_two_opt, &out.stats);
             polish_tour(tour, inst, options, &out.stats, 1);
         }
         if (!options.disable_pair_exchange) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.pair_exchange_seconds);
             subset_pair_exchange_descent(tour, inst, rrng, options, &out.stats, options.pair_exchange_passes);
         }
         if (!options.disable_ruin_recreate) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.ruin_recreate_seconds);
             subset_ruin_recreate_lns(tour, inst, rrng, options, &out.stats, options.ruin_recreate_rounds);
         }
         if (options.oracle.cfg.inline_feedback) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.oracle_seconds);
             (void)external_oracle_polish_tour(tour, inst, options.oracle, false, &out.stats, !options.disable_two_opt);
         }
         out.nodes = tour.nodes;
@@ -408,6 +442,7 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
     }
 
     if (!options.disable_path_relink) {
+        ScopedPhaseTimer phase_timer(result.stats.phases.path_relink_seconds);
         auto elite_nodes = elite.export_nodes();
         const int top = std::min(static_cast<int>(elite_nodes.size()), std::max(0, options.path_relink_top));
         for (int i = 0; i < top; ++i) {
@@ -433,10 +468,14 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
         }
     }
 
-    polish_elite_with_oracle(elite, inst, options, false, options.oracle.cfg.subset_top, &result.stats);
+    {
+        ScopedPhaseTimer phase_timer(result.stats.phases.oracle_seconds);
+        polish_elite_with_oracle(elite, inst, options, false, options.oracle.cfg.subset_top, &result.stats);
+    }
     const auto nodes = elite.export_nodes();
     if (!nodes.empty()) {
         result.tour.set_tour(nodes.front(), inst);
+        ScopedPhaseTimer phase_timer(result.stats.phases.final_polish_seconds);
         final_polish_tour(result.tour, inst, options, &result.stats, 2);
     }
     result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();

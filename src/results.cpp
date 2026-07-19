@@ -236,6 +236,34 @@ std::string summary_key(double p) {
     return p_value_key(p);
 }
 
+void write_phase_timing(std::ostream& out, const SearchPhaseTiming& phases, const std::string& indent) {
+    out << indent << "{\n";
+    auto write_seconds = [&](const char* name, double value, bool comma = true) {
+        out << indent << "  \"" << name << "\": ";
+        write_json_double(out, value);
+        out << (comma ? ",\n" : "\n");
+    };
+    write_seconds("seed_construction_seconds", phases.seed_construction_seconds);
+    write_seconds("tsp_construction_seconds", phases.tsp_construction_seconds);
+    write_seconds("initial_polish_seconds", phases.initial_polish_seconds);
+    write_seconds("sa_seconds", phases.sa_seconds);
+    write_seconds("sa_checkpoint_polish_seconds", phases.sa_checkpoint_polish_seconds);
+    write_seconds("post_sa_polish_seconds", phases.post_sa_polish_seconds);
+    write_seconds("subset_swap_seconds", phases.subset_swap_seconds);
+    write_seconds("highp_exchange_seconds", phases.highp_exchange_seconds);
+    write_seconds("pair_exchange_seconds", phases.pair_exchange_seconds);
+    write_seconds("ruin_recreate_seconds", phases.ruin_recreate_seconds);
+    write_seconds("path_relink_seconds", phases.path_relink_seconds);
+    write_seconds("tsp_ils_seconds", phases.tsp_ils_seconds);
+    write_seconds("final_polish_seconds", phases.final_polish_seconds);
+    write_seconds("oracle_seconds", phases.oracle_seconds);
+    out << indent << "  \"sa_proposal_samples\": " << phases.sa_proposal_samples << ",\n"
+        << indent << "  \"sa_insertion_samples\": " << phases.sa_insertion_samples << ",\n";
+    write_seconds("sa_proposal_sample_seconds", phases.sa_proposal_sample_seconds);
+    write_seconds("sa_insertion_sample_seconds", phases.sa_insertion_sample_seconds, false);
+    out << indent << '}';
+}
+
 void write_stats(std::ostream& out, const SearchStats& stats, const std::string& indent) {
     out << indent << "{\n"
         << indent << "  \"tsp_restarts\": " << stats.tsp_restarts << ",\n"
@@ -300,6 +328,8 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"oracle_subset_calls\": " << stats.oracle_subset_calls << ",\n"
         << indent << "  \"oracle_gain\": ";
     write_json_double(out, stats.oracle_gain);
+    out << ",\n" << indent << "  \"phase_timing\": ";
+    write_phase_timing(out, stats.phases, indent + "  ");
     out << "\n" << indent << '}';
 }
 

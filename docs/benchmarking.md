@@ -37,6 +37,20 @@ python3 scripts/profile_run.py --exe build/aldous_tsp --N 240 --instances 2 --mo
 
 It runs one scenario, then prints wall time, KNN build time, TSP time, subset time, oracle time, and the local-search/neighborhood counters. Use this to decide whether to profile KNN construction, 2-opt, subset exchange, LNS, path relinking, or oracle execution.
 
+For paired performance work, use the hot-path canary harness. It alternates baseline/candidate execution order, fixes all search seeds and options, records both JSON and CSV manifests, compares quality, and exposes focused phase speedups:
+
+```bash
+python3 scripts/benchmark_hotpaths.py \
+  --baseline-exe /path/to/baseline/aldous_tsp \
+  --candidate-exe build/aldous_tsp \
+  --suite production \
+  --repetitions 3 \
+  --out-dir hotpath-canary \
+  --check
+```
+
+The production suite contains separate torus-distance, pair-exchange, subset-swap, and combined workloads. CI runs only the deterministic smoke suite. Timing fields are accumulated worker elapsed-seconds and may exceed wall time under restart parallelism; nested checkpoint polish is already included in the SA total.
+
 
 ## Exhaustive 2-opt policy comparison
 

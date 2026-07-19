@@ -35,6 +35,38 @@ struct OracleCallRecord {
     std::string error;
 };
 
+// Accumulated phase timings. Values are elapsed-seconds summed across restart
+// workers, not necessarily wall-clock seconds; nested fields (for example
+// sa_checkpoint_polish_seconds within sa_seconds) are deliberately reported
+// separately and must not be summed as disjoint phases.
+struct SearchPhaseTiming {
+    double seed_construction_seconds = 0.0;
+    double tsp_construction_seconds = 0.0;
+    double initial_polish_seconds = 0.0;
+    double sa_seconds = 0.0;
+    double sa_checkpoint_polish_seconds = 0.0;
+    double post_sa_polish_seconds = 0.0;
+    double subset_swap_seconds = 0.0;
+    double highp_exchange_seconds = 0.0;
+    double pair_exchange_seconds = 0.0;
+    double ruin_recreate_seconds = 0.0;
+    double path_relink_seconds = 0.0;
+    double tsp_ils_seconds = 0.0;
+    double final_polish_seconds = 0.0;
+    double oracle_seconds = 0.0;
+
+    // Low-overhead deterministic samples taken every 64 SA iterations. The
+    // sample durations are raw measured seconds; divide by the corresponding
+    // sample count to obtain average proposal/insertion latency without putting
+    // a clock read on every move.
+    std::uint64_t sa_proposal_samples = 0;
+    std::uint64_t sa_insertion_samples = 0;
+    double sa_proposal_sample_seconds = 0.0;
+    double sa_insertion_sample_seconds = 0.0;
+
+    void add(const SearchPhaseTiming& other) noexcept;
+};
+
 struct SearchStats {
     std::uint64_t tsp_restarts = 0;
     std::uint64_t tsp_ils_iterations = 0;
@@ -92,6 +124,7 @@ struct SearchStats {
     std::uint64_t oracle_subset_calls = 0;
     double oracle_gain = 0.0;
     std::vector<OracleCallRecord> oracle_call_records;
+    SearchPhaseTiming phases;
 
     void add(const SearchStats& other);
 };

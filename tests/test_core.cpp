@@ -68,6 +68,29 @@ void test_restart_kind_metadata() {
             "restart sweep codes stay stable");
 }
 
+void test_search_phase_timing_add() {
+    SearchPhaseTiming total;
+    SearchPhaseTiming delta;
+    delta.seed_construction_seconds = 1.0;
+    delta.sa_seconds = 2.0;
+    delta.pair_exchange_seconds = 3.0;
+    delta.sa_proposal_samples = 4;
+    delta.sa_insertion_samples = 5;
+    delta.sa_proposal_sample_seconds = 0.006;
+    delta.sa_insertion_sample_seconds = 0.007;
+    total.add(delta);
+    total.add(delta);
+    require(total.seed_construction_seconds == 2.0, "phase timings accumulate seed time");
+    require(total.sa_seconds == 4.0, "phase timings accumulate SA time");
+    require(total.pair_exchange_seconds == 6.0, "phase timings accumulate neighborhood time");
+    require(total.sa_proposal_samples == 8, "phase timing proposal samples accumulate");
+    require(total.sa_insertion_samples == 10, "phase timing insertion samples accumulate");
+    require(std::fabs(total.sa_proposal_sample_seconds - 0.012) < 1e-15,
+            "phase timing proposal durations accumulate");
+    require(std::fabs(total.sa_insertion_sample_seconds - 0.014) < 1e-15,
+            "phase timing insertion durations accumulate");
+}
+
 void test_rng() {
     Rng a(42), b(42), c(43);
     for (int i = 0; i < 8; ++i) {
@@ -2814,6 +2837,7 @@ int main(int argc, char** argv) {
         } \
     } while (false)
     RUN_TEST(test_restart_kind_metadata);
+    RUN_TEST(test_search_phase_timing_add);
     RUN_TEST(test_rng);
     RUN_TEST(test_periodic_geometry_primitives);
     RUN_TEST(test_periodic_grid_primitives);

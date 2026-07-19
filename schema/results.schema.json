@@ -852,6 +852,9 @@
         "kick_restarts": {
           "type": "integer",
           "minimum": 0
+        },
+        "phase_timing": {
+          "$ref": "#/$defs/phase_timing"
         }
       },
       "additionalProperties": false
@@ -1298,6 +1301,105 @@
           "items": {
             "$ref": "#/$defs/oracle_call_record"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "phase_timing": {
+      "description": "Accumulated worker elapsed-seconds by solver phase. Nested SA checkpoint timing is included in sa_seconds and should not be added as a disjoint phase. Proposal/insertion sample durations are raw deterministic 1-in-64 timing samples.",
+      "type": "object",
+      "required": [
+        "seed_construction_seconds",
+        "tsp_construction_seconds",
+        "initial_polish_seconds",
+        "sa_seconds",
+        "sa_checkpoint_polish_seconds",
+        "post_sa_polish_seconds",
+        "subset_swap_seconds",
+        "highp_exchange_seconds",
+        "pair_exchange_seconds",
+        "ruin_recreate_seconds",
+        "path_relink_seconds",
+        "tsp_ils_seconds",
+        "final_polish_seconds",
+        "oracle_seconds",
+        "sa_proposal_samples",
+        "sa_insertion_samples",
+        "sa_proposal_sample_seconds",
+        "sa_insertion_sample_seconds"
+      ],
+      "properties": {
+        "seed_construction_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tsp_construction_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "initial_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_checkpoint_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "post_sa_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subset_swap_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "highp_exchange_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pair_exchange_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ruin_recreate_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "path_relink_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tsp_ils_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "final_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "oracle_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_proposal_sample_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_insertion_sample_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_proposal_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_insertion_samples": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false

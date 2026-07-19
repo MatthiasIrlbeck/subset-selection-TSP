@@ -40,6 +40,24 @@ def main() -> int:
     print(f"subset_seconds    {fmt_seconds(float(stats.get('subset_seconds', 0.0)))}")
     oracle_seconds = sum(float(r.get("seconds", 0.0)) for r in doc.get("oracle_call_records", []))
     print(f"oracle_seconds    {fmt_seconds(oracle_seconds)}")
+    phases = stats.get("phase_timing", {})
+    print("\nDetailed aggregate worker-seconds\n--------------------------")
+    phase_keys = [
+        "seed_construction_seconds", "tsp_construction_seconds",
+        "initial_polish_seconds", "sa_seconds",
+        "sa_checkpoint_polish_seconds", "post_sa_polish_seconds",
+        "subset_swap_seconds", "highp_exchange_seconds",
+        "pair_exchange_seconds", "ruin_recreate_seconds",
+        "path_relink_seconds", "tsp_ils_seconds",
+        "final_polish_seconds", "oracle_seconds",
+    ]
+    for key in phase_keys:
+        print(f"{key:36s} {fmt_seconds(float(phases.get(key, 0.0)))}")
+    for prefix in ("proposal", "insertion"):
+        samples = int(phases.get(f"sa_{prefix}_samples", 0))
+        seconds = float(phases.get(f"sa_{prefix}_sample_seconds", 0.0))
+        usec = 1e6 * seconds / samples if samples else 0.0
+        print(f"sa_{prefix}_sample_latency_us      {usec:.3f} ({samples} samples)")
     print("\nEffective KNN\n-------------")
     for key in ["knn_requested_grid_instances", "knn_requested_bruteforce_instances", "knn_effective_grid_instances", "knn_effective_bruteforce_instances", "knn_bruteforce_fallback_instances", "knn_grid_cell_capped_instances", "knn_grid_cells_max", "grid_cell_effective_min", "grid_cell_effective_max"]:
         print(f"{key:36s} {stats.get(key, 0)}")

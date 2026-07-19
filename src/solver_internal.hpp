@@ -17,6 +17,21 @@ namespace aldous_tsp {
 
 using Clock = std::chrono::steady_clock;
 
+class ScopedPhaseTimer {
+public:
+    explicit ScopedPhaseTimer(double& accumulator) noexcept
+        : accumulator_(&accumulator), start_(Clock::now()) {}
+    ScopedPhaseTimer(const ScopedPhaseTimer&) = delete;
+    ScopedPhaseTimer& operator=(const ScopedPhaseTimer&) = delete;
+    ~ScopedPhaseTimer() noexcept {
+        *accumulator_ += std::chrono::duration<double>(Clock::now() - start_).count();
+    }
+
+private:
+    double* accumulator_;
+    Clock::time_point start_;
+};
+
 std::vector<int> all_nodes(int n);
 std::vector<int> random_subset(int n, int k, Rng& rng);
 RestartRecord make_restart_record(const Instance& inst,

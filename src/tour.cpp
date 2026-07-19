@@ -9,6 +9,27 @@
 
 namespace aldous_tsp {
 
+void SearchPhaseTiming::add(const SearchPhaseTiming& other) noexcept {
+    seed_construction_seconds += other.seed_construction_seconds;
+    tsp_construction_seconds += other.tsp_construction_seconds;
+    initial_polish_seconds += other.initial_polish_seconds;
+    sa_seconds += other.sa_seconds;
+    sa_checkpoint_polish_seconds += other.sa_checkpoint_polish_seconds;
+    post_sa_polish_seconds += other.post_sa_polish_seconds;
+    subset_swap_seconds += other.subset_swap_seconds;
+    highp_exchange_seconds += other.highp_exchange_seconds;
+    pair_exchange_seconds += other.pair_exchange_seconds;
+    ruin_recreate_seconds += other.ruin_recreate_seconds;
+    path_relink_seconds += other.path_relink_seconds;
+    tsp_ils_seconds += other.tsp_ils_seconds;
+    final_polish_seconds += other.final_polish_seconds;
+    oracle_seconds += other.oracle_seconds;
+    sa_proposal_samples += other.sa_proposal_samples;
+    sa_insertion_samples += other.sa_insertion_samples;
+    sa_proposal_sample_seconds += other.sa_proposal_sample_seconds;
+    sa_insertion_sample_seconds += other.sa_insertion_sample_seconds;
+}
+
 void SearchStats::add(const SearchStats& other) {
     tsp_restarts += other.tsp_restarts;
     tsp_ils_iterations += other.tsp_ils_iterations;
@@ -72,6 +93,7 @@ void SearchStats::add(const SearchStats& other) {
     oracle_subset_calls += other.oracle_subset_calls;
     oracle_gain += other.oracle_gain;
     oracle_call_records.insert(oracle_call_records.end(), other.oracle_call_records.begin(), other.oracle_call_records.end());
+    phases.add(other.phases);
 }
 
 const char* solver_mode_name(SolverMode mode) noexcept {

@@ -100,6 +100,22 @@ def main() -> int:
     assert "highp_exchange_scans" in doc["search_stats"], doc["search_stats"]
     assert "region_restarts" in doc["search_stats"], doc["search_stats"]
     assert "dense_restarts" in doc["search_stats"], doc["search_stats"]
+    phases = doc["search_stats"]["phase_timing"]
+    expected_phase_fields = {
+        "seed_construction_seconds", "tsp_construction_seconds",
+        "initial_polish_seconds", "sa_seconds",
+        "sa_checkpoint_polish_seconds", "post_sa_polish_seconds",
+        "subset_swap_seconds", "highp_exchange_seconds",
+        "pair_exchange_seconds", "ruin_recreate_seconds",
+        "path_relink_seconds", "tsp_ils_seconds",
+        "final_polish_seconds", "oracle_seconds",
+        "sa_proposal_samples", "sa_insertion_samples",
+        "sa_proposal_sample_seconds", "sa_insertion_sample_seconds",
+    }
+    assert set(phases) == expected_phase_fields, phases
+    assert all(value >= 0 for value in phases.values()), phases
+    assert phases["sa_proposal_samples"] > 0, phases
+    assert phases["sa_insertion_samples"] > 0, phases
     return 0
 
 
