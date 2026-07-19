@@ -46,6 +46,21 @@ void push_unique(std::vector<int>& values,
 std::vector<int> nearest_to_point_seed(const Instance& inst, double cx, double cy, int k, Rng& rng);
 std::vector<int> dense_seed(const Instance& inst, int k, Rng& rng, int rank_offset = 0);
 std::vector<std::vector<int>> make_smallp_seed_pool(const Instance& inst, int k, Rng& rng, int max_budget);
+// Stateful resize trajectories. Targets are emitted in the supplied order;
+// shrink targets must be nonincreasing and growth targets nondecreasing. One
+// trajectory reuses its heap/insertion profiles across every emitted snapshot.
+std::vector<std::vector<int>> shrink_seed_chain(
+    const Instance& inst,
+    const std::vector<int>& parent,
+    const std::vector<int>& target_sizes,
+    Rng& rng,
+    int mode = 0);
+std::vector<std::vector<int>> grow_seed_chain(
+    const Instance& inst,
+    const std::vector<int>& seed,
+    const std::vector<int>& target_sizes,
+    Rng& rng,
+    int mode = 0);
 std::vector<int> highp_delete_seed(const Instance& inst, const std::vector<int>& parent, int k, Rng& rng, int mode = 0);
 std::vector<int> segment_delete_seed(const Instance& inst, const std::vector<int>& parent, int k, Rng& rng);
 std::vector<int> resize_seed(const Instance& inst, const std::vector<int>& seed, int k, Rng& rng, int mode = 0);

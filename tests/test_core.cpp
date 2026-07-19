@@ -1945,6 +1945,176 @@ void test_best_restart_diagnostic() {
 }
 
 
+
+std::vector<int> legacy_highp_delete_seed_for_test(
+    const Instance& inst,
+    const std::vector<int>& parent,
+    const int target,
+    Rng& rng,
+    const int mode) {
+    std::vector<int> current = parent;
+    while (static_cast<int>(current.size()) > target) {
+        const int m = static_cast<int>(current.size());
+        std::vector<int> order(static_cast<std::size_t>(m));
+        std::vector<double> score(static_cast<std::size_t>(m), 0.0);
+        std::iota(order.begin(), order.end(), 0);
+        for (int i = 0; i < m; ++i) {
+            const int before = current[static_cast<std::size_t>((i - 1 + m) % m)];
+            const int node = current[static_cast<std::size_t>(i)];
+            const int after = current[static_cast<std::size_t>((i + 1) % m)];
+            score[static_cast<std::size_t>(i)] =
+                inst.dist(before, node) + inst.dist(node, after)
+                - inst.dist(before, after);
+            if (mode == 2 && inst.knn_k > 0) {
+                score[static_cast<std::size_t>(i)] +=
+                    0.15 * inst.knn_d_at(node, std::min(inst.knn_k - 1, 10));
+            }
+        }
+        std::sort(order.begin(), order.end(), [&](const int lhs, const int rhs) {
+            if (score[static_cast<std::size_t>(lhs)]
+                != score[static_cast<std::size_t>(rhs)]) {
+                return score[static_cast<std::size_t>(lhs)]
+                     > score[static_cast<std::size_t>(rhs)];
+            }
+            return current[static_cast<std::size_t>(lhs)]
+                 < current[static_cast<std::size_t>(rhs)];
+        });
+        int erase_position = order.front();
+        if (mode == 1) {
+            erase_position = order[static_cast<std::size_t>(
+                rng.randint(std::min(m, 8)))];
+        }
+        current.erase(current.begin() + erase_position);
+    }
+    return current;
+}
+
+std::vector<int> legacy_grow_seed_for_test(
+    const Instance& inst,
+    const std::vector<int>& seed,
+    const int target,
+    const int mode) {
+    std::vector<int> current = seed;
+    std::vector<unsigned char> in_set(static_cast<std::size_t>(inst.N), 0U);
+    for (const int node : current) {
+        in_set[static_cast<std::size_t>(node)] = 1U;
+    }
+    while (static_cast<int>(current.size()) < target) {
+        int best_node = -1;
+        int best_position = 0;
+        double best_cost = std::numeric_limits<double>::infinity();
+        std::vector<int> pool;
+        pool.reserve(160U);
+        for (const int seed_node : current) {
+            const int limit = std::min(inst.knn_k, 16 + 4 * mode);
+            for (int rank = 0; rank < limit; ++rank) {
+                const int candidate = inst.knn_at(seed_node, rank);
+                if (candidate >= 0 && candidate < inst.N
+                    && in_set[static_cast<std::size_t>(candidate)] == 0U) {
+                    push_unique(pool, candidate, nullptr, 160);
+                }
+            }
+            if (static_cast<int>(pool.size()) >= 160) {
+                break;
+            }
+        }
+        if (pool.empty() || inst.N <= 600) {
+            for (int candidate = 0; candidate < inst.N; ++candidate) {
+                if (in_set[static_cast<std::size_t>(candidate)] == 0U) {
+                    push_unique(pool, candidate, nullptr, inst.N);
+                }
+            }
+        }
+        const int m = static_cast<int>(current.size());
+        for (const int candidate : pool) {
+            if (m <= 1) {
+                best_node = candidate;
+                best_position = m;
+                best_cost = 0.0;
+                break;
+            }
+            for (int position = 0; position < m; ++position) {
+                const int next_position = position + 1 == m ? 0 : position + 1;
+                const double cost =
+                    inst.dist(current[static_cast<std::size_t>(position)], candidate)
+                    + inst.dist(candidate,
+                                current[static_cast<std::size_t>(next_position)])
+                    - inst.dist(current[static_cast<std::size_t>(position)],
+                                current[static_cast<std::size_t>(next_position)]);
+                if (cost < best_cost) {
+                    best_cost = cost;
+                    best_node = candidate;
+                    best_position = position + 1;
+                }
+            }
+        }
+        require(best_node >= 0, "legacy growth reference finds a candidate");
+        current.insert(current.begin() + best_position, best_node);
+        in_set[static_cast<std::size_t>(best_node)] = 1U;
+    }
+    return current;
+}
+
+void test_seed_resize_chain_differential() {
+    for (const bool periodic : {false, true}) {
+        for (int trial = 0; trial < 12; ++trial) {
+            Rng points_rng(static_cast<std::uint64_t>(7000 + 31 * trial
+                                                      + (periodic ? 1 : 0)));
+            Instance inst;
+            inst.periodic = periodic;
+            inst.generate(84, points_rng);
+            inst.build_knn(24, KnnBackend::GridExact);
+            Rng subset_rng(static_cast<std::uint64_t>(8100 + trial));
+            std::vector<int> parent = random_subset(inst.N, 68, subset_rng);
+            parent = nearest_neighbor_order(inst, parent, trial % 68);
+
+            for (int mode = 0; mode <= 2; ++mode) {
+                Rng legacy_rng(static_cast<std::uint64_t>(9000 + 101 * trial + mode));
+                Rng heap_rng(static_cast<std::uint64_t>(9000 + 101 * trial + mode));
+                const std::vector<int> expected = legacy_highp_delete_seed_for_test(
+                    inst, parent, 29, legacy_rng, mode);
+                const std::vector<int> actual = highp_delete_seed(
+                    inst, parent, 29, heap_rng, mode);
+                require(actual == expected,
+                        "heap shrink exactly matches the legacy deletion trajectory");
+            }
+
+            std::vector<int> small(parent.begin(), parent.begin() + 9);
+            for (int mode = 0; mode <= 1; ++mode) {
+                Rng grow_rng(static_cast<std::uint64_t>(10000 + trial + mode));
+                const std::vector<int> actual = resize_seed(inst, small, 43, grow_rng, mode);
+                const std::vector<int> expected = legacy_grow_seed_for_test(
+                    inst, small, 43, mode);
+                require(actual == expected,
+                        "cached growth exactly matches the legacy insertion trajectory");
+            }
+
+            Rng chain_rng(static_cast<std::uint64_t>(11000 + trial));
+            const auto shrink_snapshots = shrink_seed_chain(
+                inst, parent, {55, 41, 27}, chain_rng, 1);
+            for (std::size_t i = 0; i < shrink_snapshots.size(); ++i) {
+                Rng reference_rng(static_cast<std::uint64_t>(11000 + trial));
+                const int target = std::vector<int>({55, 41, 27})[i];
+                require(shrink_snapshots[i]
+                            == legacy_highp_delete_seed_for_test(
+                                inst, parent, target, reference_rng, 1),
+                        "one shrink trajectory emits exact reusable snapshots");
+            }
+
+            Rng growth_chain_rng(static_cast<std::uint64_t>(12000 + trial));
+            const auto growth_snapshots = grow_seed_chain(
+                inst, small, {17, 31, 47}, growth_chain_rng, 0);
+            const std::vector<int> growth_targets = {17, 31, 47};
+            for (std::size_t i = 0; i < growth_snapshots.size(); ++i) {
+                require(growth_snapshots[i]
+                            == legacy_grow_seed_for_test(
+                                inst, small, growth_targets[i], 0),
+                        "one growth trajectory emits exact reusable snapshots");
+            }
+        }
+    }
+}
+
 void test_continuation_stream_contract() {
     RunOptions standalone;
     standalone.N = 72;
@@ -3228,6 +3398,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_solver_ablation_flags_are_exact);
     RUN_TEST(test_restart_thread_invariance);
     RUN_TEST(test_best_restart_diagnostic);
+    RUN_TEST(test_seed_resize_chain_differential);
     RUN_TEST(test_continuation_stream_contract);
     RUN_TEST(test_second_sweep_never_worse);
     RUN_TEST(test_control_variate_bounds);

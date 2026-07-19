@@ -276,6 +276,11 @@ SolveResult solve_subset(const Instance& inst,
 
     std::vector<SeedCandidate> continuation_candidates;
     if (continuation_n > 0 && has_warm) {
+        // Build two deterministic warm constructors even for one executed
+        // continuation restart, then choose the better seed within that kind.
+        // Seed construction is not an executed draw, and the stateful resize
+        // kernels make this diversity inexpensive while preserving historical
+        // continuation quality and deterministic variant metadata.
         const int warm_variants = std::max(2, continuation_n);
         for (int variant = 0; variant < warm_variants; ++variant) {
             Rng warm_rng(seed_stream(solve_stream_base,
