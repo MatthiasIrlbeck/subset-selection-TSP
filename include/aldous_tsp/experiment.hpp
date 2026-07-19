@@ -15,6 +15,10 @@ struct ExperimentProgress {
     double eta_seconds = 0.0;
 };
 
+// Progress callbacks execute synchronously on the thread that calls run(),
+// never on an instance worker. If a callback throws, remaining work is
+// cancelled cooperatively, every worker is joined, and the exception is
+// rethrown from run().
 using ExperimentProgressCallback = std::function<void(const ExperimentProgress&)>;
 
 class ExperimentRunner {

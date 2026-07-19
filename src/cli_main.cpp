@@ -44,16 +44,25 @@ int cli_main(int argc, char** argv) {
     std::fflush(stdout);
 
     ExperimentRunner runner(opt);
-    ResultsDocument doc = runner.run([&](const ExperimentProgress& progress) {
-        std::printf("  [done %d/%d] instance %d in %.2fs  elapsed %.0fs  ETA %.0fs\n",
-                    progress.completed,
-                    progress.total,
-                    progress.instance_index + 1,
-                    progress.instance_seconds,
-                    progress.elapsed_seconds,
-                    progress.eta_seconds);
-        std::fflush(stdout);
-    });
+    ResultsDocument doc;
+    try {
+        doc = runner.run([&](const ExperimentProgress& progress) {
+            std::printf("  [done %d/%d] instance %d in %.2fs  elapsed %.0fs  ETA %.0fs\n",
+                        progress.completed,
+                        progress.total,
+                        progress.instance_index + 1,
+                        progress.instance_seconds,
+                        progress.elapsed_seconds,
+                        progress.eta_seconds);
+            std::fflush(stdout);
+        });
+    } catch (const std::exception& exception) {
+        std::fprintf(stderr, "Experiment failed: %s\n", exception.what());
+        return 2;
+    } catch (...) {
+        std::fprintf(stderr, "Experiment failed with a non-standard exception\n");
+        return 2;
+    }
 
     if (doc.instances_done != opt.instances) {
         std::fprintf(stderr, "Only %d/%d instances completed successfully\n", doc.instances_done, opt.instances);

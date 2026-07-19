@@ -1092,6 +1092,159 @@ void test_restart_worker_exception_propagation() {
             "parallel restart runner remains usable after an exception");
 }
 
+void test_experiment_worker_states_and_callback_exceptions() {
+    // Single-threaded first/middle/last failures pin exact state transitions.
+    for (const int failure_index : {0, 2, 4}) {
+        std::vector<detail::WorkerOutcome<int>> outcomes;
+        int completion_calls = 0;
+        bool caught = false;
+        try {
+            (void)detail::run_parallel_work_queue<int>(
+                5,
+                1,
+                outcomes,
+                [&](int index) {
+                    if (index == failure_index) {
+                        throw std::runtime_error("instance worker failure");
+                    }
+                    return index;
+                },
+                [&](int, const int&) { ++completion_calls; });
+        } catch (const std::runtime_error& error) {
+            caught = std::string(error.what()) == "instance worker failure";
+        }
+        require(caught, "instance worker failure reaches the caller");
+        require(outcomes.size() == 5U, "work queue keeps one outcome per target");
+        for (int index = 0; index < 5; ++index) {
+            const detail::WorkerState state =
+                outcomes[static_cast<std::size_t>(index)].state;
+            if (index < failure_index) {
+                require(state == detail::WorkerState::Success,
+                        "instances before a serial failure are successful");
+            } else if (index == failure_index) {
+                require(state == detail::WorkerState::Failure,
+                        "the failing instance has an explicit failure state");
+                require(outcomes[static_cast<std::size_t>(index)].exception != nullptr,
+                        "the failing instance retains its exception");
+            } else {
+                require(state == detail::WorkerState::Cancelled,
+                        "unstarted instances are explicitly cancelled");
+            }
+        }
+        require(completion_calls == failure_index,
+                "only successful instance outcomes reach completion handling");
+    }
+
+    // Under parallel scheduling the exact cancelled set is timing-dependent,
+    // but every slot must still end in a valid terminal state.
+    std::vector<detail::WorkerOutcome<int>> parallel_outcomes;
+    std::atomic<int> active{0};
+    bool parallel_caught = false;
+    try {
+        (void)detail::run_parallel_work_queue<int>(
+            24,
+            6,
+            parallel_outcomes,
+            [&](int index) {
+                active.fetch_add(1, std::memory_order_relaxed);
+                try {
+                    if (index == 3) {
+                        throw std::runtime_error("parallel instance failure");
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                } catch (...) {
+                    active.fetch_sub(1, std::memory_order_relaxed);
+                    throw;
+                }
+                active.fetch_sub(1, std::memory_order_relaxed);
+                return index;
+            },
+            [](int, const int&) {});
+    } catch (const std::runtime_error& error) {
+        parallel_caught = std::string(error.what()) == "parallel instance failure";
+    }
+    require(parallel_caught, "parallel instance failure reaches the caller");
+    require(active.load(std::memory_order_relaxed) == 0,
+            "parallel instance workers are all joined before rethrow");
+    int failures = 0;
+    for (const auto& outcome : parallel_outcomes) {
+        require(outcome.state != detail::WorkerState::NotStarted
+                    && outcome.state != detail::WorkerState::Running,
+                "every parallel instance slot has a terminal state");
+        if (outcome.state == detail::WorkerState::Failure) {
+            ++failures;
+        }
+    }
+    require(failures == 1, "only the injected parallel instance fails");
+
+    // Completion callbacks are marshalled to the caller thread. Their
+    // exceptions cancel new work, suppress later callbacks, join all workers,
+    // and are then rethrown without std::terminate.
+    std::vector<detail::WorkerOutcome<int>> callback_outcomes;
+    const std::thread::id caller_thread = std::this_thread::get_id();
+    bool callback_on_caller = true;
+    int callback_calls = 0;
+    bool callback_caught = false;
+    try {
+        (void)detail::run_parallel_work_queue<int>(
+            32,
+            4,
+            callback_outcomes,
+            [](int index) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                return index;
+            },
+            [&](int, const int&) {
+                callback_on_caller = callback_on_caller
+                    && std::this_thread::get_id() == caller_thread;
+                ++callback_calls;
+                throw std::runtime_error("callback failure");
+            });
+    } catch (const std::runtime_error& error) {
+        callback_caught = std::string(error.what()) == "callback failure";
+    }
+    require(callback_caught, "completion callback exception reaches the caller");
+    require(callback_on_caller, "completion callback runs on the caller thread");
+    require(callback_calls == 1,
+            "no further completion callbacks run after one callback throws");
+    for (const auto& outcome : callback_outcomes) {
+        require(outcome.state != detail::WorkerState::NotStarted
+                    && outcome.state != detail::WorkerState::Running,
+                "callback cancellation leaves no incomplete worker states");
+    }
+
+    RunOptions options;
+    options.N = 12;
+    options.instances = 4;
+    options.threads = 2;
+    options.p_values = {1.0};
+    options.solver.knn_k = 4;
+    options.solver.tsp_restarts = 1;
+    options.solver.tsp_ils = 0;
+    options.solver.sa_iters = 0;
+    options.solver.final_exhaustive_k = 0;
+    options.solver.disable_two_opt = true;
+    options.solver.disable_or_opt = true;
+    options.solver.oracle.cfg.mode = ExternalOracleMode::None;
+    ExperimentRunner runner(options);
+    bool runner_callback_caught = false;
+    bool runner_callback_on_caller = true;
+    try {
+        (void)runner.run([&](const ExperimentProgress&) {
+            runner_callback_on_caller = runner_callback_on_caller
+                && std::this_thread::get_id() == caller_thread;
+            throw std::runtime_error("experiment callback failure");
+        });
+    } catch (const std::runtime_error& error) {
+        runner_callback_caught =
+            std::string(error.what()) == "experiment callback failure";
+    }
+    require(runner_callback_caught,
+            "ExperimentRunner propagates callback exceptions without terminating");
+    require(runner_callback_on_caller,
+            "ExperimentRunner progress callbacks run on the caller thread");
+}
+
 void test_elite_kick_near_full() {
     Instance inst;
     Rng point_rng(91);
@@ -2516,6 +2669,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_subset_candidate_table_exact);
     RUN_TEST(test_effective_sa_iters_scaling);
     RUN_TEST(test_restart_worker_exception_propagation);
+    RUN_TEST(test_experiment_worker_states_and_callback_exceptions);
     RUN_TEST(test_elite_kick_near_full);
     RUN_TEST(test_kick_restarts_mechanics);
     RUN_TEST(test_region_seeds);

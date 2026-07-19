@@ -4,12 +4,14 @@
 
 #include "aldous_tsp/solver.hpp"
 
+#include "worker.hpp"
+
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <limits>
-#include <mutex>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -137,7 +139,6 @@ void record_knn_build_stats(SearchStats& stats, const KnnBuildInfo& info) {
 }
 
 struct CoreInstanceRunResult {
-    bool ok = true;
     int index = -1;
     double wall_seconds = 0.0;
     std::vector<double> values;
@@ -177,9 +178,8 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     if (opt.solver.verify_knn_checks > 0) {
         Rng verify_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed), static_cast<std::uint64_t>(index), 0x13198a2e03707344ULL));
         if (!inst.verify_knn(opt.solver.verify_knn_checks, verify_rng)) {
-            out.ok = false;
-            out.wall_seconds = std::chrono::duration<double>(Clock::now() - start).count();
-            return out;
+            throw std::runtime_error(
+                "KNN verification failed for instance " + std::to_string(index));
         }
     }
 
@@ -317,54 +317,38 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
     doc.p_values = opt.p_values;
 
     const auto global_start = Clock::now();
-    std::vector<CoreInstanceRunResult> results(static_cast<std::size_t>(opt.instances));
-    std::atomic<int> next{0};
-    std::atomic<int> completed{0};
-    std::atomic<int> failed{-1};
-    std::mutex callback_mutex;
-
-    auto worker = [&]() {
-        for (;;) {
-            if (failed.load(std::memory_order_relaxed) >= 0) {
-                return;
-            }
-            const int index = next.fetch_add(1, std::memory_order_relaxed);
-            if (index >= opt.instances) {
-                return;
-            }
-            CoreInstanceRunResult result = run_one_instance_core(index, opt);
-            results[static_cast<std::size_t>(index)] = std::move(result);
-            if (!results[static_cast<std::size_t>(index)].ok) {
-                int expected = -1;
-                failed.compare_exchange_strong(expected, index, std::memory_order_relaxed);
-            }
-            const int done = completed.fetch_add(1, std::memory_order_relaxed) + 1;
-            if (progress) {
-                const double elapsed = std::chrono::duration<double>(Clock::now() - global_start).count();
+    std::vector<detail::WorkerOutcome<CoreInstanceRunResult>> outcomes;
+    int progress_completed = 0;
+    const detail::WorkerSummary worker_summary =
+        detail::run_parallel_work_queue<CoreInstanceRunResult>(
+            opt.instances,
+            opt.threads,
+            outcomes,
+            [&](int index) {
+                return run_one_instance_core(index, opt);
+            },
+            [&](int index, const CoreInstanceRunResult& result) {
+                ++progress_completed;
+                if (!progress) {
+                    return;
+                }
+                const double elapsed =
+                    std::chrono::duration<double>(Clock::now() - global_start).count();
                 ExperimentProgress event;
-                event.completed = done;
+                event.completed = progress_completed;
                 event.total = opt.instances;
                 event.instance_index = index;
-                event.instance_seconds = results[static_cast<std::size_t>(index)].wall_seconds;
+                event.instance_seconds = result.wall_seconds;
                 event.elapsed_seconds = elapsed;
-                event.eta_seconds = done > 0 ? elapsed / static_cast<double>(done) * static_cast<double>(opt.instances - done) : 0.0;
-                std::lock_guard<std::mutex> lock(callback_mutex);
+                event.eta_seconds = progress_completed > 0
+                    ? elapsed / static_cast<double>(progress_completed)
+                        * static_cast<double>(opt.instances - progress_completed)
+                    : 0.0;
                 progress(event);
-            }
-        }
-    };
-
-    std::vector<std::thread> threads;
-    threads.reserve(static_cast<std::size_t>(opt.threads));
-    for (int t = 0; t < opt.threads; ++t) {
-        threads.emplace_back(worker);
-    }
-    for (std::thread& thread : threads) {
-        thread.join();
-    }
+            });
 
     doc.wall_seconds = std::chrono::duration<double>(Clock::now() - global_start).count();
-    doc.instances_done = completed.load(std::memory_order_relaxed);
+    doc.instances_done = worker_summary.succeeded;
 
     std::vector<std::vector<double>> by_p(opt.p_values.size());
     for (std::vector<double>& values : by_p) {
@@ -378,10 +362,11 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
     std::vector<std::vector<double>> cv_full(opt.p_values.size());
     std::vector<std::vector<double>> cv_hk(opt.p_values.size());
 
-    for (const CoreInstanceRunResult& r : results) {
-        if (!r.ok) {
+    for (const detail::WorkerOutcome<CoreInstanceRunResult>& outcome : outcomes) {
+        if (outcome.state != detail::WorkerState::Success || !outcome.value.has_value()) {
             continue;
         }
+        const CoreInstanceRunResult& r = *outcome.value;
         doc.stats.add(r.stats);
         for (std::size_t pi = 0; pi < opt.p_values.size(); ++pi) {
             by_p[pi].push_back(r.values[pi]);
@@ -413,7 +398,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
         }
         if (opt.include_instance_rows) {
             InstanceResultRow row;
-            row.ok = r.ok;
+            row.ok = true;
             row.index = r.index;
             row.wall_seconds = r.wall_seconds;
             row.values = r.values;
