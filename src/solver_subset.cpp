@@ -1,9 +1,9 @@
 #include "solver_internal.hpp"
+#include "worker.hpp"
 
 #include <algorithm>
 #include <map>
 #include <numeric>
-#include <thread>
 
 namespace aldous_tsp {
 namespace {
@@ -387,18 +387,9 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
                 kick_snapshot_taken = true;
             }
         }
-        if (wave == 1) {
-            outcomes[0] = run_restart(launched);
-        } else {
-            std::vector<std::thread> workers;
-            workers.reserve(static_cast<std::size_t>(wave));
-            for (int i = 0; i < wave; ++i) {
-                workers.emplace_back([&outcomes, &run_restart, launched, i]() {
-                    outcomes[static_cast<std::size_t>(i)] = run_restart(launched + i);
-                });
-            }
-            for (std::thread& worker : workers) { worker.join(); }
-        }
+        detail::run_parallel_indexed(wave, [&](int index) {
+            outcomes[static_cast<std::size_t>(index)] = run_restart(launched + index);
+        });
         // Merge strictly in restart-index order so elite content, stats, and
         // diagnostics are independent of thread scheduling.
         for (int i = 0; i < wave; ++i) {

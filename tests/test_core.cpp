@@ -10,8 +10,11 @@
 
 #include "solver_internal.hpp"
 #include "periodic_grid.hpp"
+#include "worker.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +25,7 @@
 #include <numeric>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace aldous_tsp;
@@ -1054,6 +1058,38 @@ void test_effective_sa_iters_scaling() {
     opt.sa_iters_per_n = std::numeric_limits<int>::max();
     require(effective_sa_iters(opt, std::numeric_limits<int>::max(), std::numeric_limits<int>::max()) == std::numeric_limits<int>::max(),
             "effective SA budget saturates instead of overflowing");
+}
+
+void test_restart_worker_exception_propagation() {
+    std::atomic<int> active{0};
+    bool caught = false;
+    try {
+        detail::run_parallel_indexed(12, [&](int index) {
+            active.fetch_add(1, std::memory_order_relaxed);
+            try {
+                if (index == 3) {
+                    throw std::runtime_error("restart worker failure");
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            } catch (...) {
+                active.fetch_sub(1, std::memory_order_relaxed);
+                throw;
+            }
+            active.fetch_sub(1, std::memory_order_relaxed);
+        });
+    } catch (const std::runtime_error& error) {
+        caught = std::string(error.what()) == "restart worker failure";
+    }
+    require(caught, "restart worker exception is rethrown on the caller thread");
+    require(active.load(std::memory_order_relaxed) == 0,
+            "every restart worker is joined before rethrowing");
+
+    std::atomic<int> completed{0};
+    detail::run_parallel_indexed(8, [&](int) {
+        completed.fetch_add(1, std::memory_order_relaxed);
+    });
+    require(completed.load(std::memory_order_relaxed) == 8,
+            "parallel restart runner remains usable after an exception");
 }
 
 void test_elite_kick_near_full() {
@@ -2479,6 +2515,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_solver_matches_exact_enumeration_tiny);
     RUN_TEST(test_subset_candidate_table_exact);
     RUN_TEST(test_effective_sa_iters_scaling);
+    RUN_TEST(test_restart_worker_exception_propagation);
     RUN_TEST(test_elite_kick_near_full);
     RUN_TEST(test_kick_restarts_mechanics);
     RUN_TEST(test_region_seeds);
