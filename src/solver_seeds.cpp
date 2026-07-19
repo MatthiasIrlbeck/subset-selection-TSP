@@ -257,4 +257,120 @@ std::vector<int> resize_seed(const Instance& inst, const std::vector<int>& seed,
     return cur;
 }
 
+void apply_elite_kick(const Instance& inst, std::vector<int>& seed, Rng& rng, double fraction) {
+    const int subset_size = static_cast<int>(seed.size());
+    if (subset_size == 0) {
+        return;
+    }
+    if (inst.N < 0 || subset_size > inst.N) {
+        throw std::invalid_argument("elite kick seed size is outside the instance domain");
+    }
+
+    std::vector<unsigned char> in_set(static_cast<std::size_t>(inst.N), 0U);
+    for (const int node : seed) {
+        if (node < 0 || node >= inst.N) {
+            throw std::invalid_argument("elite kick seed contains an out-of-range node");
+        }
+        unsigned char& present = in_set[static_cast<std::size_t>(node)];
+        if (present != 0U) {
+            throw std::invalid_argument("elite kick seed contains duplicate nodes");
+        }
+        present = 1U;
+    }
+
+    // Keep an exact free-node set with O(1) insertion/removal. The old bounded
+    // random fallback could exhaust its attempts when k was close to N and
+    // then reinsert an occupied node. This representation makes candidate
+    // selection total: after removing one member there is always at least one
+    // free node, even when k == N (in which case it is the removed node).
+    std::vector<int> free_nodes;
+    free_nodes.reserve(static_cast<std::size_t>(inst.N - subset_size + 1));
+    std::vector<int> free_pos(static_cast<std::size_t>(inst.N), -1);
+    for (int node = 0; node < inst.N; ++node) {
+        if (in_set[static_cast<std::size_t>(node)] == 0U) {
+            free_pos[static_cast<std::size_t>(node)] = static_cast<int>(free_nodes.size());
+            free_nodes.push_back(node);
+        }
+    }
+
+    auto add_free = [&](int node) {
+        if (free_pos[static_cast<std::size_t>(node)] >= 0) {
+            throw std::logic_error("elite kick free-node set is inconsistent");
+        }
+        free_pos[static_cast<std::size_t>(node)] = static_cast<int>(free_nodes.size());
+        free_nodes.push_back(node);
+    };
+    auto remove_free = [&](int node) {
+        const int position = free_pos[static_cast<std::size_t>(node)];
+        if (position < 0) {
+            throw std::logic_error("elite kick selected an occupied node");
+        }
+        const int last = free_nodes.back();
+        free_nodes[static_cast<std::size_t>(position)] = last;
+        free_pos[static_cast<std::size_t>(last)] = position;
+        free_nodes.pop_back();
+        free_pos[static_cast<std::size_t>(node)] = -1;
+    };
+
+    const double effective_fraction =
+        (fraction > 0.0 && fraction < 1.0) ? fraction : 0.10;
+    const int kick_count = std::min(
+        subset_size,
+        std::max(1, static_cast<int>(std::lround(
+                        effective_fraction * static_cast<double>(subset_size)))));
+
+    for (int step = 0; step < kick_count; ++step) {
+        const int remove_pos = rng.randint(subset_size);
+        const int removed = seed[static_cast<std::size_t>(remove_pos)];
+        in_set[static_cast<std::size_t>(removed)] = 0U;
+        add_free(removed);
+
+        // Prefer a free KNN neighbor of a retained member. Do not select the
+        // vacated position as the anchor when another retained member exists.
+        int anchor = removed;
+        if (subset_size > 1) {
+            int anchor_pos = rng.randint(subset_size - 1);
+            if (anchor_pos >= remove_pos) {
+                ++anchor_pos;
+            }
+            anchor = seed[static_cast<std::size_t>(anchor_pos)];
+        }
+
+        int add = -1;
+        if (inst.knn_k > 0) {
+            const int start = rng.randint(inst.knn_k);
+            for (int offset = 0; offset < inst.knn_k; ++offset) {
+                const int candidate = inst.knn_at(anchor, (start + offset) % inst.knn_k);
+                if (candidate >= 0 && candidate < inst.N
+                    && free_pos[static_cast<std::size_t>(candidate)] >= 0) {
+                    add = candidate;
+                    break;
+                }
+            }
+        }
+        if (add < 0) {
+            if (free_nodes.empty()) {
+                throw std::logic_error("elite kick has no free replacement node");
+            }
+            add = free_nodes[static_cast<std::size_t>(
+                rng.randint(static_cast<int>(free_nodes.size())))];
+        }
+
+        remove_free(add);
+        in_set[static_cast<std::size_t>(add)] = 1U;
+        seed[static_cast<std::size_t>(remove_pos)] = add;
+    }
+
+    // Keep the failure mode local and diagnosable if this routine is modified
+    // later: no invalid seed may reach Tour::set_tour().
+    std::fill(in_set.begin(), in_set.end(), 0U);
+    for (const int node : seed) {
+        if (node < 0 || node >= inst.N
+            || in_set[static_cast<std::size_t>(node)] != 0U) {
+            throw std::logic_error("elite kick failed to preserve subset uniqueness");
+        }
+        in_set[static_cast<std::size_t>(node)] = 1U;
+    }
+}
+
 } // namespace aldous_tsp

@@ -34,6 +34,10 @@ std::vector<std::vector<int>> make_smallp_seed_pool(const Instance& inst, int k,
 std::vector<int> highp_delete_seed(const Instance& inst, const std::vector<int>& parent, int k, Rng& rng, int mode = 0);
 std::vector<int> segment_delete_seed(const Instance& inst, const std::vector<int>& parent, int k, Rng& rng);
 std::vector<int> resize_seed(const Instance& inst, const std::vector<int>& seed, int k, Rng& rng, int mode = 0);
+// Applies a spatially coherent elite kick while preserving the subset
+// cardinality and uniqueness for every valid 0 <= k <= N, including the
+// near-full and full-set cases. Invalid seed contents are rejected.
+void apply_elite_kick(const Instance& inst, std::vector<int>& seed, Rng& rng, double fraction);
 
 int next_live_index(int idx, int removed, int n) noexcept;
 int next_live_index_after_remove(int idx, int removed, int n) noexcept;

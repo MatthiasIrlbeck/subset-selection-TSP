@@ -1056,6 +1056,76 @@ void test_effective_sa_iters_scaling() {
             "effective SA budget saturates instead of overflowing");
 }
 
+void test_elite_kick_near_full() {
+    Instance inst;
+    Rng point_rng(91);
+    inst.generate(100, point_rng);
+    inst.build_knn(40, KnnBackend::GridExact);
+
+    auto require_valid_seed = [&](const std::vector<int>& seed, int expected_size) {
+        require(static_cast<int>(seed.size()) == expected_size,
+                "elite kick preserves subset cardinality");
+        std::vector<unsigned char> seen(static_cast<std::size_t>(inst.N), 0U);
+        for (const int node : seed) {
+            require(node >= 0 && node < inst.N,
+                    "elite kick keeps every node in range");
+            require(seen[static_cast<std::size_t>(node)] == 0U,
+                    "elite kick keeps every node unique");
+            seen[static_cast<std::size_t>(node)] = 1U;
+        }
+    };
+
+    // Exercise the primitive directly over empty, singleton, near-full and full
+    // subsets. The full case has no external free node and must still be total.
+    for (const int k : {0, 1, inst.N - 1, inst.N}) {
+        for (std::uint64_t stream = 0; stream < 128U; ++stream) {
+            std::vector<int> seed(static_cast<std::size_t>(k));
+            std::iota(seed.begin(), seed.end(), 0);
+            Rng kick_rng(make_stream_seed(0x51a7U, stream, static_cast<std::uint64_t>(k)));
+            apply_elite_kick(inst, seed, kick_rng, 0.50);
+            require_valid_seed(seed, k);
+        }
+    }
+
+    bool duplicate_rejected = false;
+    try {
+        std::vector<int> bad{0, 0};
+        Rng kick_rng(1);
+        apply_elite_kick(inst, bad, kick_rng, 0.5);
+    } catch (const std::invalid_argument&) {
+        duplicate_rejected = true;
+    }
+    require(duplicate_rejected, "elite kick rejects duplicate input seeds");
+
+    // Pin the original N=100, k=99 failure shape in both serial and parallel
+    // restart waves over many deterministic streams.
+    SolverOptions opt;
+    opt.subset_restarts = 6;
+    opt.subset_kick_restarts = 4;
+    opt.kick_fraction = 0.50;
+    opt.sa_iters = 0;
+    opt.final_exhaustive_k = 0;
+    opt.disable_two_opt = true;
+    opt.disable_or_opt = true;
+    opt.disable_subset_swap = true;
+    opt.disable_pair_exchange = true;
+    opt.disable_ruin_recreate = true;
+    opt.disable_path_relink = true;
+    opt.disable_smallp_seeds = true;
+    opt.disable_highp_delete = true;
+    for (const int restart_threads : {1, 2, 4}) {
+        opt.restart_threads = restart_threads;
+        for (std::uint64_t stream = 1; stream <= 16U; ++stream) {
+            Rng solve_rng(stream);
+            const SolveResult result = solve_subset(inst, inst.N - 1, solve_rng, opt);
+            require(result.stats.kick_restarts == 4,
+                    "near-full solve executes every scheduled kick");
+            require(result.tour.k == inst.N - 1 && result.tour.check_invariants(),
+                    "near-full kick waves return a valid unique tour");
+        }
+    }
+}
+
 void test_kick_restarts_mechanics() {
     // Scheduled elite-kick restarts: the last kick_n restarts seed from the
     // best of the independent phase. Checks (a) accounting: exactly kick_n
@@ -2409,6 +2479,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_solver_matches_exact_enumeration_tiny);
     RUN_TEST(test_subset_candidate_table_exact);
     RUN_TEST(test_effective_sa_iters_scaling);
+    RUN_TEST(test_elite_kick_near_full);
     RUN_TEST(test_kick_restarts_mechanics);
     RUN_TEST(test_region_seeds);
     RUN_TEST(test_restart_value_logging);

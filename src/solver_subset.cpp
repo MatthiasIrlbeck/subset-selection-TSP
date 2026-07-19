@@ -191,32 +191,7 @@ SolveResult solve_subset(const Instance& inst, int k, Rng& rng, const SolverOpti
             // structure so polish + SA intensify around it.
             const int pool = std::min<int>(4, static_cast<int>(elite_seeds.size()));
             seed = elite_seeds[static_cast<std::size_t>(rrng.randint(pool))];
-            const double frac = (options.kick_fraction > 0.0 && options.kick_fraction < 1.0) ? options.kick_fraction : 0.10;
-            const int kick = std::max(1, static_cast<int>(std::lround(frac * static_cast<double>(seed.size()))));
-            thread_local std::vector<unsigned char> inset;
-            inset.assign(static_cast<std::size_t>(inst.N), 0U);
-            for (int v : seed) { inset[static_cast<std::size_t>(v)] = 1U; }
-            for (int t = 0; t < kick; ++t) {
-                const int ri = rrng.randint(static_cast<int>(seed.size()));
-                inset[static_cast<std::size_t>(seed[static_cast<std::size_t>(ri)])] = 0U;
-                // Re-add near a random retained member for spatial coherence.
-                int add = -1;
-                const int anchor = seed[static_cast<std::size_t>(rrng.randint(static_cast<int>(seed.size())))];
-                if (inst.knn_k > 0) {
-                    const int kstart = rrng.randint(inst.knn_k);
-                    for (int off = 0; off < inst.knn_k; ++off) {
-                        const int cand = inst.knn_at(anchor, (kstart + off) % inst.knn_k);
-                        if (cand >= 0 && inset[static_cast<std::size_t>(cand)] == 0U) { add = cand; break; }
-                    }
-                }
-                if (add < 0) {
-                    add = rrng.randint(inst.N);
-                    int guard = 0;
-                    while (inset[static_cast<std::size_t>(add)] != 0U && guard < 64) { add = rrng.randint(inst.N); ++guard; }
-                }
-                inset[static_cast<std::size_t>(add)] = 1U;
-                seed[static_cast<std::size_t>(ri)] = add;
-            }
+            apply_elite_kick(inst, seed, rrng, options.kick_fraction);
             kind = scheduled_kick ? RestartKind::Kick : RestartKind::Elite;
             out.elite_seed = true;
         } else {
