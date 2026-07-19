@@ -89,6 +89,13 @@ void test_search_phase_timing_add() {
             "phase timing proposal durations accumulate");
     require(std::fabs(total.sa_insertion_sample_seconds - 0.014) < 1e-15,
             "phase timing insertion durations accumulate");
+    SearchStats aggregate;
+    SearchStats part;
+    part.pair_exchange_skipped_large_k = 3;
+    aggregate.add(part);
+    aggregate.add(part);
+    require(aggregate.pair_exchange_skipped_large_k == 6,
+            "pair-exchange gate telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -2223,6 +2230,85 @@ void test_oracle_torus_roundtrip() {
 }
 #endif
 
+void test_batched_pair_repair_matches_legacy() {
+    auto check_case = [](const Instance& inst,
+                         const std::vector<int>& cycle,
+                         const std::vector<int>& pool) {
+        const PairRepairResult fast = best_two_node_regret_repair(inst, cycle, pool);
+        std::vector<unsigned char> banned(static_cast<std::size_t>(inst.N), 0U);
+        for (int node : cycle) {
+            banned[static_cast<std::size_t>(node)] = 1U;
+        }
+        double brute_length = std::numeric_limits<double>::infinity();
+        std::vector<int> brute_nodes;
+        for (int ui = 0; ui < static_cast<int>(pool.size()); ++ui) {
+            for (int vi = ui + 1; vi < static_cast<int>(pool.size()); ++vi) {
+                std::vector<int> candidate = cycle;
+                const std::vector<int> add_pool = {
+                    pool[static_cast<std::size_t>(ui)],
+                    pool[static_cast<std::size_t>(vi)],
+                };
+                require(regret_repair_cycle(candidate, inst,
+                                            static_cast<int>(cycle.size()) + 2,
+                                            add_pool, banned),
+                        "legacy two-node regret repair succeeds on a valid pool");
+                const double length = cycle_length(inst, candidate);
+                if (length < brute_length) {
+                    brute_length = length;
+                    brute_nodes = std::move(candidate);
+                }
+            }
+        }
+        require(fast.valid == !brute_nodes.empty(),
+                "batched pair repair validity matches legacy enumeration");
+        require(std::fabs(fast.length - brute_length)
+                    <= 1e-11 * (1.0 + std::fabs(brute_length)),
+                "batched pair repair length matches legacy enumeration");
+        require(fast.nodes == brute_nodes,
+                "batched pair repair preserves legacy regret ordering and tie breaks");
+    };
+
+    for (bool periodic : {false, true}) {
+        Instance inst;
+        inst.periodic = periodic;
+        Rng gen(periodic ? 81231U : 81230U);
+        inst.generate(48, gen);
+        for (int rep = 0; rep < 80; ++rep) {
+            std::vector<int> shuffled = all_nodes(inst.N);
+            gen.partial_shuffle(shuffled.begin(), shuffled.end(), 18U);
+            const int cycle_size = 8 + (rep % 5);
+            std::vector<int> cycle(shuffled.begin(), shuffled.begin() + cycle_size);
+            std::vector<int> pool(shuffled.begin() + cycle_size,
+                                  shuffled.begin() + cycle_size + 6);
+            check_case(inst, cycle, pool);
+        }
+    }
+
+    Instance tied;
+    tied.set_points({{0.0, 0.0}, {4.0, 0.0}, {4.0, 4.0}, {0.0, 4.0},
+                     {2.0, 0.0}, {2.0, 0.0}, {2.0, 4.0}, {2.0, 4.0}});
+    check_case(tied, {0, 1, 2, 3}, {4, 5, 6, 7});
+}
+
+void test_pair_exchange_large_k_gate() {
+    Instance inst;
+    Rng rng(77123);
+    inst.generate(20, rng);
+    inst.build_knn(12, KnnBackend::GridExact);
+    Tour tour;
+    tour.init(inst.N);
+    tour.set_tour(random_subset(inst.N, 8, rng), inst);
+    SolverOptions options;
+    options.pair_exchange_max_k = 7;
+    SearchStats stats;
+    require(!subset_pair_exchange_descent(tour, inst, rng, options, &stats, 1),
+            "large-k pair-exchange gate skips the neighborhood");
+    require(stats.pair_exchange_skipped_large_k == 1,
+            "large-k pair-exchange gate is explicitly counted");
+    require(stats.pair_exchange_scans == 0,
+            "large-k pair-exchange gate performs no candidate scans");
+}
+
 void test_path_relink_step_matches_bruteforce() {
     Rng rng(9091);
     Instance inst;
@@ -2830,6 +2916,10 @@ void test_json_atomic() {
     require(text.find("\"oracle_call_records\"") != std::string::npos, "JSON includes oracle call records");
     require(text.find("\"summary_rows\"") != std::string::npos, "JSON includes array-form summary rows");
     require(text.find("\"knn_build_seconds\"") != std::string::npos, "JSON includes KNN timing stats");
+    require(text.find("\"pair_exchange_max_k\"") != std::string::npos,
+            "JSON includes the pair-exchange safety gate");
+    require(text.find("\"pair_exchange_skipped_large_k\"") != std::string::npos,
+            "JSON includes pair-exchange gate telemetry");
     require(text.find("\"knn_requested_grid_instances\"") != std::string::npos, "JSON includes effective KNN backend stats");
     require(text.find("\"instance_rows\"") != std::string::npos, "JSON includes per-instance row container");
     require(text.find("\"target_compile_options\"") != std::string::npos, "JSON includes target compile options metadata");
@@ -2915,6 +3005,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_time_budget_adds_restarts);
     RUN_TEST(test_elite_anytime_restarts);
     RUN_TEST(test_two_opt_candidate_table_property);
+    RUN_TEST(test_batched_pair_repair_matches_legacy);
+    RUN_TEST(test_pair_exchange_large_k_gate);
     RUN_TEST(test_path_relink_step_matches_bruteforce);
 #if defined(ALDOUS_TSP_TESTS_DIR)
     RUN_TEST(test_oracle_torus_roundtrip);

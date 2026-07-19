@@ -391,6 +391,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "pair_exchange_max_k": {
+          "description": "Maximum subset cardinality for pair exchange; 0 removes the safety gate.",
+          "type": "integer",
+          "minimum": 0
+        },
         "ruin_recreate_rounds": {
           "type": "integer",
           "minimum": 0
@@ -727,6 +732,11 @@
           "minimum": 0
         },
         "pair_exchange_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pair_exchange_skipped_large_k": {
+          "description": "Pair-exchange invocations skipped by pair_exchange_max_k.",
           "type": "integer",
           "minimum": 0
         },

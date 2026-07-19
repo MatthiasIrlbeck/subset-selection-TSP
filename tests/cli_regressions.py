@@ -34,6 +34,7 @@ def main() -> int:
         "--dense-exact-insertion",
         "--oracle-inline-feedback",
         "--disable-path-relink",
+        "--pair-exchange-max-k",
         "Boolean flags accept plain presence as true",
     ):
         assert marker in help_run.stdout, marker
@@ -176,6 +177,15 @@ def main() -> int:
         )
         assert bad_threads.returncode != 0, (bad_threads.stdout, bad_threads.stderr)
         assert "--threads must be >= 0" in bad_threads.stderr, bad_threads.stderr
+
+        bad_pair_gate = subprocess.run(
+            [str(exe), "--pair-exchange-max-k", "-1", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert bad_pair_gate.returncode != 0, (bad_pair_gate.stdout, bad_pair_gate.stderr)
+        assert "--pair-exchange-max-k must be >= 0" in bad_pair_gate.stderr, bad_pair_gate.stderr
 
 
 

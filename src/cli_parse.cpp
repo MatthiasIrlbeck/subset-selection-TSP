@@ -289,6 +289,7 @@ Solver:
   --exhaustive-two-opt-policy <p> never | final-only | all-polish (default: final-only)
   --subset-swap-passes <int>     Deterministic subset swap descent passes
   --pair-exchange-passes <int>   Two-for-two subset exchange passes
+  --pair-exchange-max-k <int>    Skip pair exchange above k (default: 5000; 0 = unlimited)
   --ruin-recreate-rounds <int>   LNS ruin/recreate rounds
   --path-relink-top <int>        Elite-pool path relinking width
 
@@ -364,6 +365,7 @@ std::string config_summary(const RunOptions& opt) {
         << ", hk_iterations=" << opt.hk_iterations
         << ", tsp_restarts=" << opt.solver.tsp_restarts
         << ", final_exhaustive_k=" << opt.solver.final_exhaustive_k
+        << ", pair_exchange_max_k=" << opt.solver.pair_exchange_max_k
         << ", exhaustive_two_opt_policy=" << exhaustive_two_opt_policy_name(opt.solver.exhaustive_two_opt_policy)
         << ", oracle=" << opt.solver.oracle.status
         << ", p_values=";
@@ -401,6 +403,7 @@ bool validate_options(RunOptions& opt, std::string& err) {
     if (opt.solver.final_exhaustive_k < 0) { err = "--final-exhaustive-k must be >= 0"; return false; }
     if (opt.solver.subset_swap_descent_passes < 0) { err = "--subset-swap-passes must be >= 0"; return false; }
     if (opt.solver.pair_exchange_passes < 0) { err = "--pair-exchange-passes must be >= 0"; return false; }
+    if (opt.solver.pair_exchange_max_k < 0) { err = "--pair-exchange-max-k must be >= 0"; return false; }
     if (opt.solver.ruin_recreate_rounds < 0) { err = "--ruin-recreate-rounds must be >= 0"; return false; }
     if (opt.solver.path_relink_top < 0) { err = "--path-relink-top must be >= 0"; return false; }
     if (opt.solver.verify_knn_checks < 0) { err = "--verify-knn must be >= 0"; return false; }
@@ -622,6 +625,7 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
         }
         if (flag == "--subset-swap-passes") { if (!parse_int_flag(i, flag, opt.solver.subset_swap_descent_passes)) { return false; } continue; }
         if (flag == "--pair-exchange-passes") { if (!parse_int_flag(i, flag, opt.solver.pair_exchange_passes)) { return false; } continue; }
+        if (flag == "--pair-exchange-max-k") { if (!parse_int_flag(i, flag, opt.solver.pair_exchange_max_k)) { return false; } continue; }
         if (flag == "--ruin-recreate-rounds") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_rounds)) { return false; } continue; }
         if (flag == "--path-relink-top") { if (!parse_int_flag(i, flag, opt.solver.path_relink_top)) { return false; } continue; }
         if (flag == "--verify-knn") {

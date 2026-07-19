@@ -218,6 +218,22 @@ bool regret_repair_cycle(std::vector<int>& cycle,
                          int target_k,
                          const std::vector<int>& pool,
                          const std::vector<unsigned char>& banned);
+struct PairRepairResult {
+    bool valid = false;
+    double length = std::numeric_limits<double>::infinity();
+    std::vector<int> nodes;
+    int first_pool_index = -1;
+    int second_pool_index = -1;
+    int first_pred = -1;
+    int second_pred = -1;
+};
+
+// Finds the best two-node regret repair over every unordered pool pair. The
+// cycle is not copied per pair; distances and insertion profiles are batched,
+// and only the winning repaired cycle is materialized.
+PairRepairResult best_two_node_regret_repair(const Instance& inst,
+                                             const std::vector<int>& cycle,
+                                             const std::vector<int>& pool);
 bool subset_ruin_recreate_lns(Tour& tour,
                               const Instance& inst,
                               Rng& rng,

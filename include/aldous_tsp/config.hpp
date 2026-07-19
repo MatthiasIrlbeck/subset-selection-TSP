@@ -94,6 +94,7 @@ struct SearchStats {
     std::uint64_t highp_exchange_improvements = 0;
     std::uint64_t pair_exchange_scans = 0;
     std::uint64_t pair_exchange_improvements = 0;
+    std::uint64_t pair_exchange_skipped_large_k = 0;
     std::uint64_t ruin_recreate_attempts = 0;
     std::uint64_t ruin_recreate_improvements = 0;
     std::uint64_t path_relink_attempts = 0;
@@ -330,6 +331,10 @@ struct SolverOptions {
     ExhaustiveTwoOptPolicy exhaustive_two_opt_policy = ExhaustiveTwoOptPolicy::FinalOnly;
     int subset_swap_descent_passes = 1;
     int pair_exchange_passes = 1;
+    // Pair exchange is intentionally bounded until its O(k * pool) working
+    // set and full candidate generation have been validated at larger scales.
+    // 0 removes the gate.
+    int pair_exchange_max_k = 5000;
     int ruin_recreate_rounds = 4;
     int path_relink_top = 3;
     int seed = 2024;

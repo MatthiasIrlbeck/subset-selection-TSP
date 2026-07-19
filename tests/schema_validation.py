@@ -100,6 +100,8 @@ def main() -> int:
     assert "highp_exchange_scans" in doc["search_stats"], doc["search_stats"]
     assert "region_restarts" in doc["search_stats"], doc["search_stats"]
     assert "dense_restarts" in doc["search_stats"], doc["search_stats"]
+    assert doc["config"]["pair_exchange_max_k"] == 5000, doc["config"]
+    assert "pair_exchange_skipped_large_k" in doc["search_stats"], doc["search_stats"]
     phases = doc["search_stats"]["phase_timing"]
     expected_phase_fields = {
         "seed_construction_seconds", "tsp_construction_seconds",

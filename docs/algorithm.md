@@ -50,6 +50,8 @@ Search stages:
 7. elite-pool path relinking between top solutions,
 8. final fixed-subset polish.
 
+The two-for-two stage evaluates the same regret-2 repair neighborhood without rebuilding a tour for every candidate pair. For each removal pair it batches candidate-to-cycle distances, computes stable best/second-best insertion profiles, evaluates all unordered add pairs by edge deltas, and materializes only the winning repaired cycle. `pair_exchange_max_k` defaults to `5000` as a resource safety gate while production-scale memory and runtime coverage expands; `0` removes the gate.
+
 The annealing temperature schedule is computed from the iteration index directly:
 
 ```text

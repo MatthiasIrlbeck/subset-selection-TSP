@@ -144,6 +144,7 @@ Important flags:
 - `--exhaustive-two-opt-policy never|final-only|all-polish`
 - `--subset-swap-passes <int>`
 - `--pair-exchange-passes <int>`
+- `--pair-exchange-max-k <int>` (`5000` by default; `0` removes the large-`k` safety gate)
 - `--ruin-recreate-rounds <int>`
 - `--path-relink-top <int>`
 - `--disable-two-opt[=true|false]`

@@ -117,6 +117,173 @@ bool regret_repair_cycle(std::vector<int>& cycle, const Instance& inst, int targ
     return true;
 }
 
+PairRepairResult best_two_node_regret_repair(const Instance& inst,
+                                             const std::vector<int>& cycle,
+                                             const std::vector<int>& pool) {
+    PairRepairResult result;
+    const int m = static_cast<int>(cycle.size());
+    const int pool_size = static_cast<int>(pool.size());
+    if (m < 2 || pool_size < 2 || inst.N <= 0) {
+        return result;
+    }
+
+    struct InsertProfile {
+        bool valid = false;
+        int node = -1;
+        double best_cost[2] = {std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::infinity()};
+        int best_pred[2] = {-1, -1};
+        double score = std::numeric_limits<double>::infinity();
+    };
+
+    thread_local std::vector<double> edge_length;
+    thread_local std::vector<double> distances;
+    thread_local std::vector<InsertProfile> profiles;
+    thread_local std::vector<unsigned char> in_cycle;
+    edge_length.resize(static_cast<std::size_t>(m));
+    distances.resize(static_cast<std::size_t>(pool_size) * static_cast<std::size_t>(m));
+    profiles.assign(static_cast<std::size_t>(pool_size), InsertProfile{});
+    in_cycle.assign(static_cast<std::size_t>(inst.N), 0U);
+
+    for (int i = 0; i < m; ++i) {
+        const int node = cycle[static_cast<std::size_t>(i)];
+        if (node < 0 || node >= inst.N || in_cycle[static_cast<std::size_t>(node)] != 0U) {
+            return result;
+        }
+        in_cycle[static_cast<std::size_t>(node)] = 1U;
+        const int next = (i + 1 == m) ? 0 : (i + 1);
+        edge_length[static_cast<std::size_t>(i)] =
+            inst.dist(node, cycle[static_cast<std::size_t>(next)]);
+    }
+
+    for (int pi = 0; pi < pool_size; ++pi) {
+        InsertProfile& profile = profiles[static_cast<std::size_t>(pi)];
+        const int node = pool[static_cast<std::size_t>(pi)];
+        profile.node = node;
+        if (node < 0 || node >= inst.N || in_cycle[static_cast<std::size_t>(node)] != 0U) {
+            continue;
+        }
+        double* row = distances.data()
+            + static_cast<std::size_t>(pi) * static_cast<std::size_t>(m);
+        dist_many_from(inst, node, cycle.data(), m, row);
+        for (int pred = 0; pred < m; ++pred) {
+            const int succ = (pred + 1 == m) ? 0 : (pred + 1);
+            const double cost = row[static_cast<std::size_t>(pred)]
+                + row[static_cast<std::size_t>(succ)]
+                - edge_length[static_cast<std::size_t>(pred)];
+            // Strict comparisons reproduce regret_repair_cycle's stable scan
+            // order, including equal-cost insertion edges.
+            if (cost < profile.best_cost[0]) {
+                profile.best_cost[1] = profile.best_cost[0];
+                profile.best_pred[1] = profile.best_pred[0];
+                profile.best_cost[0] = cost;
+                profile.best_pred[0] = pred;
+            } else if (cost < profile.best_cost[1]) {
+                profile.best_cost[1] = cost;
+                profile.best_pred[1] = pred;
+            }
+        }
+        if (!std::isfinite(profile.best_cost[1])) {
+            profile.best_cost[1] = profile.best_cost[0];
+            profile.best_pred[1] = profile.best_pred[0];
+        }
+        profile.score = profile.best_cost[0]
+            - 0.35 * (profile.best_cost[1] - profile.best_cost[0]);
+        profile.valid = std::isfinite(profile.score) && profile.best_pred[0] >= 0;
+    }
+
+    double best_delta = std::numeric_limits<double>::infinity();
+    int best_first = -1;
+    int best_second = -1;
+    int best_first_pred = -1;
+    int best_second_pred = -1;
+
+    for (int ui = 0; ui < pool_size; ++ui) {
+        for (int vi = ui + 1; vi < pool_size; ++vi) {
+            const InsertProfile& up = profiles[static_cast<std::size_t>(ui)];
+            const InsertProfile& vp = profiles[static_cast<std::size_t>(vi)];
+            if (!up.valid || !vp.valid || up.node == vp.node) {
+                continue;
+            }
+
+            int first_index = ui;
+            int second_index = vi;
+            // regret_repair_cycle considers ui first and replaces it only for
+            // a strictly better score, or an equal score with lower c1.
+            if (vp.score < up.score
+                || (vp.score == up.score && vp.best_cost[0] < up.best_cost[0])) {
+                first_index = vi;
+                second_index = ui;
+            }
+            const InsertProfile& first = profiles[static_cast<std::size_t>(first_index)];
+            const InsertProfile& second = profiles[static_cast<std::size_t>(second_index)];
+            const int split_pred = first.best_pred[0];
+            const int split_succ = (split_pred + 1 == m) ? 0 : (split_pred + 1);
+            const double* first_dist = distances.data()
+                + static_cast<std::size_t>(first_index) * static_cast<std::size_t>(m);
+            const double* second_dist = distances.data()
+                + static_cast<std::size_t>(second_index) * static_cast<std::size_t>(m);
+
+            double second_cost = std::numeric_limits<double>::infinity();
+            int second_pred = -1;
+            auto consider_second = [&](double cost, int modified_pred) {
+                if (cost < second_cost
+                    || (cost == second_cost
+                        && (second_pred < 0 || modified_pred < second_pred))) {
+                    second_cost = cost;
+                    second_pred = modified_pred;
+                }
+            };
+
+            const int surviving_slot =
+                (second.best_pred[0] == split_pred) ? 1 : 0;
+            const int surviving_pred = second.best_pred[surviving_slot];
+            if (surviving_pred >= 0 && surviving_pred != split_pred) {
+                const int modified_pred =
+                    (surviving_pred < split_pred) ? surviving_pred : (surviving_pred + 1);
+                consider_second(second.best_cost[surviving_slot], modified_pred);
+            }
+
+            const double between = inst.dist(first.node, second.node);
+            const double before_first = second_dist[static_cast<std::size_t>(split_pred)]
+                + between - first_dist[static_cast<std::size_t>(split_pred)];
+            consider_second(before_first, split_pred);
+            const double after_first = between
+                + second_dist[static_cast<std::size_t>(split_succ)]
+                - first_dist[static_cast<std::size_t>(split_succ)];
+            consider_second(after_first, split_pred + 1);
+
+            if (second_pred < 0 || !std::isfinite(second_cost)) {
+                continue;
+            }
+            const double delta = first.best_cost[0] + second_cost;
+            if (delta < best_delta) {
+                best_delta = delta;
+                best_first = first_index;
+                best_second = second_index;
+                best_first_pred = split_pred;
+                best_second_pred = second_pred;
+            }
+        }
+    }
+
+    if (best_first < 0) {
+        return result;
+    }
+    result.nodes = cycle;
+    result.nodes.insert(result.nodes.begin() + best_first_pred + 1,
+                        pool[static_cast<std::size_t>(best_first)]);
+    result.nodes.insert(result.nodes.begin() + best_second_pred + 1,
+                        pool[static_cast<std::size_t>(best_second)]);
+    result.length = cycle_length(inst, result.nodes);
+    result.valid = std::isfinite(result.length);
+    result.first_pool_index = best_first;
+    result.second_pool_index = best_second;
+    result.first_pred = best_first_pred;
+    result.second_pred = best_second_pred;
+    return result;
+}
+
 bool subset_ruin_recreate_lns(Tour& tour, const Instance& inst, Rng& rng, const SolverOptions& options, SearchStats* stats, int rounds) {
     if (tour.k < 8 || rounds <= 0) {
         return false;
@@ -192,6 +359,12 @@ bool subset_pair_exchange_descent(Tour& tour, const Instance& inst, Rng& rng, co
     if (tour.k < 6 || passes <= 0) {
         return false;
     }
+    if (options.pair_exchange_max_k > 0 && tour.k > options.pair_exchange_max_k) {
+        if (stats != nullptr) {
+            ++stats->pair_exchange_skipped_large_k;
+        }
+        return false;
+    }
     bool any = false;
     for (int pass = 0; pass < passes; ++pass) {
         tour.ensure_edges(inst);
@@ -219,14 +392,17 @@ bool subset_pair_exchange_descent(Tour& tour, const Instance& inst, Rng& rng, co
                 const int ri = ord[static_cast<std::size_t>(aa)];
                 const int rj = ord[static_cast<std::size_t>(bb)];
                 std::vector<int> remain;
+                remain.reserve(static_cast<std::size_t>(tour.k - 2));
                 std::vector<unsigned char> banned(static_cast<std::size_t>(inst.N), 0U);
                 for (int i = 0; i < tour.k; ++i) {
                     if (i != ri && i != rj) {
-                        remain.push_back(tour.nodes[static_cast<std::size_t>(i)]);
-                        banned[static_cast<std::size_t>(tour.nodes[static_cast<std::size_t>(i)])] = 1U;
+                        const int node = tour.nodes[static_cast<std::size_t>(i)];
+                        remain.push_back(node);
+                        banned[static_cast<std::size_t>(node)] = 1U;
                     }
                 }
                 std::vector<int> pool;
+                pool.reserve(80);
                 for (int rem_pos : {ri, rj}) {
                     const int rem = tour.nodes[static_cast<std::size_t>(rem_pos)];
                     if (inst.knn_k > 0) {
@@ -238,20 +414,17 @@ bool subset_pair_exchange_descent(Tour& tour, const Instance& inst, Rng& rng, co
                 for (int trial = 0; trial < 24 && static_cast<int>(pool.size()) < 80; ++trial) {
                     push_unique(pool, rng.randint(inst.N), &banned, 80);
                 }
-                if (static_cast<int>(pool.size()) < 2) { continue; }
-                for (int ui = 0; ui < static_cast<int>(pool.size()); ++ui) {
-                    for (int vi = ui + 1; vi < static_cast<int>(pool.size()); ++vi) {
-                        if (stats != nullptr) { ++stats->pair_exchange_scans; }
-                        std::vector<int> cand = remain;
-                        std::vector<unsigned char> ban2 = banned;
-                        std::vector<int> add_pool = {pool[static_cast<std::size_t>(ui)], pool[static_cast<std::size_t>(vi)]};
-                        if (!regret_repair_cycle(cand, inst, tour.k, add_pool, ban2)) { continue; }
-                        const double len = cycle_length(inst, cand);
-                        if (len < best_len) {
-                            best_len = len;
-                            best_nodes = std::move(cand);
-                        }
-                    }
+                if (pool.size() < 2U) {
+                    continue;
+                }
+                if (stats != nullptr) {
+                    const std::uint64_t count = static_cast<std::uint64_t>(pool.size());
+                    stats->pair_exchange_scans += count * (count - 1U) / 2U;
+                }
+                PairRepairResult repaired = best_two_node_regret_repair(inst, remain, pool);
+                if (repaired.valid && repaired.length < best_len) {
+                    best_len = repaired.length;
+                    best_nodes = std::move(repaired.nodes);
                 }
             }
         }

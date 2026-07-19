@@ -55,6 +55,7 @@ void SearchStats::add(const SearchStats& other) {
     highp_exchange_improvements += other.highp_exchange_improvements;
     pair_exchange_scans += other.pair_exchange_scans;
     pair_exchange_improvements += other.pair_exchange_improvements;
+    pair_exchange_skipped_large_k += other.pair_exchange_skipped_large_k;
     ruin_recreate_attempts += other.ruin_recreate_attempts;
     ruin_recreate_improvements += other.ruin_recreate_improvements;
     path_relink_attempts += other.path_relink_attempts;
