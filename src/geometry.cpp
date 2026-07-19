@@ -41,14 +41,7 @@ Point PeriodicDomain::normalize(Point point) const noexcept {
 double PeriodicDomain::signed_delta(double lhs, double rhs) const noexcept {
     const double lhs_normalized = normalize(lhs);
     const double rhs_normalized = normalize(rhs);
-    double difference = lhs_normalized - rhs_normalized;
-    const double half = 0.5 * side;
-    if (difference > half) {
-        difference -= side;
-    } else if (difference < -half) {
-        difference += side;
-    }
-    return difference;
+    return canonical_periodic_signed_delta(lhs_normalized, rhs_normalized, side);
 }
 
 double PeriodicDomain::delta(double lhs, double rhs) const noexcept {
@@ -60,9 +53,10 @@ double PeriodicDomain::distance2(const Point& lhs, const Point& rhs) const noexc
 }
 
 double PeriodicDomain::distance2(const Point& lhs, double rhs_x, double rhs_y) const noexcept {
-    const double dx = signed_delta(lhs.x, rhs_x);
-    const double dy = signed_delta(lhs.y, rhs_y);
-    return dx * dx + dy * dy;
+    const Point lhs_normalized = normalize(lhs);
+    const double x_normalized = normalize(rhs_x);
+    const double y_normalized = normalize(rhs_y);
+    return canonical_periodic_distance2(lhs_normalized, x_normalized, y_normalized, side);
 }
 
 double euclidean_distance2(const Point& lhs, const Point& rhs) noexcept {
@@ -107,7 +101,8 @@ void PeriodicMeanAccumulator::add(double value) noexcept {
     sin_sum_ += std::sin(angle);
     cos_sum_ += std::cos(angle);
     unwrapped_sum_ += static_cast<long double>(anchor_)
-        + static_cast<long double>(domain_.signed_delta(normalized, anchor_));
+        + static_cast<long double>(canonical_periodic_signed_delta(
+            normalized, anchor_, domain_.side));
     ++count_;
 }
 

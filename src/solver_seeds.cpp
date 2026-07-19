@@ -3,14 +3,20 @@
 namespace aldous_tsp {
 
 std::vector<int> nearest_to_point_seed(const Instance& inst, double cx, double cy, int k, Rng& rng) {
+    if (inst.periodic) {
+        const PeriodicDomain domain{inst.side};
+        cx = domain.normalize(cx);
+        cy = domain.normalize(cy);
+    }
     std::vector<int> order(static_cast<std::size_t>(inst.N));
+    std::vector<double> scores(static_cast<std::size_t>(inst.N));
     std::iota(order.begin(), order.end(), 0);
-    auto score = [&](int node) {
-        return inst.dist2_to_point(node, cx, cy);
-    };
+    for (int node = 0; node < inst.N; ++node) {
+        scores[static_cast<std::size_t>(node)] = inst.dist2_to_canonical_point(node, cx, cy);
+    }
     auto cmp = [&](int a, int b) {
-        const double da = score(a);
-        const double db = score(b);
+        const double da = scores[static_cast<std::size_t>(a)];
+        const double db = scores[static_cast<std::size_t>(b)];
         if (da != db) {
             return da < db;
         }

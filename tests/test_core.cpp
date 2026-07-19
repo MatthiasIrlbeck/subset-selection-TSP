@@ -123,6 +123,21 @@ void test_periodic_geometry_primitives() {
     require(std::fabs(domain.distance2(Point{0.1, 9.9}, Point{9.9, 0.1}) - 0.08) < 1e-12,
             "periodic point distance wraps both axes");
 
+    require(std::fabs(canonical_periodic_signed_delta(0.1, 9.9, 10.0) - 0.2) < 1e-12,
+            "canonical signed delta matches checked seam behavior");
+    require(std::fabs(canonical_periodic_distance2(Point{0.1, 9.9},
+                                                    Point{9.9, 0.1}, 10.0) - 0.08) < 1e-12,
+            "canonical periodic distance wraps without normalization");
+    Rng geometry_rng(90210);
+    for (int rep = 0; rep < 2000; ++rep) {
+        const Point lhs{10.0 * geometry_rng.uniform(), 10.0 * geometry_rng.uniform()};
+        const Point rhs{10.0 * geometry_rng.uniform(), 10.0 * geometry_rng.uniform()};
+        const double checked = domain.distance2(lhs, rhs);
+        const double canonical = canonical_periodic_distance2(lhs, rhs, 10.0);
+        require(std::fabs(checked - canonical) < 1e-12,
+                "canonical periodic kernel matches checked geometry on canonical points");
+    }
+
     PeriodicMeanAccumulator seam_mean(10.0);
     seam_mean.add(9.8);
     seam_mean.add(0.2);
@@ -554,6 +569,18 @@ void test_dist_many_from_matches_scalar() {
         inst.periodic = periodic;
         Rng gen(periodic ? 424242u : 121212u);
         inst.generate(3000, gen);
+        if (periodic) {
+            for (int rep = 0; rep < 200; ++rep) {
+                const int node = rep % inst.N;
+                const double x = -3.0 * inst.side + 7.0 * inst.side * gen.uniform();
+                const double y = -2.0 * inst.side + 5.0 * inst.side * gen.uniform();
+                const PeriodicDomain domain{inst.side};
+                const Point normalized = domain.normalize(Point{x, y});
+                require(std::fabs(inst.dist2_to_point(node, x, y)
+                                  - inst.dist2_to_canonical_point(node, normalized.x, normalized.y)) < 1e-12,
+                        "checked point queries normalize once before the canonical hot path");
+            }
+        }
         Rng r(77u);
         for (int rep = 0; rep < 200; ++rep) {
             const int src = r.randint(inst.N);

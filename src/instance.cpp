@@ -158,7 +158,8 @@ void Instance::recompute_bounds() {
 double Instance::dist2(int a, int b) const noexcept {
     const Point& lhs = points[static_cast<std::size_t>(a)];
     const Point& rhs = points[static_cast<std::size_t>(b)];
-    return metric_distance2(lhs, rhs, periodic, side);
+    return periodic ? canonical_periodic_distance2(lhs, rhs, side)
+                    : euclidean_distance2(lhs, rhs);
 }
 
 double Instance::dist(int a, int b) const noexcept {
@@ -166,11 +167,21 @@ double Instance::dist(int a, int b) const noexcept {
 }
 
 double Instance::dist2_to_point(int node, double x, double y) const noexcept {
-    return metric_distance2(points[static_cast<std::size_t>(node)], x, y, periodic, side);
+    if (periodic) {
+        const PeriodicDomain domain{side};
+        return dist2_to_canonical_point(node, domain.normalize(x), domain.normalize(y));
+    }
+    return euclidean_distance2(points[static_cast<std::size_t>(node)], x, y);
 }
 
 double Instance::dist_to_point(int node, double x, double y) const noexcept {
     return std::sqrt(dist2_to_point(node, x, y));
+}
+
+double Instance::dist2_to_canonical_point(int node, double x, double y) const noexcept {
+    const Point& point = points[static_cast<std::size_t>(node)];
+    return periodic ? canonical_periodic_distance2(point, x, y, side)
+                    : euclidean_distance2(point, x, y);
 }
 
 int Instance::knn_at(int node, int rank) const noexcept {
@@ -741,12 +752,9 @@ void dist_many_from(const Instance& inst, int src, const int* ids, int count, do
     if (count <= 0 || ids == nullptr || out == nullptr) {
         return;
     }
-    // Periodic batches deliberately use the scalar canonical metric below.
-    // The AVX path is Euclidean-only, so there is a single implementation of
-    // periodic normalization and minimum-image arithmetic.
+    const Point& source = inst.points[static_cast<std::size_t>(src)];
 #if defined(__AVX2__)
-    if (count >= 8 && !inst.periodic) {
-        const Point& source = inst.points[static_cast<std::size_t>(src)];
+    if (count >= 8) {
         const double sx = source.x;
         const double sy = source.y;
         alignas(32) double xs[4];
@@ -754,32 +762,55 @@ void dist_many_from(const Instance& inst, int src, const int* ids, int count, do
         int i = 0;
         const __m256d vsx = _mm256_set1_pd(sx);
         const __m256d vsy = _mm256_set1_pd(sy);
+        const __m256d vside = _mm256_set1_pd(inst.side);
+        const __m256d sign_mask = _mm256_set1_pd(-0.0);
         for (; i + 4 <= count; i += 4) {
             for (int lane = 0; lane < 4; ++lane) {
-                const Point& p = inst.points[static_cast<std::size_t>(ids[i + lane])];
-                xs[lane] = p.x;
-                ys[lane] = p.y;
+                const Point& point = inst.points[static_cast<std::size_t>(ids[i + lane])];
+                xs[lane] = point.x;
+                ys[lane] = point.y;
             }
             const __m256d vx = _mm256_load_pd(xs);
             const __m256d vy = _mm256_load_pd(ys);
-            const __m256d dx = _mm256_sub_pd(vsx, vx);
-            const __m256d dy = _mm256_sub_pd(vsy, vy);
+            __m256d dx = _mm256_sub_pd(vsx, vx);
+            __m256d dy = _mm256_sub_pd(vsy, vy);
+            if (inst.periodic) {
+                dx = _mm256_andnot_pd(sign_mask, dx);
+                dy = _mm256_andnot_pd(sign_mask, dy);
+                dx = _mm256_min_pd(dx, _mm256_sub_pd(vside, dx));
+                dy = _mm256_min_pd(dy, _mm256_sub_pd(vside, dy));
+            }
 #if defined(__FMA__)
             const __m256d d2 = _mm256_fmadd_pd(dx, dx, _mm256_mul_pd(dy, dy));
 #else
             const __m256d d2 = _mm256_add_pd(_mm256_mul_pd(dx, dx), _mm256_mul_pd(dy, dy));
 #endif
-            const __m256d d = _mm256_sqrt_pd(d2);
-            _mm256_storeu_pd(out + i, d);
+            _mm256_storeu_pd(out + i, _mm256_sqrt_pd(d2));
         }
-        for (; i < count; ++i) {
-            out[i] = inst.dist(src, ids[i]);
+        if (inst.periodic) {
+            for (; i < count; ++i) {
+                const Point& point = inst.points[static_cast<std::size_t>(ids[i])];
+                out[i] = std::sqrt(canonical_periodic_distance2(source, point, inst.side));
+            }
+        } else {
+            for (; i < count; ++i) {
+                const Point& point = inst.points[static_cast<std::size_t>(ids[i])];
+                out[i] = std::sqrt(euclidean_distance2(source, point));
+            }
         }
         return;
     }
 #endif
-    for (int i = 0; i < count; ++i) {
-        out[i] = inst.dist(src, ids[i]);
+    if (inst.periodic) {
+        for (int i = 0; i < count; ++i) {
+            const Point& point = inst.points[static_cast<std::size_t>(ids[i])];
+            out[i] = std::sqrt(canonical_periodic_distance2(source, point, inst.side));
+        }
+    } else {
+        for (int i = 0; i < count; ++i) {
+            const Point& point = inst.points[static_cast<std::size_t>(ids[i])];
+            out[i] = std::sqrt(euclidean_distance2(source, point));
+        }
     }
 }
 

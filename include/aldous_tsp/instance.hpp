@@ -77,6 +77,9 @@ public:
     [[nodiscard]] double dist(int a, int b) const noexcept;
     [[nodiscard]] double dist2_to_point(int node, double x, double y) const noexcept;
     [[nodiscard]] double dist_to_point(int node, double x, double y) const noexcept;
+    // Fast periodic query for a point already normalized into [0, side).
+    // Open instances treat the coordinates as ordinary Euclidean values.
+    [[nodiscard]] double dist2_to_canonical_point(int node, double x, double y) const noexcept;
     [[nodiscard]] int knn_at(int node, int rank) const noexcept;
     [[nodiscard]] double knn_d_at(int node, int rank) const noexcept;
     [[nodiscard]] double knn_d2_at(int node, int rank) const noexcept;
