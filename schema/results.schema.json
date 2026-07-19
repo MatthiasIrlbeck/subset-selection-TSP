@@ -1055,10 +1055,20 @@
           "minimum": 0
         },
         "subset_bound_mean": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_bound_mean. This bounds only the optimal tour through each selected subset, not the optimum over all size-k subsets."
         },
         "lower_bound_gap_mean": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_gap_mean."
+        },
+        "conditional_two_nn_bound_mean": {
+          "type": "number",
+          "description": "Mean two-nearest-neighbor lower bound, divided by k, on the tour through the subset selected by the heuristic. It is conditional on that subset and is not a global lower bound on the optimum over all size-k subsets."
+        },
+        "conditional_two_nn_gap_mean": {
+          "type": "number",
+          "description": "Mean tour value minus conditional_two_nn_bound_mean. This diagnoses fixed-subset tour ordering and bound looseness, not subset-selection error."
         },
         "cv_mean": {
           "type": "number"
@@ -1070,10 +1080,20 @@
           "type": "number"
         },
         "held_karp_bound_mean": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_bound_mean."
         },
         "held_karp_gap_mean": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_gap_mean."
+        },
+        "conditional_held_karp_bound_mean": {
+          "type": "number",
+          "description": "Mean Held-Karp lower bound, divided by k, on the optimal tour through the subset selected by the heuristic. It is not a bound on the optimum over all size-k subsets."
+        },
+        "conditional_held_karp_gap_mean": {
+          "type": "number",
+          "description": "Mean tour value minus conditional_held_karp_bound_mean. A small value certifies tour-ordering quality for the selected subsets only."
         }
       },
       "additionalProperties": false
@@ -1116,10 +1136,20 @@
           "minimum": 0
         },
         "subset_bound": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_bound."
         },
         "held_karp_bound": {
-          "type": "number"
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_bound."
+        },
+        "conditional_two_nn_bound": {
+          "type": "number",
+          "description": "Two-nearest-neighbor lower bound divided by k for the tour through this selected subset; conditional on the subset."
+        },
+        "conditional_held_karp_bound": {
+          "type": "number",
+          "description": "Held-Karp lower bound divided by k for the tour through this selected subset; conditional on the subset."
         },
         "restart_values": {
           "type": "array",

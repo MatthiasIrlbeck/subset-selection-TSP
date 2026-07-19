@@ -2,11 +2,11 @@
 """Run the subset-TSP campaign: torus k-ladders with LKH, then extrapolate + fit alpha.
 
 For each p and each target tour size k it runs one instance batch at N = k/p on
-the flat torus, using LKH as the oracle so each solve is near-optimal (removing
-the large-k bias that otherwise corrupts the extrapolation), plus the control
-variate for the certified lower-bound bracket. It then extrapolates every p to
-N -> inf via extrapolate_fpN.py (the O(1/N) torus form) and, given f(0+), fits
-the small-p exponent in f(p) - f0 ~ p^alpha.
+the flat torus, using LKH as the oracle to improve tour ordering on each chosen
+subset, plus the full-set control variate. Conditional two-NN/Held-Karp bounds
+diagnose the tour through the chosen subset; they do not certify that the subset
+itself is globally optimal. The script then extrapolates every p to N -> inf via
+extrapolate_fpN.py and, given f(0+), fits the small-p exponent.
 
 Only the EXPLICIT matrix format is torus-correct and it is O(k^2), so keep k
 targets <= ~3000; the torus's O(1/N) convergence makes moderate k sufficient.

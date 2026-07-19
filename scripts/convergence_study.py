@@ -86,7 +86,9 @@ def run_case(exe, N, p, instances, threads, restarts, sa_iters, sa_iters_per_n,
     with open(out_path) as f:
         doc = json.load(f)
     row = doc["summary_rows"][0]
-    return (row["mean"], row["stderr"], row.get("held_karp_bound_mean", 0.0),
+    conditional_hk = row.get(
+        "conditional_held_karp_bound_mean", row.get("held_karp_bound_mean", 0.0))
+    return (row["mean"], row["stderr"], conditional_hk,
             doc.get("wall_seconds", 0.0))
 
 

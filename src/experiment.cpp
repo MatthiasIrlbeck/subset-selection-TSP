@@ -417,10 +417,12 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
                 pvrow.solve_seconds = pi < r.solve_seconds.size() ? r.solve_seconds[pi] : 0.0;
                 if (pi < r.restarts.size()) { pvrow.restarts = r.restarts[pi]; }
                 if (pi < r.subset_bounds.size() && r.subset_bounds[pi] >= 0.0) {
-                    pvrow.subset_bound = r.subset_bounds[pi] / static_cast<double>(pvrow.k);
+                    pvrow.conditional_two_nn_bound =
+                        r.subset_bounds[pi] / static_cast<double>(pvrow.k);
                 }
                 if (pi < r.held_karp_bounds.size() && r.held_karp_bounds[pi] >= 0.0) {
-                    pvrow.held_karp_bound = r.held_karp_bounds[pi] / static_cast<double>(pvrow.k);
+                    pvrow.conditional_held_karp_bound =
+                        r.held_karp_bounds[pi] / static_cast<double>(pvrow.k);
                 }
                 row.p_results.push_back(std::move(pvrow));
             }
@@ -444,8 +446,9 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
             if (!sub.empty()) {
                 double s = 0.0;
                 for (double v : sub) { s += v; }
-                summary.subset_bound_mean = s / static_cast<double>(sub.size());
-                summary.lower_bound_gap_mean = summary.mean - summary.subset_bound_mean;
+                summary.conditional_two_nn_bound_mean = s / static_cast<double>(sub.size());
+                summary.conditional_two_nn_gap_mean =
+                    summary.mean - summary.conditional_two_nn_bound_mean;
             }
             // Full-set control variate with known mean E[B_full]/k.
             const std::vector<double>& y = by_p[pi];
@@ -492,8 +495,10 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
             if (!hk.empty()) {
                 double s = 0.0;
                 for (double v : hk) { s += v; }
-                summary.held_karp_bound_mean = s / static_cast<double>(hk.size());
-                summary.held_karp_gap_mean = summary.mean - summary.held_karp_bound_mean;
+                summary.conditional_held_karp_bound_mean =
+                    s / static_cast<double>(hk.size());
+                summary.conditional_held_karp_gap_mean =
+                    summary.mean - summary.conditional_held_karp_bound_mean;
             }
         }
         doc.summary[p_value_key(opt.p_values[pi])] = std::move(summary);

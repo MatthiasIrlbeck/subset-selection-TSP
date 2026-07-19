@@ -13,8 +13,9 @@ run_torus_campaign.py, it:
      resample instances at every (p, k), rerun stages 1-2 -- to attach
      percentile confidence intervals to f(p), f(0+), C, and alpha.
 
-It also extrapolates the Held-Karp bound the same way and reports the tour-to-bound
-gap per p, so you can see whether the TOUR SOLVES were converged.
+It also extrapolates the conditional Held-Karp diagnostic the same way and
+reports the tour-to-bound gap per p, so you can see whether the TOUR ORDERING on
+the selected subsets was converged.
 
 IMPORTANT -- what the Held-Karp number is and is not. HK lower-bounds the optimal
 tour through THE SUBSET THE SOLVER CHOSE. It is NOT a lower bound on
@@ -29,8 +30,9 @@ bracket to catch it. Use scripts/convergence_study.py to bound that error; it
 cannot be read off the HK column.
 
 Inputs are the campaign JSON files (one p each, or multi-p). Per-instance tour
-values come from each summary row's `values`; the Held-Karp floor from
-`held_karp_bound_mean` (or the two-NN `subset_bound_mean` if absent).
+values come from each summary row's `values`; the conditional tour diagnostic
+comes from `conditional_held_karp_bound_mean` (or
+`conditional_two_nn_bound_mean` if absent). Schema-13 legacy names are accepted.
 
 Usage:
   analyze_campaign.py torus_campaign/*.json
@@ -152,21 +154,22 @@ def analyze(ladders, pmax, boot, alpha_grid, seed=12345):
         bs_C.append(Cb)
         bs_alpha.append(ab)
 
-    # --- Held-Karp (or two-NN) lower bracket on f(p) and f0 ---
-    lb_means = {}
-    have_lb = True
+    # --- Conditional Held-Karp (or two-NN) tour-ordering diagnostic ---
+    bound_means = {}
+    have_bound = True
     for p in ps:
-        lb_means[p] = {}
+        bound_means[p] = {}
         for k in ladders[p]:
-            lb = _lb_of.get((p, k))
-            if lb is None:
-                have_lb = False
-            lb_means[p][k] = lb
-    f0_lb = None
-    if have_lb:
-        lb_pts = {p: {k: lb_means[p][k] for k in ladders[p]} for p in ps}
-        fp_lb = fp_of(lb_pts)
-        f0_lb, _, _, _ = profile_power_fit(ps, [fp_lb[p][0] for p in ps], fw, alpha_grid)
+            bound = _conditional_bound_of.get((p, k))
+            if bound is None:
+                have_bound = False
+            bound_means[p][k] = bound
+    conditional_f0_diagnostic = None
+    if have_bound:
+        bound_points = {p: {k: bound_means[p][k] for k in ladders[p]} for p in ps}
+        fp_bound = fp_of(bound_points)
+        conditional_f0_diagnostic, _, _, _ = profile_power_fit(
+            ps, [fp_bound[p][0] for p in ps], fw, alpha_grid)
 
     return {
         "ps": ps,
@@ -175,8 +178,11 @@ def analyze(ladders, pmax, boot, alpha_grid, seed=12345):
         "f0": f0, "f0_ci": _ci(bs_f0),
         "C": C, "C_ci": _ci(bs_C),
         "alpha": alpha, "alpha_ci": _ci(bs_alpha),
-        "f0_lb": f0_lb,
-        "gaps": _lb_gaps,
+        "conditional_f0_diagnostic": conditional_f0_diagnostic,
+        "conditional_gaps": _conditional_gaps,
+        # Deprecated result aliases for callers of older script versions.
+        "f0_lb": conditional_f0_diagnostic,
+        "gaps": _conditional_gaps,
     }
 
 
@@ -199,32 +205,78 @@ def _ci(samples, lo=2.5, hi=97.5):
 
 
 # Module-level side tables filled by load_campaign (kept simple for the profile fit).
-_lb_of = {}
-_lb_gaps = {}
+_conditional_bound_of = {}
+_conditional_gaps = {}
+
+
+def _conditional_bound_from_row(row):
+    for key in (
+        "conditional_held_karp_bound_mean",
+        "conditional_two_nn_bound_mean",
+        "held_karp_bound_mean",       # schema-13 compatibility
+        "subset_bound_mean",          # schema-13 compatibility
+    ):
+        value = row.get(key)
+        if value is not None:
+            return float(value)
+    return None
 
 
 def load_campaign(paths):
-    """Return {p: {k: [instance tour values]}}, and fill the LB side tables."""
+    """Return {p: {k: [tour values]}} and merge conditional diagnostics.
+
+    Repeated shards for the same (p, k) cell are merged by instance count.
+    Cells with incompatible N or geometry are rejected instead of being silently
+    combined into one finite-size point.
+    """
     ladders = defaultdict(lambda: defaultdict(list))
-    _lb_of.clear()
-    _lb_gaps.clear()
-    gap_acc = defaultdict(list)
+    _conditional_bound_of.clear()
+    _conditional_gaps.clear()
+    bound_sum = defaultdict(float)
+    bound_count = defaultdict(int)
+    gap_sum = defaultdict(float)
+    gap_count = defaultdict(int)
+    cell_metadata = {}
     for path in paths:
-        doc = json.load(open(path))
+        with open(path, encoding="utf-8") as stream:
+            doc = json.load(stream)
+        config = doc.get("config", {})
+        doc_n = doc.get("N")
+        periodic = config.get("periodic")
         for row in doc.get("summary_rows", []):
-            p, k = row["p"], row["k"]
+            p, k = float(row["p"]), int(row["k"])
             vals = row.get("values") or []
             if not vals:
                 continue
+            declared_n = int(row.get("n", len(vals)))
+            if declared_n != len(vals):
+                raise ValueError(
+                    f"{path}: summary cell (p={p}, k={k}) declares n={declared_n} "
+                    f"but carries {len(vals)} values")
+            actual_mean = _mean(vals)
+            if "mean" in row and not math.isclose(
+                    float(row["mean"]), actual_mean, rel_tol=1e-10, abs_tol=1e-12):
+                raise ValueError(
+                    f"{path}: summary mean for (p={p}, k={k}) is inconsistent "
+                    "with its values array")
+            metadata = (doc_n, periodic)
+            previous = cell_metadata.get((p, k))
+            if previous is not None and previous != metadata:
+                raise ValueError(
+                    f"incompatible duplicate campaign cell (p={p}, k={k}): "
+                    f"metadata {previous} versus {metadata}")
+            cell_metadata[(p, k)] = metadata
             ladders[p][k].extend(vals)
-            lb = row.get("held_karp_bound_mean")
-            if lb is None:
-                lb = row.get("subset_bound_mean")
-            if lb is not None:
-                _lb_of[(p, k)] = lb
-                gap_acc[p].append(row["mean"] - lb)
-    for p, gaps in gap_acc.items():
-        _lb_gaps[p] = sum(gaps) / len(gaps)
+            bound = _conditional_bound_from_row(row)
+            if bound is not None:
+                bound_sum[(p, k)] += bound * declared_n
+                bound_count[(p, k)] += declared_n
+                gap_sum[p] += (actual_mean - bound) * declared_n
+                gap_count[p] += declared_n
+    for cell, total in bound_sum.items():
+        _conditional_bound_of[cell] = total / bound_count[cell]
+    for p, total in gap_sum.items():
+        _conditional_gaps[p] = total / gap_count[p]
     return {p: dict(ks) for p, ks in ladders.items()}
 
 
@@ -242,7 +294,7 @@ def run_self_test():
         for k in ks:
             vals = [fp_true + slope / k + rng.gauss(0, 0.004) for _ in range(40)]
             ladders[p][k] = vals
-            _lb_of[(p, k)] = fp_true + slope / k - 0.09  # a loose "bound"
+            _conditional_bound_of[(p, k)] = fp_true + slope / k - 0.09
     grid = [0.02 + 0.01 * i for i in range(300)]
     res = analyze(ladders, pmax=1.0, boot=400, alpha_grid=grid)
     ok_f0 = res["f0_ci"][0] <= true_f0 <= res["f0_ci"][1]
@@ -251,7 +303,46 @@ def run_self_test():
           f"{'PASS' if ok_f0 else 'FAIL'}")
     print(f"           alpha={res['alpha']:.3f} CI{_fmt(res['alpha_ci'])} "
           f"(true {true_alpha}) {'PASS' if ok_a else 'FAIL'}")
-    return 0 if (ok_f0 and ok_a) else 1
+
+    # A bound on the chosen subset need not bound the optimum over subsets.
+    # Here the found subset has conditional bound 10 and tour 11, while another
+    # subset has tour 9. The conditional bound is therefore above the global
+    # subset optimum and cannot be described as a floor on it.
+    semantics_ok = 10.0 > 9.0 and 10.0 <= 11.0
+
+    # Regression for multi-file weighting: the old loader overwrote the first
+    # shard's bound with the final shard's mean and averaged gaps per row.
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        base = {
+            "N": 100,
+            "config": {"periodic": True},
+        }
+        shard_a = dict(base, summary_rows=[{
+            "p": 0.2, "k": 20, "n": 2,
+            "values": [0.8, 1.0], "mean": 0.9,
+            "conditional_held_karp_bound_mean": 0.5,
+        }])
+        shard_b = dict(base, summary_rows=[{
+            "p": 0.2, "k": 20, "n": 4,
+            "values": [0.7, 0.8, 0.9, 1.0], "mean": 0.85,
+            "conditional_held_karp_bound_mean": 0.7,
+        }])
+        pa, pb = Path(tmp) / "a.json", Path(tmp) / "b.json"
+        pa.write_text(json.dumps(shard_a), encoding="utf-8")
+        pb.write_text(json.dumps(shard_b), encoding="utf-8")
+        merged = load_campaign([str(pa), str(pb)])
+        expected_bound = (0.5 * 2 + 0.7 * 4) / 6
+        expected_gap = ((0.9 - 0.5) * 2 + (0.85 - 0.7) * 4) / 6
+        merge_ok = (
+            len(merged[0.2][20]) == 6
+            and math.isclose(_conditional_bound_of[(0.2, 20)], expected_bound)
+            and math.isclose(_conditional_gaps[0.2], expected_gap)
+        )
+    print(f"           conditional-bound semantics {'PASS' if semantics_ok else 'FAIL'}; "
+          f"weighted shard merge {'PASS' if merge_ok else 'FAIL'}")
+    return 0 if (ok_f0 and ok_a and semantics_ok and merge_ok) else 1
 
 
 def _fmt(ci):
@@ -276,9 +367,10 @@ def make_plot(res, ladders, path):
     ax.axhline(res["f0"], color="#2471a3", ls=":", lw=1)
     ax.fill_between([0, max(ps) * 1.05], res["f0_ci"][0], res["f0_ci"][1],
                     color="#2471a3", alpha=0.12, label=f"f(0+) = {res['f0']:.3f} {_fmt(res['f0_ci'])}")
-    if res["f0_lb"] is not None:
-        ax.axhline(res["f0_lb"], color="#27ae60", ls="--", lw=1,
-                   label=f"HK bound on chosen subsets = {res['f0_lb']:.3f}\n(not a floor on f(0+))")
+    if res["conditional_f0_diagnostic"] is not None:
+        value = res["conditional_f0_diagnostic"]
+        ax.axhline(value, color="#27ae60", ls="--", lw=1,
+                   label=f"conditional HK diagnostic = {value:.3f}\n(not a floor on f(0+))")
     ax.scatter([0], [res["f0"]], marker="*", s=160, color="#2471a3",
                edgecolor="k", zorder=6)
     ax.set_xlabel("p")
@@ -311,19 +403,20 @@ def main():
     grid = [0.02 + 0.01 * i for i in range(300)]  # alpha in [0.02, 3.01]
     res = analyze(ladders, args.pmax, args.boot, grid)
 
-    print(f"{'p':>7} {'k-range':>13} {'f(p)':>9} {'95% CI':>20} {'tour-bound gap':>15}")
+    print(f"{'p':>7} {'k-range':>13} {'f(p)':>9} {'95% CI':>20} {'conditional gap':>16}")
     for p in res["ps"]:
         ks = sorted(ladders[p])
         fp, _ = res["fp_point"][p]
         ci = res["fp_ci"][p]
-        gap = res["gaps"].get(p)
+        gap = res["conditional_gaps"].get(p)
         gaps = f"{gap:.4f}" if gap is not None else "  --"
         print(f"{p:>7g} {f'{ks[0]}-{ks[-1]}':>13} {fp:>9.4f} {_fmt(ci):>20} {gaps:>15}")
 
     print("\n=== small-p law  f(p) = f(0+) + C p^alpha ===")
     print(f"  f(0+)  = {res['f0']:.4f}   95% CI {_fmt(res['f0_ci'])}")
-    if res["f0_lb"] is not None:
-        print(f"           (Held-Karp bound on the CHOSEN subsets, extrapolated: {res['f0_lb']:.4f}.")
+    if res["conditional_f0_diagnostic"] is not None:
+        diagnostic = res["conditional_f0_diagnostic"]
+        print(f"           (Conditional Held-Karp diagnostic on the CHOSEN subsets: {diagnostic:.4f}.")
         print(f"            This is NOT a lower bound on f(0+): f(0+) is a minimum over subsets,")
         print(f"            and a better subset lowers the tour and this bound together. It brackets")
         print(f"            tour-solving error only -- run scripts/convergence_study.py for the")

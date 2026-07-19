@@ -29,30 +29,44 @@ struct PValueSummary {
     int executed_restarts_max = -1;
     double solve_seconds_total = 0.0;
     // Control-variate outputs (populated only when --control-variate is set).
-    // subset_bound_mean: mean over instances of the two-NN lower bound on the
-    // solved subset, divided by k -- a certified lower bound bracketing f(p)
-    // from below. cv_mean/cv_stderr: full-set control-variate-corrected mean
-    // and its standard error. cv_variance_reduction: fraction of variance
-    // removed (corr^2 of value vs full-set bound; large at p=1).
+    // conditional_two_nn_bound_mean is the mean two-NN lower bound on the tour
+    // through the subset selected by the heuristic, divided by k. It is a
+    // rigorous bound on TSP(S_found), not on min_{|S|=k} TSP(S): improving the
+    // selected subset can lower both the tour and this conditional bound.
+    // cv_mean/cv_stderr are the full-set control-variate-corrected mean and its
+    // standard error. cv_variance_reduction is the removed variance fraction.
     bool has_control_variate = false;
-    double subset_bound_mean = 0.0;
-    // Mean of (value - subset_bound): the gap from the found tour to its two-NN
-    // lower bound. Dominated by the intrinsic looseness of the bound (which is
-    // ~0.087 below optimal even at p=1, where B_full/N -> 0.625 vs beta ~ 0.712),
-    // so it is NOT a pure solver-suboptimality measure; changes in it at fixed p
-    // and N do track solver quality.
-    double lower_bound_gap_mean = 0.0;
+    union {
+        double conditional_two_nn_bound_mean = 0.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double subset_bound_mean;
+    };
+    // Mean of value - conditional_two_nn_bound. This diagnoses tour-ordering
+    // quality for the chosen subsets; it does not measure subset-selection
+    // error and is also affected by the intrinsic looseness of the two-NN bound.
+    union {
+        double conditional_two_nn_gap_mean = 0.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double lower_bound_gap_mean;
+    };
     double cv_mean = 0.0;
     double cv_stderr = 0.0;
     double cv_variance_reduction = 0.0;
-    // Held-Karp lower bound outputs (populated only when --held-karp is set).
-    // held_karp_bound_mean: mean over instances of the tight 1-tree lower bound
-    // divided by k -- a sharp floor bracketing f(p). held_karp_gap_mean: mean of
-    // (value - held_karp_bound)/k, a near-optimality certificate for the solver
-    // (small => the found tour is provably close to optimal).
+    // Held-Karp outputs (populated only when --held-karp is set). These are also
+    // conditional on S_found. A small gap certifies that the tour ordering for
+    // S_found is close to optimal; it cannot certify that S_found is the best
+    // cardinality-k subset.
     bool has_held_karp = false;
-    double held_karp_bound_mean = 0.0;
-    double held_karp_gap_mean = 0.0;
+    union {
+        double conditional_held_karp_bound_mean = 0.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double held_karp_bound_mean;
+    };
+    union {
+        double conditional_held_karp_gap_mean = 0.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double held_karp_gap_mean;
+    };
     std::vector<double> values;
 };
 
@@ -66,15 +80,23 @@ struct InstancePValueRow {
     int best_restart = -1;
     int executed_restarts = 0;
     double solve_seconds = 0.0;
-    // Two-NN lower bound on this instance's solved subset, divided by k
-    // (control variate; -1 when not computed).
-    double subset_bound = -1.0;
+    // Two-NN lower bound on the tour through this instance's selected subset,
+    // divided by k (-1 when not computed). This is conditional on S_found.
+    union {
+        double conditional_two_nn_bound = -1.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double subset_bound;
+    };
     // Typed per-restart diagnostics in restart-index order. Lengths remain
     // raw here; results_to_json derives the backward-compatible L/k arrays.
     std::vector<RestartRecord> restarts;
-    // Held-Karp (1-tree) lower bound on this instance's solved subset, divided
-    // by k (-1 when not computed).
-    double held_karp_bound = -1.0;
+    // Held-Karp (1-tree) lower bound on the tour through this selected subset,
+    // divided by k (-1 when not computed). This is conditional on S_found.
+    union {
+        double conditional_held_karp_bound = -1.0;
+        // Deprecated source-compatible alias. JSON also emits this legacy name.
+        double held_karp_bound;
+    };
 };
 
 struct InstanceResultRow {

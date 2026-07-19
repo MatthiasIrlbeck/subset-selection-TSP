@@ -366,17 +366,18 @@ struct RunOptions {
     bool periodic = false;
     // Compute the two-nearest-neighbor lower bound (Percus-Martin control
     // variate) per instance: on the full point set (analytic/MC-known mean,
-    // used to variance-reduce the reported mean) and on the solved subset (a
-    // certified lower bound on the found tour, bracketing f(p) and exposing
-    // solver suboptimality). Off by default; adds a cheap subset KNN per solve.
+    // used to variance-reduce the reported mean) and on the selected subset.
+    // The latter rigorously lower-bounds only the optimal tour through that
+    // selected subset; it does not lower-bound the optimum over all size-k
+    // subsets. Off by default; adds a cheap subset KNN per solve.
     bool control_variate = false;
     // Cheap Monte-Carlo instances used to pin E[B_full] for the control
     // variate (KNN only, no solve). Capped internally for very large N.
     int cv_mc_samples = 2000;
-    // Compute the Held-Karp (Lagrangian 1-tree) lower bound per solved subset: a
-    // tight (~99% of optimal), rigorous lower bound on f(p) that sharpens the
-    // bracket and, via its gap to the found tour, certifies solver near-
-    // optimality. Off by default; O(k^2) per solve, so intended for moderate k.
+    // Compute the Held-Karp (Lagrangian 1-tree) lower bound per selected subset.
+    // Its gap certifies tour-ordering quality conditional on that subset; it is
+    // not a global lower bound on the optimum over all size-k subsets. Off by
+    // default; O(k^2) per solve, so intended for moderate k.
     bool held_karp = false;
     int hk_iterations = 400;
     bool verbose = false;

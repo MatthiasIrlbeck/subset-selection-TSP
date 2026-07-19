@@ -271,15 +271,16 @@ Solver:
   --control-variate[=bool]       Compute the two-nearest-neighbor lower bound per
                                  instance: on the full set (known-mean control variate,
                                  variance-reduces the mean; large effect at p=1) and on
-                                 the solved subset (certified lower bound bracketing f(p)
-                                 and exposing solver suboptimality) (default: off)
+                                 the selected subset. The subset value bounds only the
+                                 tour through that subset, not the optimum over all
+                                 size-k subsets (default: off)
   --cv-mc-samples <int>          Cheap Monte-Carlo instances used to pin E[B_full] for
                                  the control variate (default: 2000; capped at large N)
   --held-karp[=bool]             Compute the Held-Karp (Lagrangian 1-tree) lower bound
-                                 per solved subset: a tight (~99% of optimal), rigorous
-                                 floor on f(p) that sharpens the bracket and certifies
-                                 solver near-optimality via its gap to the tour. O(k^2)
-                                 per solve; intended for moderate k (default: off)
+                                 per selected subset. Its gap certifies tour-ordering
+                                 quality conditional on that subset; it is not a global
+                                 bound on the best size-k subset. O(k^2) per solve;
+                                 intended for moderate k (default: off)
   --hk-iterations <int>          Subgradient iterations for the Held-Karp bound
                                  (default: 400)
   --tsp-restarts <int>           Full TSP restarts (default: 5)

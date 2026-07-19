@@ -438,13 +438,17 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
             }
             out << ",\n          \"solve_seconds\": ";
             write_json_double(out, pv.solve_seconds);
-            if (pv.subset_bound >= 0.0) {
+            if (pv.conditional_two_nn_bound >= 0.0) {
+                out << ",\n          \"conditional_two_nn_bound\": ";
+                write_json_double(out, pv.conditional_two_nn_bound);
                 out << ",\n          \"subset_bound\": ";
-                write_json_double(out, pv.subset_bound);
+                write_json_double(out, pv.conditional_two_nn_bound);
             }
-            if (pv.held_karp_bound >= 0.0) {
+            if (pv.conditional_held_karp_bound >= 0.0) {
+                out << ",\n          \"conditional_held_karp_bound\": ";
+                write_json_double(out, pv.conditional_held_karp_bound);
                 out << ",\n          \"held_karp_bound\": ";
-                write_json_double(out, pv.held_karp_bound);
+                write_json_double(out, pv.conditional_held_karp_bound);
             }
             out << "\n        }";
         }
@@ -667,10 +671,16 @@ std::string results_to_json(const ResultsDocument& doc) {
         out << ",\n      \"solve_seconds_total\": ";
         write_json_double(out, s.solve_seconds_total);
         if (s.has_control_variate) {
+            out << ",\n      \"conditional_two_nn_bound_mean\": ";
+            write_json_double(out, s.conditional_two_nn_bound_mean);
+            out << ",\n      \"conditional_two_nn_gap_mean\": ";
+            write_json_double(out, s.conditional_two_nn_gap_mean);
+            // Schema-13 compatibility aliases. These names are retained for
+            // old analysis consumers but do not imply a global subset bound.
             out << ",\n      \"subset_bound_mean\": ";
-            write_json_double(out, s.subset_bound_mean);
+            write_json_double(out, s.conditional_two_nn_bound_mean);
             out << ",\n      \"lower_bound_gap_mean\": ";
-            write_json_double(out, s.lower_bound_gap_mean);
+            write_json_double(out, s.conditional_two_nn_gap_mean);
             out << ",\n      \"cv_mean\": ";
             write_json_double(out, s.cv_mean);
             out << ",\n      \"cv_stderr\": ";
@@ -679,10 +689,14 @@ std::string results_to_json(const ResultsDocument& doc) {
             write_json_double(out, s.cv_variance_reduction);
         }
         if (s.has_held_karp) {
+            out << ",\n      \"conditional_held_karp_bound_mean\": ";
+            write_json_double(out, s.conditional_held_karp_bound_mean);
+            out << ",\n      \"conditional_held_karp_gap_mean\": ";
+            write_json_double(out, s.conditional_held_karp_gap_mean);
             out << ",\n      \"held_karp_bound_mean\": ";
-            write_json_double(out, s.held_karp_bound_mean);
+            write_json_double(out, s.conditional_held_karp_bound_mean);
             out << ",\n      \"held_karp_gap_mean\": ";
-            write_json_double(out, s.held_karp_gap_mean);
+            write_json_double(out, s.conditional_held_karp_gap_mean);
         }
         out << ",\n      \"n\": " << s.values.size() << ",\n      \"values\": ";
         write_double_array(out, s.values);

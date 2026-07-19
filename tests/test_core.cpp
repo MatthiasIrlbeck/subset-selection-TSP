@@ -2128,6 +2128,11 @@ void test_control_variate_bounds() {
     opt.solver.disable_path_relink = true;
 
     const ResultsDocument doc = ExperimentRunner(opt).run();
+    const std::string json = results_to_json(doc);
+    require(json.find("\"conditional_two_nn_bound_mean\"") != std::string::npos,
+            "JSON exposes the unambiguous conditional two-NN summary field");
+    require(json.find("\"subset_bound_mean\"") != std::string::npos,
+            "JSON retains the schema-13 two-NN alias");
     require(doc.full_bound_expectation > 0.0, "control variate estimates E[B_full]");
     const double per_point = doc.full_bound_expectation / static_cast<double>(opt.N);
     require(std::fabs(per_point - 0.625) < 0.02,
@@ -2137,6 +2142,8 @@ void test_control_variate_bounds() {
         require(row.full_bound >= 0.0, "instance carries a full-set bound");
         for (const auto& pv : row.p_results) {
             require(pv.subset_bound >= 0.0, "instance p-row carries a subset bound");
+            require(pv.subset_bound == pv.conditional_two_nn_bound,
+                    "legacy and canonical per-instance two-NN names share one value");
             // Subset two-NN bound is a valid lower bound on the found tour.
             require(pv.subset_bound <= pv.value + 1e-6,
                     "subset two-NN bound lower-bounds the found tour length");
@@ -2150,7 +2157,10 @@ void test_control_variate_bounds() {
     for (const auto& item : doc.summary) {
         const PValueSummary& s = item.second;
         require(s.has_control_variate, "summary marks control variate active");
-        require(s.subset_bound_mean <= s.mean + 1e-6, "mean subset bound brackets f(p) from below");
+        require(s.conditional_two_nn_bound_mean <= s.mean + 1e-6,
+                "mean conditional subset bound is below the found-tour mean");
+        require(s.subset_bound_mean == s.conditional_two_nn_bound_mean,
+                "legacy and canonical two-NN summary names share one value");
         require(s.cv_variance_reduction >= 0.0 && s.cv_variance_reduction <= 1.0,
                 "variance reduction fraction is in [0,1]");
     }

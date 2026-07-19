@@ -21,8 +21,9 @@ varying N), groups by p, and for each p:
     inflation of the local length scale and flattens the residual correction
   * for contrast also fits the 1/sqrt(k) (boundary) form and reports the
     residual RMS of both, so the data can confirm which form applies
-  * if control-variate output is present, also extrapolates the two-NN subset
-    lower bound, yielding a certified bracket on f(p) in the N -> inf limit
+  * if conditional bound output is present, also extrapolates that diagnostic.
+    It bounds the tour through the subset selected by the heuristic, not the
+    optimum over all size-k subsets, so it is not a bracket on f(p)
 
 An optional second stage fits the small-p exponent alpha in
 f(p) - f0 ~ p^alpha once several extrapolated f(p) are available.
@@ -87,9 +88,14 @@ def collect_ladder(paths):
         for row in doc.get("summary_rows", []):
             key = row["key"]
             by_p[key]["p"] = row["p"]
-            # Prefer the tight Held-Karp bound as the lower bound when present,
-            # else fall back to the two-NN control-variate bound.
-            lb = row.get("held_karp_bound_mean")
+            # Prefer the tight conditional Held-Karp diagnostic when present,
+            # else fall back to conditional two-NN. Legacy schema-13 aliases
+            # are accepted for old result files.
+            lb = row.get("conditional_held_karp_bound_mean")
+            if lb is None:
+                lb = row.get("conditional_two_nn_bound_mean")
+            if lb is None:
+                lb = row.get("held_karp_bound_mean")
             if lb is None:
                 lb = row.get("subset_bound_mean")
             cvm = row.get("cv_mean")
@@ -144,14 +150,17 @@ def extrapolate_series(points, rescale, use_cv):
         "used_cv": use_cv,
     }
 
-    # Lower-bound bracket: extrapolate the subset two-NN bound if available for
-    # every ladder point.
+    # Extrapolate the fixed-selected-subset tour diagnostic if available for
+    # every ladder point. This is deliberately not named as a global bound.
     subs = [pt[4] for pt in pts]
     if all(s is not None for s in subs):
         ysub = [rescaled(s, k) for s, k in zip(subs, ks)]
         # bounds carry no separate stderr here; fit unweighted.
         wa = [1.0] * len(ks)
         lb, _, lbse, _, _ = weighted_linear_fit(x_inv, ysub, wa)
+        out["conditional_bound_inv"] = lb
+        out["conditional_bound_inv_se"] = lbse
+        # Backward-compatible aliases for callers of older script versions.
         out["lb_inv"] = lb
         out["lb_inv_se"] = lbse
     return out
@@ -220,7 +229,7 @@ def main():
 
     by_p = collect_ladder(args.files)
     print(f"{'p':>7} {'pts':>4} {'k-range':>13} | {'f(p) [1/N]':>12} {'+/-':>8} "
-          f"| {'f(p) [1/sqrtN]':>14} | {'rms 1/N':>9} {'rms 1/sqrtN':>11} | {'lower bnd':>9}")
+          f"| {'f(p) [1/sqrtN]':>14} | {'rms 1/N':>9} {'rms 1/sqrtN':>11} | {'cond. bnd':>9}")
     fp_by_p = {}
     for key in sorted(by_p, key=lambda k: by_p[k]["p"]):
         entry = by_p[key]
@@ -229,7 +238,8 @@ def main():
             continue
         p = entry["p"]
         fp_by_p[p] = res["f_inv"]
-        lb = f"{res['lb_inv']:.4f}" if "lb_inv" in res else "   --"
+        lb = (f"{res['conditional_bound_inv']:.4f}"
+              if "conditional_bound_inv" in res else "   --")
         krange = f"{res['k_min']}-{res['k_max']}"
         print(f"{p:>7.4g} {res['n_points']:>4} {krange:>13} | "
               f"{res['f_inv']:>12.4f} {res['f_inv_se']:>8.4f} | "
@@ -243,8 +253,9 @@ def main():
     if note:
         print("  [" + ", ".join(note) + "]")
     print("  The correct form on the torus is 1/N; a smaller rms under 1/N than "
-          "1/sqrt(N)\n  confirms the boundary term is absent. Lower bnd is the "
-          "extrapolated\n  two-NN subset bound (a floor on f(p)).")
+          "1/sqrt(N) confirms the boundary term is absent. Cond. bnd is the "
+          "extrapolated lower bound on tours through the selected subsets; it "
+          "is not a floor on f(p), which also minimizes over subsets.")
 
     if args.alpha:
         if args.f0 is None:
