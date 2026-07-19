@@ -295,6 +295,7 @@ void write_phase_timing(std::ostream& out, const SearchPhaseTiming& phases, cons
     write_seconds("highp_exchange_seconds", phases.highp_exchange_seconds);
     write_seconds("pair_exchange_seconds", phases.pair_exchange_seconds);
     write_seconds("ruin_recreate_seconds", phases.ruin_recreate_seconds);
+    write_seconds("ejection_chain_seconds", phases.ejection_chain_seconds);
     write_seconds("path_relink_seconds", phases.path_relink_seconds);
     write_seconds("tsp_ils_seconds", phases.tsp_ils_seconds);
     write_seconds("final_polish_seconds", phases.final_polish_seconds);
@@ -342,7 +343,6 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"ruin_recreate_improvements\": " << stats.ruin_recreate_improvements << ",\n"
         << indent << "  \"ruin_recreate_removed_nodes\": " << stats.ruin_recreate_removed_nodes << ",\n"
         << indent << "  \"ruin_recreate_worst_attempts\": " << stats.ruin_recreate_worst_attempts << ",\n"
-        << indent << "  \"ruin_recreate_worst_improvements\": " << stats.ruin_recreate_worst_improvements << ",\n"
         << indent << "  \"ruin_recreate_segment_attempts\": " << stats.ruin_recreate_segment_attempts << ",\n"
         << indent << "  \"ruin_recreate_segment_improvements\": " << stats.ruin_recreate_segment_improvements << ",\n"
         << indent << "  \"ruin_recreate_spatial_attempts\": " << stats.ruin_recreate_spatial_attempts << ",\n"
@@ -351,6 +351,12 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"ruin_recreate_long_edge_improvements\": " << stats.ruin_recreate_long_edge_improvements << ",\n"
         << indent << "  \"ruin_recreate_random_attempts\": " << stats.ruin_recreate_random_attempts << ",\n"
         << indent << "  \"ruin_recreate_random_improvements\": " << stats.ruin_recreate_random_improvements << ",\n"
+        << indent << "  \"ejection_chain_attempts\": " << stats.ejection_chain_attempts << ",\n"
+        << indent << "  \"ejection_chain_feasible\": " << stats.ejection_chain_feasible << ",\n"
+        << indent << "  \"ejection_chain_steps\": " << stats.ejection_chain_steps << ",\n"
+        << indent << "  \"ejection_chain_scans\": " << stats.ejection_chain_scans << ",\n"
+        << indent << "  \"ejection_chain_improvements\": " << stats.ejection_chain_improvements << ",\n"
+        << indent << "  \"ejection_chain_accepted_depth\": " << stats.ejection_chain_accepted_depth << ",\n"
         << indent << "  \"path_relink_attempts\": " << stats.path_relink_attempts << ",\n"
         << indent << "  \"path_relink_feasible\": " << stats.path_relink_feasible << ",\n"
         << indent << "  \"path_relink_elite_insertions\": " << stats.path_relink_elite_insertions << ",\n"
@@ -664,6 +670,13 @@ std::string results_to_json(const ResultsDocument& doc) {
     out << ",\n"
         << "    \"ruin_recreate_max_nodes\": " << doc.options.solver.ruin_recreate_max_nodes << ",\n"
         << "    \"ruin_recreate_pool_cap\": " << doc.options.solver.ruin_recreate_pool_cap << ",\n"
+        << "    \"ejection_chain_starts\": " << doc.options.solver.ejection_chain_starts << ",\n"
+        << "    \"ejection_chain_depth\": " << doc.options.solver.ejection_chain_depth << ",\n"
+        << "    \"ejection_chain_candidates\": " << doc.options.solver.ejection_chain_candidates << ",\n"
+        << "    \"ejection_chain_remove_cap\": " << doc.options.solver.ejection_chain_remove_cap << ",\n"
+        << "    \"ejection_chain_max_uphill\": ";
+    write_json_double(out, doc.options.solver.ejection_chain_max_uphill);
+    out << ",\n"
         << "    \"elite_diversity_slots\": " << doc.options.solver.elite_diversity_slots << ",\n"
         << "    \"elite_min_jaccard\": ";
     write_json_double(out, doc.options.solver.elite_min_jaccard);
@@ -690,6 +703,7 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"disable_subset_swap\": " << (doc.options.solver.disable_subset_swap ? "true" : "false") << ",\n"
         << "    \"disable_pair_exchange\": " << (doc.options.solver.disable_pair_exchange ? "true" : "false") << ",\n"
         << "    \"disable_ruin_recreate\": " << (doc.options.solver.disable_ruin_recreate ? "true" : "false") << ",\n"
+        << "    \"disable_ejection_chain\": " << (doc.options.solver.disable_ejection_chain ? "true" : "false") << ",\n"
         << "    \"disable_path_relink\": " << (doc.options.solver.disable_path_relink ? "true" : "false") << ",\n"
         << "    \"disable_smallp_seeds\": " << (doc.options.solver.disable_smallp_seeds ? "true" : "false") << ",\n"
         << "    \"disable_highp_delete\": " << (doc.options.solver.disable_highp_delete ? "true" : "false") << ",\n"

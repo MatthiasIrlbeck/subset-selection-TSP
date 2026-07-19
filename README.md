@@ -150,6 +150,11 @@ Important flags:
 - `--ruin-recreate-max-fraction <float>`
 - `--ruin-recreate-max-nodes <int>` (`0` removes the absolute cap)
 - `--ruin-recreate-pool-cap <int>`
+- `--ejection-chain-starts <int>`
+- `--ejection-chain-depth <int>`
+- `--ejection-chain-candidates <int>`
+- `--ejection-chain-remove-cap <int>` (`0` considers every eligible member)
+- `--ejection-chain-max-uphill <float>`
 - `--elite-diversity-slots <int>`
 - `--elite-min-jaccard <float>`
 - `--elite-quality-slack <float>`
@@ -159,6 +164,7 @@ Important flags:
 - `--disable-subset-swap[=true|false]`
 - `--disable-pair-exchange[=true|false]`
 - `--disable-ruin-recreate[=true|false]`
+- `--disable-ejection-chain[=true|false]`
 - `--disable-path-relink[=true|false]`
 - `--disable-smallp-seeds[=true|false]`
 - `--disable-highp-delete[=true|false]`

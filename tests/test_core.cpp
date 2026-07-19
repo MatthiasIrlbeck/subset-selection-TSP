@@ -83,6 +83,7 @@ void test_search_phase_timing_add() {
     delta.seed_construction_seconds = 1.0;
     delta.sa_seconds = 2.0;
     delta.pair_exchange_seconds = 3.0;
+    delta.ejection_chain_seconds = 4.0;
     delta.sa_proposal_samples = 4;
     delta.sa_insertion_samples = 5;
     delta.sa_proposal_sample_seconds = 0.006;
@@ -92,6 +93,8 @@ void test_search_phase_timing_add() {
     require(total.seed_construction_seconds == 2.0, "phase timings accumulate seed time");
     require(total.sa_seconds == 4.0, "phase timings accumulate SA time");
     require(total.pair_exchange_seconds == 6.0, "phase timings accumulate neighborhood time");
+    require(total.ejection_chain_seconds == 8.0,
+            "phase timings accumulate ejection-chain time");
     require(total.sa_proposal_samples == 8, "phase timing proposal samples accumulate");
     require(total.sa_insertion_samples == 10, "phase timing insertion samples accumulate");
     require(std::fabs(total.sa_proposal_sample_seconds - 0.012) < 1e-15,
@@ -108,6 +111,10 @@ void test_search_phase_timing_add() {
     part.elite_diversity_candidates = 3;
     part.elite_diversity_retained = 2;
     part.elite_diversity_rejected = 1;
+    part.ejection_chain_attempts = 3;
+    part.ejection_chain_steps = 7;
+    part.ejection_chain_improvements = 1;
+    part.ejection_chain_accepted_depth = 4;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
@@ -122,6 +129,11 @@ void test_search_phase_timing_add() {
                 && aggregate.elite_diversity_retained == 4
                 && aggregate.elite_diversity_rejected == 2,
             "elite diversity telemetry accumulates across workers");
+    require(aggregate.ejection_chain_attempts == 6
+                && aggregate.ejection_chain_steps == 14
+                && aggregate.ejection_chain_improvements == 2
+                && aggregate.ejection_chain_accepted_depth == 8,
+            "ejection-chain telemetry accumulates across workers");
 }
 
 void test_rng() {
@@ -2819,6 +2831,65 @@ void test_cached_regret_repair_and_adaptive_lns() {
     }
 }
 
+void test_membership_ejection_chain() {
+    for (const bool periodic : {false, true}) {
+        Rng instance_rng(periodic ? 913712U : 913711U);
+        Instance inst;
+        inst.periodic = periodic;
+        inst.generate(96, instance_rng);
+        inst.build_knn(28, KnnBackend::GridExact);
+
+        Tour initial;
+        initial.init(inst.N);
+        initial.set_tour(random_subset(inst.N, 40, instance_rng), inst);
+        SolverOptions options;
+        options.ejection_chain_starts = 4;
+        options.ejection_chain_depth = 5;
+        options.ejection_chain_candidates = 18;
+        options.ejection_chain_remove_cap = 36;
+        options.ejection_chain_max_uphill = 1.25;
+        options.disable_subset_swap = true;
+        options.final_exhaustive_k = 0;
+
+        Tour first = initial;
+        Tour second = initial;
+        Rng first_rng(550019U);
+        Rng second_rng(550019U);
+        SearchStats first_stats;
+        SearchStats second_stats;
+        (void)subset_ejection_chain_search(first, inst, first_rng, options,
+                                           &first_stats);
+        (void)subset_ejection_chain_search(second, inst, second_rng, options,
+                                           &second_stats);
+        require(first.nodes == second.nodes
+                    && std::fabs(first.length - second.length) < 1e-12,
+                "membership ejection chains are deterministic for a fixed stream");
+        require(first.check_invariants() && first.k == initial.k,
+                "membership ejection chains preserve cardinality and uniqueness");
+        require(first.length <= initial.length + kImprovementEps,
+                "membership ejection chains replace the incumbent only on improvement");
+        require(first_stats.ejection_chain_attempts > 0
+                    && first_stats.ejection_chain_feasible
+                           <= first_stats.ejection_chain_attempts
+                    && first_stats.ejection_chain_steps
+                           >= first_stats.ejection_chain_feasible
+                    && first_stats.ejection_chain_scans > 0,
+                "membership ejection chains report bounded search work");
+        require(first_stats.ejection_chain_attempts
+                    == second_stats.ejection_chain_attempts
+                    && first_stats.ejection_chain_feasible
+                        == second_stats.ejection_chain_feasible
+                    && first_stats.ejection_chain_steps
+                        == second_stats.ejection_chain_steps
+                    && first_stats.ejection_chain_scans
+                        == second_stats.ejection_chain_scans,
+                "membership ejection-chain telemetry is deterministic");
+        require(first_stats.ejection_chain_improvements == 0
+                    || first_stats.ejection_chain_accepted_depth > 0,
+                "accepted ejection-chain improvements record a positive prefix depth");
+    }
+}
+
 void test_pair_exchange_large_k_gate() {
     Instance inst;
     Rng rng(77123);
@@ -3652,6 +3723,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_two_opt_candidate_table_property);
     RUN_TEST(test_batched_pair_repair_matches_legacy);
     RUN_TEST(test_cached_regret_repair_and_adaptive_lns);
+    RUN_TEST(test_membership_ejection_chain);
     RUN_TEST(test_pair_exchange_large_k_gate);
     RUN_TEST(test_batched_swap_matches_scalar);
     RUN_TEST(test_path_relink_step_matches_bruteforce);

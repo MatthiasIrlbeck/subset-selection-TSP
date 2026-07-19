@@ -285,6 +285,15 @@ bool subset_ruin_recreate_lns(Tour& tour,
                               const SolverOptions& options,
                               SearchStats* stats,
                               int rounds);
+// Variable-depth membership search. Every intermediate tour has exactly k
+// unique members. The chain may traverse a bounded cumulative uphill prefix,
+// but the caller's tour is replaced only by a strictly shorter polished
+// candidate.
+bool subset_ejection_chain_search(Tour& tour,
+                                  const Instance& inst,
+                                  Rng& rng,
+                                  const SolverOptions& options,
+                                  SearchStats* stats);
 bool subset_pair_exchange_descent(Tour& tour,
                                   const Instance& inst,
                                   Rng& rng,

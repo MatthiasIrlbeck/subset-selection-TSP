@@ -128,6 +128,7 @@ def main() -> int:
         "sa_checkpoint_polish_seconds", "post_sa_polish_seconds",
         "subset_swap_seconds", "highp_exchange_seconds",
         "pair_exchange_seconds", "ruin_recreate_seconds",
+        "ejection_chain_seconds",
         "path_relink_seconds", "tsp_ils_seconds",
         "final_polish_seconds", "oracle_seconds",
         "sa_proposal_samples", "sa_insertion_samples",

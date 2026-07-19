@@ -188,6 +188,17 @@ SolveResult solve_subset(const Instance& inst,
         || options.elite_quality_slack < 0.0) {
         throw std::invalid_argument("elite_quality_slack must be finite and >= 0");
     }
+    if (options.ejection_chain_starts < 0
+        || options.ejection_chain_depth < 0
+        || options.ejection_chain_candidates < 0
+        || options.ejection_chain_remove_cap < 0) {
+        throw std::invalid_argument("ejection-chain integer options must be >= 0");
+    }
+    if (!std::isfinite(options.ejection_chain_max_uphill)
+        || options.ejection_chain_max_uphill < 0.0) {
+        throw std::invalid_argument(
+            "ejection_chain_max_uphill must be finite and >= 0");
+    }
     // Explicit values configure the base population. AUTO reproduces the
     // historical effective count. Supplemental continuation is deliberately
     // outside this population so adding neighboring p-values cannot remove an
@@ -718,6 +729,11 @@ SolveResult solve_subset(const Instance& inst,
         if (!pilot_only && !options.disable_ruin_recreate) {
             ScopedPhaseTimer phase_timer(out.stats.phases.ruin_recreate_seconds);
             subset_ruin_recreate_lns(tour, inst, rrng, options, &out.stats, options.ruin_recreate_rounds);
+        }
+        if (!pilot_only && !options.disable_ejection_chain) {
+            ScopedPhaseTimer phase_timer(out.stats.phases.ejection_chain_seconds);
+            (void)subset_ejection_chain_search(tour, inst, rrng, options,
+                                               &out.stats);
         }
         if (!pilot_only && options.oracle.cfg.inline_feedback) {
             ScopedPhaseTimer phase_timer(out.stats.phases.oracle_seconds);

@@ -20,6 +20,7 @@ void SearchPhaseTiming::add(const SearchPhaseTiming& other) noexcept {
     highp_exchange_seconds += other.highp_exchange_seconds;
     pair_exchange_seconds += other.pair_exchange_seconds;
     ruin_recreate_seconds += other.ruin_recreate_seconds;
+    ejection_chain_seconds += other.ejection_chain_seconds;
     path_relink_seconds += other.path_relink_seconds;
     tsp_ils_seconds += other.tsp_ils_seconds;
     final_polish_seconds += other.final_polish_seconds;
@@ -74,6 +75,12 @@ void SearchStats::add(const SearchStats& other) {
     ruin_recreate_long_edge_improvements += other.ruin_recreate_long_edge_improvements;
     ruin_recreate_random_attempts += other.ruin_recreate_random_attempts;
     ruin_recreate_random_improvements += other.ruin_recreate_random_improvements;
+    ejection_chain_attempts += other.ejection_chain_attempts;
+    ejection_chain_feasible += other.ejection_chain_feasible;
+    ejection_chain_steps += other.ejection_chain_steps;
+    ejection_chain_scans += other.ejection_chain_scans;
+    ejection_chain_improvements += other.ejection_chain_improvements;
+    ejection_chain_accepted_depth += other.ejection_chain_accepted_depth;
     path_relink_attempts += other.path_relink_attempts;
     path_relink_feasible += other.path_relink_feasible;
     path_relink_elite_insertions += other.path_relink_elite_insertions;

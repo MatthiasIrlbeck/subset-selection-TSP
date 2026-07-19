@@ -123,6 +123,14 @@ Measured effect at default budgets: quality-neutral, like the candidate-table an
 
 Elite deduplication is collision-safe. Each entry stores both a 64-bit hash and a canonical key. Set-mode keys are sorted node IDs; cycle-mode keys canonicalize rotation and direction. The subset archive protects the complete legacy length-ranked capacity and can retain additional set-diverse entries inside a configurable relative quality window. Diversity is measured by selected-set Jaccard distance, so supplemental slots cannot evict a solution the legacy archive would have kept.
 
+## Membership ejection chains
+
+After ruin/recreate, each full-depth restart runs a bounded variable-depth membership search. A chain proposes an unselected point near a current focus, ejects one selected member, and uses the ejected member as the spatial focus for the next step. Newly added nodes are locked and removed nodes are tabu for the remainder of that chain, so a depth-`d` prefix represents a genuine `d`-for-`d` change rather than cycling the same membership decision.
+
+Each step uses the exact batched swap evaluator over a bounded mix of globally expensive removals and selected neighbours of the proposed additions. The chain may cross a cumulative uphill barrier controlled by `--ejection-chain-max-uphill`, expressed in mean-tour-edge units. Every nonempty prefix is cardinality-valid; the lowest prefix from each start receives route polish and one bounded membership-descent pass. The incumbent is replaced only by a strictly shorter result, making the neighborhood a deterministic quality-only extension of the preceding search.
+
+The default portfolio uses three starts, depth six, 24 incoming candidates, and at most 96 removable members per step. Setting `--disable-ejection-chain` gives a fixed-seed ablation without consuming its RNG stream.
+
 ## Exact batched membership exchange
 
 Deterministic one-for-one subset descent, high-p reference-guided exchange, and path relinking share one exact batched evaluator. For an ordered list of admissible `(remove position, add node)` pairs, it computes each removal gain once and performs one batched distance pass per unique add node. The three cheapest insertion edges on the unchanged tour are sufficient: deleting one node invalidates at most the removed node's outgoing edge and its predecessor's outgoing edge, while the newly merged predecessor-to-successor edge is evaluated explicitly. Every pair is then scored in O(1).
@@ -139,7 +147,7 @@ Post-search relinking always includes the ordinary length-ranked prefix selected
 
 ## Search statistics
 
-The result JSON records counters for restarts, TSP ILS iterations, 2-opt, Or-opt, simulated annealing, subset swaps, pair exchange, ruin/recreate, path relinking, and wall-clock time by broad solver layer. Region and dense restarts have dedicated counters rather than being reported as random. `elite_restarts` is an aggregate for every elite-seeded restart and therefore includes the exact `kick_restarts` subset.
+The result JSON records counters for restarts, TSP ILS iterations, 2-opt, Or-opt, simulated annealing, subset swaps, pair exchange, ruin/recreate, membership ejection chains, path relinking, and wall-clock time by broad solver layer. Region and dense restarts have dedicated counters rather than being reported as random. `elite_restarts` is an aggregate for every elite-seeded restart and therefore includes the exact `kick_restarts` subset.
 
 ## Insertion policy (0.9.6)
 

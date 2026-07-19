@@ -450,6 +450,28 @@
           "type": "integer",
           "minimum": 1
         },
+        "ejection_chain_starts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_candidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_remove_cap": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum removable selected nodes considered per chain step; 0 means all eligible members."
+        },
+        "ejection_chain_max_uphill": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum cumulative chain excursion above the incumbent in mean-tour-edge units."
+        },
         "elite_diversity_slots": {
           "type": "integer",
           "minimum": 0,
@@ -544,6 +566,9 @@
           "type": "boolean"
         },
         "disable_ruin_recreate": {
+          "type": "boolean"
+        },
+        "disable_ejection_chain": {
           "type": "boolean"
         },
         "disable_path_relink": {
@@ -880,6 +905,31 @@
         "ruin_recreate_random_improvements": {
           "type": "integer",
           "minimum": 0
+        },
+        "ejection_chain_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_feasible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_accepted_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sum of accepted improving prefix depths across completed searches."
         },
         "path_relink_attempts": {
           "type": "integer",
@@ -1583,6 +1633,10 @@
           "minimum": 0
         },
         "ruin_recreate_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ejection_chain_seconds": {
           "type": "number",
           "minimum": 0
         },

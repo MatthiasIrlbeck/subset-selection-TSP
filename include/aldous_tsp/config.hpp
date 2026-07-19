@@ -50,6 +50,7 @@ struct SearchPhaseTiming {
     double highp_exchange_seconds = 0.0;
     double pair_exchange_seconds = 0.0;
     double ruin_recreate_seconds = 0.0;
+    double ejection_chain_seconds = 0.0;
     double path_relink_seconds = 0.0;
     double tsp_ils_seconds = 0.0;
     double final_polish_seconds = 0.0;
@@ -117,6 +118,12 @@ struct SearchStats {
     std::uint64_t ruin_recreate_long_edge_improvements = 0;
     std::uint64_t ruin_recreate_random_attempts = 0;
     std::uint64_t ruin_recreate_random_improvements = 0;
+    std::uint64_t ejection_chain_attempts = 0;
+    std::uint64_t ejection_chain_feasible = 0;
+    std::uint64_t ejection_chain_steps = 0;
+    std::uint64_t ejection_chain_scans = 0;
+    std::uint64_t ejection_chain_improvements = 0;
+    std::uint64_t ejection_chain_accepted_depth = 0;
     std::uint64_t path_relink_attempts = 0;
     std::uint64_t path_relink_feasible = 0;
     std::uint64_t path_relink_elite_insertions = 0;
@@ -389,6 +396,16 @@ struct SolverOptions {
     double ruin_recreate_max_fraction = 0.05;
     int ruin_recreate_max_nodes = 96;
     int ruin_recreate_pool_cap = 640;
+    // Variable-depth membership chains can traverse a sequence of temporarily
+    // uphill swaps and retain the best locally polished prefix. Added nodes are
+    // locked and removed nodes are tabu within one chain, so depth d explores
+    // a true d-for-d membership change rather than cycling one node in and out.
+    int ejection_chain_starts = 3;
+    int ejection_chain_depth = 6;
+    int ejection_chain_candidates = 24;
+    int ejection_chain_remove_cap = 96;
+    // Maximum cumulative uphill excursion, measured in mean-tour-edge units.
+    double ejection_chain_max_uphill = 0.75;
     // Additional archive slots selected for set diversity. The ordinary
     // length-ranked `keep` entries remain protected, so enabling these slots
     // cannot evict a solution the legacy archive would have retained.
@@ -407,6 +424,7 @@ struct SolverOptions {
     // from perturbed elite members (subset-level ILS) instead of cold seeds.
     bool disable_elite_restarts = false;
     bool disable_ruin_recreate = false;
+    bool disable_ejection_chain = false;
     bool disable_path_relink = false;
     bool disable_smallp_seeds = false;
     bool disable_highp_delete = false;

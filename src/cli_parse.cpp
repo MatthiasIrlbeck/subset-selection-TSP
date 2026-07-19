@@ -312,6 +312,14 @@ Solver:
   --ruin-recreate-max-nodes <int>
                                  Absolute ruin-size cap (default: 96; 0 = unlimited)
   --ruin-recreate-pool-cap <int> Candidate repair pool cap (default: 640)
+  --ejection-chain-starts <int>  Variable-depth chain starts per restart (default: 3)
+  --ejection-chain-depth <int>   Maximum membership swaps per chain (default: 6)
+  --ejection-chain-candidates <int>
+                                 Incoming-node candidates per chain step (default: 24)
+  --ejection-chain-remove-cap <int>
+                                 Removable members per chain step (default: 96; 0 = all)
+  --ejection-chain-max-uphill <x>
+                                 Cumulative uphill allowance in mean-edge units (default: 0.75)
   --elite-diversity-slots <int>  Supplemental set-diverse archive slots (default: 4)
   --elite-min-jaccard <x>        Minimum Jaccard distance for diverse slots (default: 0.02)
   --elite-quality-slack <x>      Relative quality window for diverse slots (default: 0.03)
@@ -342,6 +350,7 @@ Ablation / diagnostics:
   --disable-subset-swap[=true|false]
   --disable-pair-exchange[=true|false]
   --disable-ruin-recreate[=true|false]
+  --disable-ejection-chain[=true|false]
   --disable-path-relink[=true|false]
   --disable-smallp-seeds[=true|false]
   --disable-highp-delete[=true|false]
@@ -396,6 +405,8 @@ std::string config_summary(const RunOptions& opt) {
         << ", tsp_restarts=" << opt.solver.tsp_restarts
         << ", final_exhaustive_k=" << opt.solver.final_exhaustive_k
         << ", pair_exchange_max_k=" << opt.solver.pair_exchange_max_k
+        << ", ejection_chain_starts=" << opt.solver.ejection_chain_starts
+        << ", ejection_chain_depth=" << opt.solver.ejection_chain_depth
         << ", exhaustive_two_opt_policy=" << exhaustive_two_opt_policy_name(opt.solver.exhaustive_two_opt_policy)
         << ", oracle=" << opt.solver.oracle.status
         << ", p_values=";
@@ -462,6 +473,15 @@ bool validate_options(RunOptions& opt, std::string& err) {
     }
     if (opt.solver.ruin_recreate_max_nodes < 0) { err = "--ruin-recreate-max-nodes must be >= 0"; return false; }
     if (opt.solver.ruin_recreate_pool_cap < 1) { err = "--ruin-recreate-pool-cap must be >= 1"; return false; }
+    if (opt.solver.ejection_chain_starts < 0) { err = "--ejection-chain-starts must be >= 0"; return false; }
+    if (opt.solver.ejection_chain_depth < 0) { err = "--ejection-chain-depth must be >= 0"; return false; }
+    if (opt.solver.ejection_chain_candidates < 0) { err = "--ejection-chain-candidates must be >= 0"; return false; }
+    if (opt.solver.ejection_chain_remove_cap < 0) { err = "--ejection-chain-remove-cap must be >= 0"; return false; }
+    if (!std::isfinite(opt.solver.ejection_chain_max_uphill)
+        || opt.solver.ejection_chain_max_uphill < 0.0) {
+        err = "--ejection-chain-max-uphill must be finite and >= 0";
+        return false;
+    }
     if (opt.solver.elite_diversity_slots < 0) { err = "--elite-diversity-slots must be >= 0"; return false; }
     if (!std::isfinite(opt.solver.elite_min_jaccard)
         || opt.solver.elite_min_jaccard < 0.0
@@ -621,6 +641,7 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             if (consume_bool(handle_bool("--disable-elite-restarts", opt.solver.disable_elite_restarts))) { continue; }
             if (consume_bool(handle_bool("--disable-ruin-recreate", opt.solver.disable_ruin_recreate))) { continue; }
             if (consume_bool(handle_bool("--adaptive-ruin-recreate", opt.solver.adaptive_ruin_recreate))) { continue; }
+            if (consume_bool(handle_bool("--disable-ejection-chain", opt.solver.disable_ejection_chain))) { continue; }
             if (consume_bool(handle_bool("--disable-path-relink", opt.solver.disable_path_relink))) { continue; }
             if (consume_bool(handle_bool("--disable-smallp-seeds", opt.solver.disable_smallp_seeds))) { continue; }
             if (consume_bool(handle_bool("--disable-highp-delete", opt.solver.disable_highp_delete))) { continue; }
@@ -743,6 +764,19 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
         }
         if (flag == "--ruin-recreate-max-nodes") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_max_nodes)) { return false; } continue; }
         if (flag == "--ruin-recreate-pool-cap") { if (!parse_int_flag(i, flag, opt.solver.ruin_recreate_pool_cap)) { return false; } continue; }
+        if (flag == "--ejection-chain-starts") { if (!parse_int_flag(i, flag, opt.solver.ejection_chain_starts)) { return false; } continue; }
+        if (flag == "--ejection-chain-depth") { if (!parse_int_flag(i, flag, opt.solver.ejection_chain_depth)) { return false; } continue; }
+        if (flag == "--ejection-chain-candidates") { if (!parse_int_flag(i, flag, opt.solver.ejection_chain_candidates)) { return false; } continue; }
+        if (flag == "--ejection-chain-remove-cap") { if (!parse_int_flag(i, flag, opt.solver.ejection_chain_remove_cap)) { return false; } continue; }
+        if (flag == "--ejection-chain-max-uphill") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.ejection_chain_max_uphill)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n", flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
         if (flag == "--elite-diversity-slots") { if (!parse_int_flag(i, flag, opt.solver.elite_diversity_slots)) { return false; } continue; }
         if (flag == "--elite-min-jaccard") {
             std::string value;
