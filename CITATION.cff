@@ -4,6 +4,7 @@ title: "Aldous subset-selection TSP"
 authors:
   - family-names: "Irlbeck"
     given-names: "Matthias"
-version: 0.8.7
+version: "0.10.0"
+date-released: 2026-07-20
 repository-code: "https://github.com/MatthiasIrlbeck/subset-selection-TSP"
 license: MIT

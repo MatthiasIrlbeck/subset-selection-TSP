@@ -48,6 +48,7 @@ Oracle metadata is recorded in JSON:
 - `config.oracle_time_limit_sec`
 - `config.oracle_scale`
 - `search_stats.oracle_*`
+- `oracle_call_records[]` with one status/error/timing/gain record per attempted call
 
 ## Testing
 
@@ -62,4 +63,4 @@ The CTest CLI suite also includes a fake-oracle smoke test. These tests exercise
 
 ## Caveats
 
-External solver output is trusted only after permutation validation. Duplicate nodes, out-of-range nodes, and missing output files are rejected. The oracle currently reports aggregate counts and total gain; detailed per-call failure reasons are not yet stored in the JSON document.
+External solver output is trusted only after permutation validation. Duplicate nodes, out-of-range nodes, and missing output files are rejected. The JSON document records both aggregate oracle counters and detailed `oracle_call_records`, including solver status, executable path, elapsed time, gain, and per-call error text.

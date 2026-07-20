@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(aldous_tsp VERSION 0.9.6 LANGUAGES CXX)
+project(aldous_tsp VERSION 0.10.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -480,6 +480,8 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(validation_report_render PROPERTIES TIMEOUT 60)
       add_test(NAME validation_artifacts_schema COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/validation_artifacts_schema.py ${CMAKE_CURRENT_SOURCE_DIR})
       set_tests_properties(validation_artifacts_schema PROPERTIES TIMEOUT 120)
+      add_test(NAME schema_13_to_14_migration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/schema_migration_test.py ${CMAKE_CURRENT_SOURCE_DIR})
+      set_tests_properties(schema_13_to_14_migration PROPERTIES TIMEOUT 120)
       add_test(NAME quality_canary COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/quality_canary.py $<TARGET_FILE:aldous_tsp> ${CMAKE_CURRENT_BINARY_DIR}/quality-canary)
       set_tests_properties(quality_canary PROPERTIES TIMEOUT 300)
       add_test(NAME extrapolation_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/extrapolate_fpN.py --self-test)

@@ -5,7 +5,7 @@
 - Per-restart values are a **mixture** across seed kinds, not iid draws from one distribution. Secondary-sweep, continuation, elite, anytime, and raced-production draws can also be selected or dependent. Any tail fit must filter or stratify by `restart_kinds`, `restart_sweeps`, and `restart_roles`, or it is fitting a contaminated sample.
 - The internal high-performance heuristic stack is restored in the cleaner structure. Internal grid/brute-force backend parity is automated; original-prototype parity still requires a supplied baseline executable and should be run before using results in a paper or report.
 - Optional LKH/Concorde post-processing is integrated, but external solver behavior depends on the installed binary, TSPLIB interpretation, timeout settings, and integer scaling.
-- Oracle statistics are aggregate counts and gain totals; individual per-call failure reasons are not serialized yet.
+- Oracle output includes aggregate counters and detailed per-call status/error records. External solver correctness still depends on the installed executable and its TSPLIB interpretation.
 - The JSON schema validates structure, not scientific adequacy of sample sizes.
 - Large runs should report seeds, p-grids, KNN backend, oracle mode, all solver budgets, and ablation settings.
 

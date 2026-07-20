@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 -- reproducible release and schema migration
+
+- Synchronized the CMake package and citation metadata at version `0.10.0`.
+- Documented native schema 14 as the current strict result format.
+- Added `scripts/migrate_schema13_to14.py`, including explicit provenance for
+  inferred and unrecoverable historical fields, atomic output replacement,
+  schema validation, and idempotency tests.
+- Corrected stale documentation about serialized per-oracle-call failures.
+
+
 ## Unreleased — correctness audit repair series
 
 ### CLI and build gates

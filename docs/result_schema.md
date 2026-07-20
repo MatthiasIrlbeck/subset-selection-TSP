@@ -1,22 +1,33 @@
 # Result JSON schema
 
-The JSON schema is stored in `schema/results.schema.json`. It is intentionally strict: top-level fields, config fields, search-stat fields, oracle-call records, legacy summary rows, and array-form summary rows reject unknown properties. Current schema version: `13`.
+The JSON schema is stored in `schema/results.schema.json`. It is intentionally strict: top-level fields, config fields, search-stat fields, oracle-call records, legacy summary rows, and array-form summary rows reject unknown properties. Current native schema version: `14`. Historical schema-13 documents remain valid against `schema/results-v13.schema.json`.
 
-Top-level fields include `schema_version`, `run_metadata`, `build_metadata`, `N`, `done`, `target`, `threads`, `wall_seconds`, `mode`, `distance_backend`, `oracle_status`, `p_values`, `config`, `search_stats`, `oracle_call_records`, `summary`, `summary_rows`, and `instance_rows`.
+## Migrating schema 13
+
+Use `scripts/migrate_schema13_to14.py` to convert a historical result without rewriting its original run or build metadata:
+
+```bash
+python3 scripts/migrate_schema13_to14.py old.json --output old.v14.json
+python3 scripts/migrate_schema13_to14.py old.json --in-place
+```
+
+Schema 13 did not serialize every schema-14 field. The migrator records all synthesized values under `migration_metadata.inferred_fields` and records provenance that cannot be reconstructed under `migration_metadata.unrecoverable_fields`. In particular, schema 13 did not reliably identify periodic geometry or stable point/search streams. Supply `--periodic` or `--non-periodic` when that fact is known; otherwise the tool uses the compatibility default `false` and marks the field unrecoverable. Migrated documents are schema-14-valid, but missing historical replicate identities cannot be made suitable for block-bootstrap or multifidelity analysis merely by conversion.
+
+Top-level fields include `schema_version`, `run_metadata`, `build_metadata`, `N`, `done`, `target`, `threads`, `wall_seconds`, `mode`, `distance_backend`, `oracle_status`, `p_values`, `config`, `search_stats`, `oracle_call_records`, `summary`, `summary_rows`, and `instance_rows`. Migrated documents additionally carry `migration_metadata`.
 
 `run_metadata` records project/runtime metadata: project version, detected git commit, compiler string, platform, CPU model, and hardware-thread count.
 
 `build_metadata` records configured build type, CMake generator/version, native/sanitizer/warning/Werror/Python-test build options, whether the low-memory compiler profile was enabled, the named optimization profile, configured/effective C++ flags, target/source compile options, the structured `effective_optimization_level`, and the active `__cplusplus` value.
 
-`config` records solver budgets, KNN backend, verification count, the exhaustive 2-opt policy (`never`, `final-only`, or `all-polish`), oracle mode/resolution, external executable path/version when available, TSPLIB format, oracle limits, and ablation flags. `exact_subset_max_n` records the optional global exact-solver threshold (`0` means disabled; the hard maximum is `18`). Schema `13` keeps several later additions optional so bundled artifacts generated before those additions remain valid: `sa_iters_per_k`, `time_budget_per_p`, `restart_threads`, `second_sweep`, and `exact_subset_max_n` in `config`; `best_restart_max`, `executed_restarts_max`, `solve_seconds_total`, and `exact_optimal_instances` in array-form summary rows; and the restart-diagnostic/proof fields described below in per-instance `p` rows. The next schema-version bump should promote current executable output to required and regenerate the bundled artifacts.
+`config` records the complete resolved user configuration: campaign identity, solver budgets, KNN backend, verification count, exhaustive 2-opt policy, oracle mode/resolution, external executable path/version when available, TSPLIB format, oracle limits, output durability, and ablation flags. `exact_subset_max_n` records the optional global exact-solver threshold (`0` means disabled; the hard maximum is `18`). Schema 14 requires every configuration field emitted by the native executable, while the archived schema-13 definition remains available only for historical artifacts.
 
-`search_stats` contains move counters, phase timing counters, effective KNN backend/cell telemetry, aggregate oracle counters, and restart accounting. `exact_subset_calls`, `exact_subset_solved`, `exact_subset_states`, and `exact_subset_transitions` expose global exact-solver work. Generic subset-swap counters are separated from high-p reference-exchange counters: `subset_swap_scans`, `subset_swap_improvements`, `highp_exchange_scans`, and `highp_exchange_improvements`. Current executables also write the schema-`13` optional counters `region_restarts` and `dense_restarts`, which prevent those seed kinds from being folded into `random_restarts`.
+`search_stats` contains move counters, phase timing counters, effective KNN backend/cell telemetry, aggregate oracle counters, and restart accounting. `exact_subset_calls`, `exact_subset_solved`, `exact_subset_states`, and `exact_subset_transitions` expose global exact-solver work. Generic subset-swap counters are separated from high-p reference-exchange counters: `subset_swap_scans`, `subset_swap_improvements`, `highp_exchange_scans`, and `highp_exchange_improvements`. The dedicated `region_restarts` and `dense_restarts` counters prevent those seed kinds from being folded into `random_restarts`; historical schema-13 documents may omit them.
 
-The optional schema-`13` fields `config.pair_exchange_max_k` and `search_stats.pair_exchange_skipped_large_k` record the temporary large-cardinality safety gate for the two-for-two neighborhood. A value of `0` removes the gate; current builds default to `5000`.
+The fields `config.pair_exchange_max_k` and `search_stats.pair_exchange_skipped_large_k` record the temporary large-cardinality safety gate for the two-for-two neighborhood. A value of `0` removes the gate; current builds default to `5000`.
 
 `search_stats.phase_timing` reports accumulated worker elapsed-seconds for seed/TSP construction, initial and final polish, annealing, checkpoint polish, post-SA polish, subset swap, high-p exchange, pair exchange, ruin/recreate, membership ejection chains, the exact subset DP, path relinking, TSP ILS, and external-oracle work. `exact_subset_seconds` is the exact solver's elapsed worker time. These values can exceed top-level wall time when restart workers run concurrently. `sa_checkpoint_polish_seconds` is nested inside `sa_seconds`, so phase values are diagnostic rather than a disjoint accounting identity. Proposal and insertion latency are sampled deterministically every 64 SA iterations; use each `*_sample_seconds / *_samples` ratio rather than treating the sampled seconds as total phase time. The field remains optional in archived schema version 13; native output uses schema version 14, whose generated `config` object is strict and complete.
 
-Conditional tour-bound fields use the `conditional_*` prefix. The two-NN and Held-Karp values lower-bound the optimal tour through the subset selected by the heuristic. They do **not** lower-bound the optimum over all size-`k` subsets and therefore do not bracket `f(p)`. Schema-13 JSON also emits `subset_bound*`, `lower_bound_gap_mean`, and `held_karp_bound*` as deprecated aliases for older analysis consumers.
+Conditional tour-bound fields use the `conditional_*` prefix. The two-NN and Held-Karp values lower-bound the optimal tour through the subset selected by the heuristic. They do **not** lower-bound the optimum over all size-`k` subsets and therefore do not bracket `f(p)`. Native schema-14 JSON still emits `subset_bound*`, `lower_bound_gap_mean`, and `held_karp_bound*` as deprecated aliases for older analysis consumers.
 
 The schema constrains solver/oracle strings with explicit enums: `mode`, `distance_backend`, `knn_backend`, `exhaustive_two_opt_policy`, `oracle_mode`, `oracle_resolved`, and `oracle_format`.
 
@@ -38,7 +49,7 @@ omits the parallel restart arrays because no heuristic restart was executed.
 This is distinct from a conditional tour lower bound or from exact ordering of
 one fixed heuristic subset.
 
-Version 13 adds `build_metadata.effective_optimization_level`, a structured optimization-level field that makes release, low-memory, sanitizer, and debug output easier to compare without interpreting raw compiler flag strings. Version 12 added `instance_rows` for optional per-instance values/statistics, effective KNN backend and cell-size telemetry in `search_stats`, and build metadata fields for effective compile flags and target compile options.
+Schema 14 makes the complete generated configuration mandatory and adds campaign/restart provenance used by current analysis. Schema 13 added `build_metadata.effective_optimization_level`, a structured optimization-level field that makes release, low-memory, sanitizer, and debug output easier to compare without interpreting raw compiler flag strings. Version 12 added `instance_rows` for optional per-instance values/statistics, effective KNN backend and cell-size telemetry in `search_stats`, and build metadata fields for effective compile flags and target compile options.
 
 ## Per-restart fields
 

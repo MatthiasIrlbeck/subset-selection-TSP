@@ -270,3 +270,5 @@ The internal heuristic stack and optional external oracle path are now integrate
 ### Reproducibility metadata
 
 Result JSON records build flags, target compile options, effective KNN backend/cell-size telemetry, and optionally per-instance rows via `--include-instance-rows`.
+
+Historical schema-13 result files can be converted to strict schema 14 with `scripts/migrate_schema13_to14.py`. The migrated document explicitly lists every inferred or unrecoverable field; conversion does not invent missing replicate identities.

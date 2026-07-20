@@ -123,6 +123,10 @@
     },
     "campaign_metadata": {
       "$ref": "#/$defs/campaign_metadata"
+    },
+    "migration_metadata": {
+      "$ref": "#/$defs/migration_metadata",
+      "description": "Present only on documents migrated from an older result schema."
     }
   },
   "additionalProperties": false,
@@ -2274,6 +2278,62 @@
         }
       },
       "additionalProperties": false
+    },
+    "migration_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_schema_version",
+        "target_schema_version",
+        "tool",
+        "source_sha256",
+        "inferred_fields",
+        "unrecoverable_fields",
+        "notes"
+      ],
+      "properties": {
+        "source_schema_version": {
+          "type": "integer",
+          "const": 13
+        },
+        "target_schema_version": {
+          "type": "integer",
+          "const": 14
+        },
+        "tool": {
+          "type": "string",
+          "const": "scripts/migrate_schema13_to14.py"
+        },
+        "inferred_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unrecoverable_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the exact schema-13 source bytes."
+        }
+      }
     }
   }
 }
