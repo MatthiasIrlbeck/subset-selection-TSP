@@ -29,6 +29,7 @@ public:
     [[nodiscard]] ResultsDocument run(const ExperimentProgressCallback& progress = {}) const;
 
 private:
+    int requested_threads_ = 0;
     RunOptions options_;
 };
 

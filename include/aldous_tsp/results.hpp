@@ -2,6 +2,7 @@
 
 #include "aldous_tsp/config.hpp"
 #include "aldous_tsp/instance.hpp"
+#include "aldous_tsp/memory.hpp"
 #include "aldous_tsp/restart.hpp"
 
 #include <map>
@@ -130,6 +131,7 @@ struct ResultsDocument {
     int instances_target = 0;
     int threads = 0;
     double wall_seconds = 0.0;
+    MemoryPlan memory_plan;
     RunOptions options;
     SearchStats stats;
     std::vector<double> p_values;

@@ -35,6 +35,7 @@ bool validate_generated_option_ranges(const RunOptions& opt, std::string& error)
     if (opt.N < 3) { error = "--N must be >= 3"; return false; }
     if (opt.instances < 1) { error = "--instances must be >= 1"; return false; }
     if (opt.threads < 0) { error = "--threads must be >= 0"; return false; }
+    if (opt.memory_budget_mb < 0) { error = "--memory-budget-mb must be >= 0"; return false; }
     if (opt.cv_mc_samples < 1) { error = "--cv-mc-samples must be >= 1"; return false; }
     if (opt.hk_iterations < 1) { error = "--hk-iterations must be >= 1"; return false; }
     if (opt.campaign_id.size() < 1U) { error = "--campaign-id is too short"; return false; }
@@ -191,6 +192,8 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     out << opt.instances;
     out << ",\n" << indent << "  \"threads\": ";
     out << opt.threads;
+    out << ",\n" << indent << "  \"memory_budget_mb\": ";
+    out << opt.memory_budget_mb;
     out << ",\n" << indent << "  \"periodic\": ";
     out << (opt.periodic ? "true" : "false");
     out << ",\n" << indent << "  \"control_variate\": ";
@@ -237,6 +240,8 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     out << opt.solver.knn_k;
     out << ",\n" << indent << "  \"knn_backend\": ";
     writer.string(knn_backend_name(opt.solver.knn_backend));
+    out << ",\n" << indent << "  \"reverse_knn\": ";
+    out << (opt.solver.reverse_knn ? "true" : "false");
     out << ",\n" << indent << "  \"verify_knn_checks\": ";
     out << opt.solver.verify_knn_checks;
     out << ",\n" << indent << "  \"grid_cell\": ";

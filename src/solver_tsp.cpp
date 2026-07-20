@@ -3,6 +3,7 @@
 #include "worker.hpp"
 
 #include "aldous_tsp/exact_subset.hpp"
+#include "aldous_tsp/memory.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -168,6 +169,11 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         result.stats.tsp_seconds =
             std::chrono::duration<double>(Clock::now() - start).count();
         return result;
+    }
+
+
+    if (solver_uses_reverse_knn(options) && inst.knn_k > 0) {
+        inst.ensure_reverse_knn();
     }
 
     const int promoted_target = std::max(1, options.tsp_restarts);

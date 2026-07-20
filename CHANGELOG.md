@@ -8,6 +8,7 @@
   inferred and unrecoverable historical fields, atomic output replacement,
   schema validation, and idempotency tests.
 - Corrected stale documentation about serialized per-oracle-call failures.
+- Removed the duplicate persistent KNN squared-distance array, made reverse-KNN adjacency lazy and policy-controlled, and added conservative memory-budget scheduling with serialized requested/resolved/effective concurrency.
 
 
 ## Unreleased — correctness audit repair series

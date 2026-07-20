@@ -143,6 +143,7 @@ configure_file(
 add_library(aldous_tsp_core
   src/geometry.cpp
   src/generated_options_core.cpp
+  src/memory.cpp
   src/validation.cpp
   src/exact_subset.cpp
   src/instance.cpp

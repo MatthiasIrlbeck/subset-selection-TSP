@@ -3,6 +3,7 @@
 #include "worker.hpp"
 
 #include "aldous_tsp/exact_subset.hpp"
+#include "aldous_tsp/memory.hpp"
 
 #include <algorithm>
 #include <map>
@@ -338,6 +339,10 @@ SolveResult solve_subset(const Instance& inst,
         result.stats.subset_seconds =
             std::chrono::duration<double>(Clock::now() - start).count();
         return result;
+    }
+
+    if (solver_uses_reverse_knn(options) && inst.knn_k > 0) {
+        inst.ensure_reverse_knn();
     }
 
     // Consume exactly one caller draw. Every seed family, variant, restart, and

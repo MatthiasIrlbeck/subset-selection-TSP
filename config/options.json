@@ -118,6 +118,22 @@
       }
     },
     {
+      "id": "memory_budget_mb",
+      "section": "simulation",
+      "struct": "run",
+      "member": "memory_budget_mb",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--memory-budget-mb",
+      "json_key": "memory_budget_mb",
+      "metavar": "<MiB>",
+      "help": "Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-concurrency limiting.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
       "id": "periodic",
       "section": "simulation",
       "struct": "run",
@@ -535,6 +551,20 @@
       },
       "parser": "parse_knn_backend",
       "formatter": "knn_backend_name"
+    },
+    {
+      "id": "reverse_knn",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "reverse_knn",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--reverse-knn",
+      "json_key": "reverse_knn",
+      "help": "Build reverse-KNN adjacency lazily when candidate local search needs it; disable to save additional memory.",
+      "constraints": {
+        "type": "boolean"
+      }
     },
     {
       "id": "verify_knn_checks",

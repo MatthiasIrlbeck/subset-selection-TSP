@@ -5,6 +5,8 @@
 #include "aldous_tsp/rng.hpp"
 
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 namespace aldous_tsp {
@@ -47,12 +49,16 @@ public:
     KnnBackend knn_backend = KnnBackend::GridExact;
     KnnBuildInfo last_knn_build;
     std::vector<int> knn;
-    std::vector<double> knn_d2;
+    // Persist one distance representation. Squared values are derived on
+    // demand by knn_d2_at(), avoiding an additional 8*N*K bytes.
     std::vector<double> knn_d;
 
     // Reverse exact KNN adjacency: for node v, nodes u such that v is in KNN(u).
-    std::vector<int> rknn_begin;
-    std::vector<int> rknn_nodes;
+    // It is constructed lazily because KNN-only workflows and exact-only runs
+    // do not need it. The mutex makes first use safe when callers share an
+    // immutable Instance across solve invocations.
+    mutable std::vector<int> rknn_begin;
+    mutable std::vector<int> rknn_nodes;
 
     // Uniform-grid metadata used by the grid-exact KNN backend.
     double cell_size = 1.0;
@@ -70,7 +76,8 @@ public:
     void generate(int n, Rng& rng);
     void set_points(std::vector<Point> pts);
     void recompute_bounds();
-    void build_knn(int k, KnnBackend backend = KnnBackend::GridExact, double forced_cell_size = 0.0);
+    void build_knn(int k, KnnBackend backend = KnnBackend::GridExact,
+                   double forced_cell_size = 0.0);
     bool verify_knn(int checks, Rng& rng) const;
 
     [[nodiscard]] double dist2(int a, int b) const noexcept;
@@ -83,10 +90,15 @@ public:
     [[nodiscard]] int knn_at(int node, int rank) const noexcept;
     [[nodiscard]] double knn_d_at(int node, int rank) const noexcept;
     [[nodiscard]] double knn_d2_at(int node, int rank) const noexcept;
+    void ensure_reverse_knn() const;
+    void release_reverse_knn() const;
+    [[nodiscard]] bool has_reverse_knn() const;
 
 private:
+    mutable std::shared_ptr<std::mutex> reverse_knn_mutex_ =
+        std::make_shared<std::mutex>();
     void clear_knn();
-    void build_reverse_knn();
+    void build_reverse_knn_unlocked() const;
     void build_knn_bruteforce(int k);
     void build_grid(double forced_cell_size);
     void build_knn_grid(int k, double forced_cell_size);

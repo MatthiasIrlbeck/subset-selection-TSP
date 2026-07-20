@@ -2,6 +2,7 @@
 #include "aldous_tsp/validation.hpp"
 
 #include "aldous_tsp/lower_bound.hpp"
+#include "aldous_tsp/memory.hpp"
 
 #include "aldous_tsp/solver.hpp"
 
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -313,29 +315,23 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     return out;
 }
 
-int resolve_thread_count(int requested, int instances) {
-    const unsigned hw = std::thread::hardware_concurrency();
-    int threads = requested;
-    if (threads <= 0) {
-        threads = hw == 0U ? 1 : static_cast<int>(hw);
-    }
-    return std::max(1, std::min(threads, std::max(1, instances)));
-}
-
 } // namespace
 
-ExperimentRunner::ExperimentRunner(RunOptions options) : options_(std::move(options)) {
+ExperimentRunner::ExperimentRunner(RunOptions options)
+    : requested_threads_(options.threads), options_(std::move(options)) {
     require_valid_run_options(options_);
 }
 
 ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress) const {
     RunOptions opt = options_;
-    opt.threads = resolve_thread_count(opt.threads, opt.instances);
+    const MemoryPlan memory_plan = estimate_experiment_memory(opt, requested_threads_);
+    opt.threads = memory_plan.effective_threads;
 
     ResultsDocument doc;
     doc.N = opt.N;
     doc.instances_target = opt.instances;
     doc.threads = opt.threads;
+    doc.memory_plan = memory_plan;
     doc.options = opt;
     doc.p_values = opt.p_values;
 

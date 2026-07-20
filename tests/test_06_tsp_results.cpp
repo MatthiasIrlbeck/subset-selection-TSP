@@ -382,6 +382,10 @@ ALDOUS_TEST(test_json_atomic) {
     const std::string text = results_to_json(doc);
     require(text.find("\"schema_version\": 14") != std::string::npos, "JSON schema version present");
     require(text.find("\"build_metadata\"") != std::string::npos, "JSON includes build metadata");
+    require(text.find("\"memory_plan\"") != std::string::npos
+                && text.find("\"estimated_instance_bytes\"") != std::string::npos
+                && text.find("\"limited_by_budget\"") != std::string::npos,
+            "JSON includes memory planning and effective-concurrency telemetry");
     require(text.find("\"oracle_call_records\"") != std::string::npos, "JSON includes oracle call records");
     require(text.find("\"summary_rows\"") != std::string::npos, "JSON includes array-form summary rows");
     require(text.find("\"knn_build_seconds\"") != std::string::npos, "JSON includes KNN timing stats");

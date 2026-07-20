@@ -463,6 +463,22 @@ void write_oracle_call_records(std::ostream& out, const std::vector<OracleCallRe
     out << ']';
 }
 
+void write_memory_plan(std::ostream& out, const MemoryPlan& plan, const std::string& indent) {
+    out << indent << "{\n"
+        << indent << "  \"budget_bytes\": " << plan.budget_bytes << ",\n"
+        << indent << "  \"fixed_overhead_bytes\": " << plan.fixed_overhead_bytes << ",\n"
+        << indent << "  \"estimated_instance_bytes\": " << plan.estimated_instance_bytes << ",\n"
+        << indent << "  \"estimated_peak_bytes\": " << plan.estimated_peak_bytes << ",\n"
+        << indent << "  \"requested_threads\": " << plan.requested_threads << ",\n"
+        << indent << "  \"resolved_threads\": " << plan.resolved_threads << ",\n"
+        << indent << "  \"effective_threads\": " << plan.effective_threads << ",\n"
+        << indent << "  \"limited_by_budget\": "
+        << (plan.limited_by_budget ? "true" : "false") << ",\n"
+        << indent << "  \"reverse_knn_enabled\": "
+        << (plan.reverse_knn_enabled ? "true" : "false") << "\n"
+        << indent << '}';
+}
+
 void write_knn_info(std::ostream& out, const KnnBuildInfo& info, const std::string& indent) {
     out << indent << "{\n"
         << indent << "  \"requested_backend\": \"" << knn_backend_name(info.requested_backend) << "\",\n"
@@ -639,7 +655,9 @@ std::string results_to_json(const ResultsDocument& doc) {
         out << ",\n  \"full_bound_expectation_samples\": " << doc.full_bound_expectation_samples << ",\n";
     }
     out << "  \"threads\": " << doc.threads << ",\n"
-        << "  \"wall_seconds\": ";
+        << "  \"memory_plan\": ";
+    write_memory_plan(out, doc.memory_plan, "  ");
+    out << ",\n  \"wall_seconds\": ";
     write_json_double(out, doc.wall_seconds);
     out << ",\n"
         << "  \"mode\": \"" << solver_mode_name(doc.options.solver.mode) << "\",\n"

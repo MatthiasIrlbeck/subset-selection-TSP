@@ -646,4 +646,77 @@ ALDOUS_TEST(test_dist_many_from_matches_scalar) {
 
 
 
+ALDOUS_TEST(test_knn_memory_representation_and_lazy_reverse) {
+    Instance inst;
+    Rng rng(0xabc123U);
+    inst.generate(96, rng);
+    inst.build_knn(20, KnnBackend::GridExact);
+    require(inst.knn.size() == 96U * 20U && inst.knn_d.size() == 96U * 20U,
+            "KNN retains one node array and one distance array");
+    for (int node = 0; node < inst.N; node += 7) {
+        for (int rank = 0; rank < inst.knn_k; rank += 3) {
+            const double distance = inst.knn_d_at(node, rank);
+            require(std::fabs(inst.knn_d2_at(node, rank) - distance * distance) < 1e-15,
+                    "squared KNN distance is derived from the persistent distance array");
+        }
+    }
+    require(!inst.has_reverse_knn(), "reverse KNN is absent after ordinary KNN construction");
+    std::thread first([&] { inst.ensure_reverse_knn(); });
+    std::thread second([&] { inst.ensure_reverse_knn(); });
+    first.join();
+    second.join();
+    require(inst.has_reverse_knn(), "reverse KNN is constructed safely on first use");
+    require(inst.rknn_begin.size() == static_cast<std::size_t>(inst.N + 1)
+                && inst.rknn_nodes.size() == inst.knn.size(),
+            "lazy reverse KNN has exact CSR dimensions");
+    inst.release_reverse_knn();
+    require(!inst.has_reverse_knn(), "reverse KNN storage can be released explicitly");
+}
+
+ALDOUS_TEST(test_memory_budget_planning) {
+    RunOptions options;
+    options.N = 5000;
+    options.instances = 8;
+    options.threads = 8;
+    options.solver.knn_k = 40;
+    options.solver.restart_threads = 2;
+    options.solver.reverse_knn = true;
+
+    const MemoryPlan unlimited = estimate_experiment_memory(options, options.threads);
+    require(unlimited.resolved_threads == 8 && unlimited.effective_threads == 8
+                && !unlimited.limited_by_budget,
+            "unlimited memory planning preserves resolved instance concurrency");
+    require(unlimited.estimated_instance_bytes > 5000U * 40U * 12U,
+            "memory planning includes KNN storage and solver scratch");
+
+    RunOptions without_reverse = options;
+    without_reverse.solver.reverse_knn = false;
+    const MemoryPlan lean = estimate_experiment_memory(without_reverse, without_reverse.threads);
+    require(lean.estimated_instance_bytes < unlimited.estimated_instance_bytes
+                && !lean.reverse_knn_enabled,
+            "disabling reverse KNN lowers the conservative per-instance estimate");
+
+    RunOptions bounded = options;
+    const std::uint64_t target = unlimited.fixed_overhead_bytes
+        + 2U * unlimited.estimated_instance_bytes;
+    bounded.memory_budget_mb = static_cast<int>((target + (1U << 20U) - 1U) >> 20U);
+    const MemoryPlan limited = estimate_experiment_memory(bounded, bounded.threads);
+    require(limited.effective_threads >= 1 && limited.effective_threads <= 2
+                && limited.limited_by_budget,
+            "memory budget reduces instance concurrency before allocation");
+    require(limited.estimated_peak_bytes <= limited.budget_bytes,
+            "planned peak stays within the configured budget");
+
+    RunOptions impossible = options;
+    impossible.memory_budget_mb = 1;
+    bool rejected = false;
+    try {
+        (void)estimate_experiment_memory(impossible, impossible.threads);
+    } catch (const std::invalid_argument&) {
+        rejected = true;
+    }
+    require(rejected, "a budget below one-instance demand is rejected before allocation");
+}
+
+
 } // namespace

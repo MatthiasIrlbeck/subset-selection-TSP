@@ -140,6 +140,25 @@ def migrate_document(
 
     if source_bytes is None:
         source_bytes = json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if "memory_plan" not in result:
+        effective_threads = int(result.get("threads", 1))
+        result["memory_plan"] = {
+            "budget_bytes": 0,
+            "fixed_overhead_bytes": 0,
+            "estimated_instance_bytes": 0,
+            "estimated_peak_bytes": 0,
+            "requested_threads": max(1, effective_threads),
+            "resolved_threads": max(1, effective_threads),
+            "effective_threads": max(1, effective_threads),
+            "limited_by_budget": False,
+            "reverse_knn_enabled": True,
+        }
+        for field in result["memory_plan"]:
+            pointer = f"/memory_plan/{field}"
+            inferred.append(pointer)
+            unrecoverable.append(pointer)
+        notes.append("/memory_plan: schema 13 did not record memory estimates or budget limiting")
+
     result["migration_metadata"] = {
         "source_schema_version": 13,
         "target_schema_version": 14,

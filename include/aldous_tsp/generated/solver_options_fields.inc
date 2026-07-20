@@ -4,6 +4,9 @@
     int knn_k = 40;
     // Exact KNN backend: grid or bruteforce.
     KnnBackend knn_backend = KnnBackend::GridExact;
+    // Build reverse-KNN adjacency lazily when candidate local search needs it; disable to
+    // save additional memory.
+    bool reverse_knn = true;
     // Sampled exact-KNN verification checks.
     int verify_knn_checks = 0;
     // Force a grid cell size; zero selects an automatic safe value.

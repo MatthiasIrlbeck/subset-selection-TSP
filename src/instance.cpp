@@ -193,14 +193,15 @@ double Instance::knn_d_at(int node, int rank) const noexcept {
 }
 
 double Instance::knn_d2_at(int node, int rank) const noexcept {
-    return knn_d2[static_cast<std::size_t>(node) * static_cast<std::size_t>(knn_k) + static_cast<std::size_t>(rank)];
+    const double distance = knn_d_at(node, rank);
+    return distance * distance;
 }
 
 void Instance::clear_knn() {
+    const std::lock_guard<std::mutex> lock(*reverse_knn_mutex_);
     knn_k = 0;
     knn.clear();
     knn_d.clear();
-    knn_d2.clear();
     rknn_begin.clear();
     rknn_nodes.clear();
     cell_x.clear();
@@ -213,6 +214,7 @@ void Instance::clear_knn() {
 }
 
 void Instance::build_knn(int k, KnnBackend backend, double forced_cell_size) {
+    release_reverse_knn();
     knn_backend = backend;
     last_knn_build = KnnBuildInfo();
     last_knn_build.requested_backend = backend;
@@ -236,14 +238,12 @@ void Instance::build_knn(int k, KnnBackend backend, double forced_cell_size) {
     } else {
         build_knn_grid(k, forced_cell_size);
     }
-    build_reverse_knn();
 }
 
 void Instance::build_knn_bruteforce(int k) {
     knn_k = k;
     const auto total = static_cast<std::size_t>(N) * static_cast<std::size_t>(knn_k);
     knn.assign(total, -1);
-    knn_d2.assign(total, std::numeric_limits<double>::infinity());
     knn_d.assign(total, std::numeric_limits<double>::infinity());
 
     std::vector<std::pair<double, int>> candidates;
@@ -269,7 +269,6 @@ void Instance::build_knn_bruteforce(int k) {
         const auto off = static_cast<std::size_t>(i) * static_cast<std::size_t>(knn_k);
         for (int r = 0; r < knn_k; ++r) {
             knn[off + static_cast<std::size_t>(r)] = candidates[static_cast<std::size_t>(r)].second;
-            knn_d2[off + static_cast<std::size_t>(r)] = candidates[static_cast<std::size_t>(r)].first;
             knn_d[off + static_cast<std::size_t>(r)] = std::sqrt(candidates[static_cast<std::size_t>(r)].first);
         }
     }
@@ -510,7 +509,6 @@ void Instance::build_knn_grid(int k, double forced_cell_size) {
     build_grid(forced_cell_size);
     const auto total = static_cast<std::size_t>(N) * static_cast<std::size_t>(knn_k);
     knn.assign(total, -1);
-    knn_d2.assign(total, std::numeric_limits<double>::infinity());
     knn_d.assign(total, std::numeric_limits<double>::infinity());
 
     std::vector<int> best_idx(static_cast<std::size_t>(knn_k), -1);
@@ -622,7 +620,6 @@ void Instance::build_knn_grid(int k, double forced_cell_size) {
             const auto off = static_cast<std::size_t>(qi) * static_cast<std::size_t>(knn_k);
             for (int r = 0; r < knn_k; ++r) {
                 knn[off + static_cast<std::size_t>(r)] = best_idx[static_cast<std::size_t>(r)];
-                knn_d2[off + static_cast<std::size_t>(r)] = best_d2[static_cast<std::size_t>(r)];
                 knn_d[off + static_cast<std::size_t>(r)] =
                     std::sqrt(best_d2[static_cast<std::size_t>(r)]);
             }
@@ -674,13 +671,12 @@ void Instance::build_knn_grid(int k, double forced_cell_size) {
         const auto off = static_cast<std::size_t>(qi) * static_cast<std::size_t>(knn_k);
         for (int r = 0; r < knn_k; ++r) {
             knn[off + static_cast<std::size_t>(r)] = best_idx[static_cast<std::size_t>(r)];
-            knn_d2[off + static_cast<std::size_t>(r)] = best_d2[static_cast<std::size_t>(r)];
             knn_d[off + static_cast<std::size_t>(r)] = std::sqrt(best_d2[static_cast<std::size_t>(r)]);
         }
     }
 }
 
-void Instance::build_reverse_knn() {
+void Instance::build_reverse_knn_unlocked() const {
     rknn_begin.assign(static_cast<std::size_t>(N + 1), 0);
     if (knn_k <= 0) {
         rknn_nodes.clear();
@@ -709,6 +705,31 @@ void Instance::build_reverse_knn() {
             }
         }
     }
+}
+
+void Instance::ensure_reverse_knn() const {
+    const std::lock_guard<std::mutex> lock(*reverse_knn_mutex_);
+    const std::size_t expected_begin = static_cast<std::size_t>(N + 1);
+    const std::size_t expected_nodes = static_cast<std::size_t>(N)
+        * static_cast<std::size_t>(std::max(knn_k, 0));
+    if (rknn_begin.size() == expected_begin
+        && rknn_nodes.size() == expected_nodes) {
+        return;
+    }
+    build_reverse_knn_unlocked();
+}
+
+void Instance::release_reverse_knn() const {
+    const std::lock_guard<std::mutex> lock(*reverse_knn_mutex_);
+    std::vector<int>().swap(rknn_begin);
+    std::vector<int>().swap(rknn_nodes);
+}
+
+bool Instance::has_reverse_knn() const {
+    const std::lock_guard<std::mutex> lock(*reverse_knn_mutex_);
+    return rknn_begin.size() == static_cast<std::size_t>(N + 1)
+        && rknn_nodes.size() == static_cast<std::size_t>(N)
+            * static_cast<std::size_t>(std::max(knn_k, 0));
 }
 
 bool Instance::verify_knn(int checks, Rng& rng) const {
@@ -740,7 +761,9 @@ bool Instance::verify_knn(int checks, Rng& rng) const {
             if (knn_at(i, r) != candidates[static_cast<std::size_t>(r)].second) {
                 return false;
             }
-            if (std::fabs(knn_d2_at(i, r) - candidates[static_cast<std::size_t>(r)].first) > kDistanceEps) {
+            const double expected_d2 = candidates[static_cast<std::size_t>(r)].first;
+            const double tolerance = kDistanceEps * std::max(1.0, std::fabs(expected_d2));
+            if (std::fabs(knn_d2_at(i, r) - expected_d2) > tolerance) {
                 return false;
             }
         }

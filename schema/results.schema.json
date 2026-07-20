@@ -10,6 +10,7 @@
     "done",
     "target",
     "threads",
+    "memory_plan",
     "wall_seconds",
     "mode",
     "distance_backend",
@@ -127,6 +128,9 @@
     "migration_metadata": {
       "$ref": "#/$defs/migration_metadata",
       "description": "Present only on documents migrated from an older result schema."
+    },
+    "memory_plan": {
+      "$ref": "#/$defs/memory_plan"
     }
   },
   "additionalProperties": false,
@@ -282,6 +286,7 @@
         "N",
         "instances",
         "threads",
+        "memory_budget_mb",
         "periodic",
         "control_variate",
         "cv_mc_samples",
@@ -305,6 +310,7 @@
         "p_values",
         "knn_k",
         "knn_backend",
+        "reverse_knn",
         "verify_knn_checks",
         "grid_cell",
         "exact_subset_max_n",
@@ -416,6 +422,12 @@
           "type": "integer",
           "minimum": 0,
           "description": "Instance worker threads; zero selects an automatic bounded value.",
+          "default": 0
+        },
+        "memory_budget_mb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-concurrency limiting.",
           "default": 0
         },
         "periodic": {
@@ -571,6 +583,11 @@
           ],
           "description": "Exact KNN backend: grid or bruteforce.",
           "default": "grid"
+        },
+        "reverse_knn": {
+          "type": "boolean",
+          "description": "Build reverse-KNN adjacency lazily when candidate local search needs it; disable to save additional memory.",
+          "default": true
         },
         "verify_knn_checks": {
           "type": "integer",
@@ -2334,6 +2351,57 @@
           "description": "SHA-256 of the exact schema-13 source bytes."
         }
       }
+    },
+    "memory_plan": {
+      "type": "object",
+      "required": [
+        "budget_bytes",
+        "fixed_overhead_bytes",
+        "estimated_instance_bytes",
+        "estimated_peak_bytes",
+        "requested_threads",
+        "resolved_threads",
+        "effective_threads",
+        "limited_by_budget",
+        "reverse_knn_enabled"
+      ],
+      "properties": {
+        "budget_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fixed_overhead_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_instance_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_threads": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limited_by_budget": {
+          "type": "boolean"
+        },
+        "reverse_knn_enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

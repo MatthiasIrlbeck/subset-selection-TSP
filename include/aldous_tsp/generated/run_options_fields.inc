@@ -6,6 +6,9 @@
     int instances = 15;
     // Instance worker threads; zero selects an automatic bounded value.
     int threads = 0;
+    // Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-
+    // concurrency limiting.
+    int memory_budget_mb = 0;
     // Use flat-torus periodic boundary conditions.
     bool periodic = false;
     // Compute the two-nearest-neighbor control variate and fixed-subset bound; the bound

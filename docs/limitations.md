@@ -7,7 +7,7 @@
 - Optional LKH/Concorde post-processing is integrated, but external solver behavior depends on the installed binary, TSPLIB interpretation, timeout settings, and integer scaling.
 - Oracle output includes aggregate counters and detailed per-call status/error records. External solver correctness still depends on the installed executable and its TSPLIB interpretation.
 - The JSON schema validates structure, not scientific adequacy of sample sizes.
-- Large runs should report seeds, p-grids, KNN backend, oracle mode, all solver budgets, and ablation settings.
+- Large runs should report seeds, p-grids, KNN backend, oracle mode, all solver budgets, ablation settings, and `memory_plan`. The planner is conservative but cannot account for every allocator/runtime overhead; leave headroom instead of setting the process limit equal to the estimate.
 
 ## Results at small k do not transfer to k=2000
 

@@ -91,6 +91,8 @@ Simulation and campaign identity:
   --N <int>                               Number of random points. (default: 500)
   --instances <int>                       Monte Carlo point-set instances. (default: 15)
   --threads <int>                         Instance worker threads; zero selects an automatic bounded value. (default: 0)
+  --memory-budget-mb <MiB>                Conservative estimated peak-memory budget in MiB; zero disables budget-based
+                                          instance-concurrency limiting. (default: 0)
   --periodic[=bool]                       Use flat-torus periodic boundary conditions. (default: false)
   --campaign-id <text>                    Stable campaign identity. (default: default)
   --campaign-shard <int>                  Nonnegative campaign shard identity. (default: 0)
@@ -181,6 +183,8 @@ Local-search neighborhoods:
 Geometry and KNN:
   --knn <int>                             Exact KNN candidate count; values are capped to N-1. (default: 40)
   --knn-backend <name>                    Exact KNN backend: grid or bruteforce. (default: grid)
+  --reverse-knn[=bool]                    Build reverse-KNN adjacency lazily when candidate local search needs it; disable
+                                          to save additional memory. (default: true)
   --verify-knn <int>                      Sampled exact-KNN verification checks. (default: 0)
   --grid-cell <float>                     Force a grid cell size; zero selects an automatic safe value. (default: 0.0)
 
@@ -294,6 +298,12 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
         if (!parse_int(value, opt.threads)) { error = "invalid integer for --threads: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--memory-budget-mb") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_int(value, opt.memory_budget_mb)) { error = "invalid integer for --memory-budget-mb: " + value; return GeneratedCliParseResult::Error; }
         return GeneratedCliParseResult::Matched;
     }
     if (flag == "--periodic") {
@@ -457,6 +467,13 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
         if (!parse_knn_backend(value, opt.solver.knn_backend)) { error = "invalid value for --knn-backend: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--reverse-knn") {
+        bool matched = false;
+        bool value = true;
+        if (!bool_argument(arg, flag, matched, value, error)) { return GeneratedCliParseResult::Error; }
+        opt.solver.reverse_knn = value;
         return GeneratedCliParseResult::Matched;
     }
     if (flag == "--verify-knn") {

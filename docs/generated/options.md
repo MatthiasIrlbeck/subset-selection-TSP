@@ -23,6 +23,7 @@ This file is generated from `config/options.json`. Do not edit it directly.
 | `--N` | `N` | `500` | minimum=3 | Number of random points. |
 | `--instances` | `instances` | `15` | minimum=1 | Monte Carlo point-set instances. |
 | `--threads` | `threads` | `0` | minimum=0 | Instance worker threads; zero selects an automatic bounded value. |
+| `--memory-budget-mb` | `memory_budget_mb` | `0` | minimum=0 | Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-concurrency limiting. |
 | `--periodic` | `periodic` | `false` | boolean | Use flat-torus periodic boundary conditions. |
 | `--campaign-id` | `campaign_id` | `default` | minLength=1, maxLength=256 | Stable campaign identity. |
 | `--campaign-shard` | `campaign_shard` | `0` | minimum=0 | Nonnegative campaign shard identity. |
@@ -119,6 +120,7 @@ This file is generated from `config/options.json`. Do not edit it directly.
 |---|---|---:|---|---|
 | `--knn` | `knn_k` | `40` | minimum=0 | Exact KNN candidate count; values are capped to N-1. |
 | `--knn-backend` | `knn_backend` | `grid` | enum=['coords_exact_grid_knn', 'coords_exact_bruteforce_knn'] | Exact KNN backend: grid or bruteforce. |
+| `--reverse-knn` | `reverse_knn` | `true` | boolean | Build reverse-KNN adjacency lazily when candidate local search needs it; disable to save additional memory. |
 | `--verify-knn` | `verify_knn_checks` | `0` | minimum=0 | Sampled exact-KNN verification checks. |
 | `--grid-cell` | `grid_cell` | `0.0` | minimum=0 | Force a grid cell size; zero selects an automatic safe value. |
 
