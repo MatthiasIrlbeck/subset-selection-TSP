@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Run one CLI scenario and summarize phase-level timing/counter telemetry."""
 from __future__ import annotations
-import argparse, json, subprocess, sys, tempfile
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 def fmt_seconds(value: float) -> str:
@@ -21,13 +25,15 @@ def main() -> int:
     exe = Path(args.exe)
     exe_check = exe if exe.is_absolute() else Path.cwd() / exe
     if not exe_check.exists():
-        print(f"executable not found: {exe}", file=sys.stderr); return 2
+        print(f"executable not found: {exe}", file=sys.stderr)
+        return 2
     tmp_ctx = None
     if args.output is None:
         tmp_ctx = tempfile.TemporaryDirectory(prefix="aldous_profile_")
         output = Path(tmp_ctx.name) / "profile.json"
     else:
-        output = Path(args.output); output.parent.mkdir(parents=True, exist_ok=True)
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
     cmd = [str(exe), "--mode", args.mode, "--N", str(args.N), "--instances", str(args.instances), "--threads", str(args.threads), "--p-values", args.p_values, "--output", str(output), "--force", *args.extra]
     print("+", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
@@ -65,7 +71,8 @@ def main() -> int:
     for key in ["two_opt_scans","two_opt_improvements","or_opt_scans","or_opt_improvements","sa_moves","sa_accepted","subset_swap_scans","subset_swap_improvements","highp_exchange_scans","highp_exchange_improvements","pair_exchange_scans","pair_exchange_improvements","ruin_recreate_attempts","ruin_recreate_improvements","path_relink_attempts","path_relink_feasible","path_relink_best_improvements","oracle_calls","oracle_improved"]:
         print(f"{key:32s} {stats.get(key, 0)}")
     print(f"\nResult JSON: {output}")
-    if tmp_ctx is not None: tmp_ctx.cleanup()
+    if tmp_ctx is not None:
+        tmp_ctx.cleanup()
     return 0
 if __name__ == "__main__":
     raise SystemExit(main())

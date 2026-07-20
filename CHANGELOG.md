@@ -9,6 +9,8 @@
   schema validation, and idempotency tests.
 - Corrected stale documentation about serialized per-oracle-call failures.
 - Removed the duplicate persistent KNN squared-distance array, made reverse-KNN adjacency lazy and policy-controlled, and added conservative memory-budget scheduling with serialized requested/resolved/effective concurrency.
+- Replaced the dense exact-subset value table with cardinality-indexed masks, rolling value layers, compact reconstruction parents, and a public pre-allocation peak-memory estimate.
+- Made AppleClang and MSVC portability jobs blocking, added Ruff correctness, clang-tidy, and GCC ThreadSanitizer jobs, enabled leak detection in ASan CI, and added a pinned historical hot-path performance gate.
 
 
 ## Unreleased — correctness audit repair series

@@ -41,6 +41,8 @@ jobs:
       CXX: ${{ matrix.cxx }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install packages
         run: |
           sudo apt-get update
@@ -60,8 +62,8 @@ jobs:
         run: cmake --build build --parallel
       - name: Test
         env:
-          ASAN_OPTIONS: detect_leaks=0
-          UBSAN_OPTIONS: print_stacktrace=1
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: ctest --test-dir build --output-on-failure
       - name: Low-memory build smoke
         if: matrix.sanitizer == 'OFF'
@@ -74,7 +76,6 @@ jobs:
             -DALDOUS_TSP_LOW_MEMORY_BUILD=ON
           cmake --build build-low-memory --target aldous_tsp --parallel
           ./build-low-memory/aldous_tsp --dry-run --N 12 --instances 1 --p-values 1.0 --threads 1
-
       - name: Install package smoke
         if: matrix.sanitizer == 'OFF'
         run: |
@@ -98,27 +99,158 @@ jobs:
         if: matrix.sanitizer == 'OFF'
         run: python3 scripts/plot_results.py build/quick-smoke.json -o build/quick-smoke.png
 
-  # Portability jobs. These are marked non-blocking (continue-on-error) until
-  # they have been observed green on real runners; flip them to blocking once
-  # verified. The Windows job exercises the MSVC build that the
-  # SummaryRow::stderr -> stderr_value rename unblocked (stderr is a macro in
-  # MSVC's <cstdio>).
-  macos:
-    name: macos-appleclang-release
-    runs-on: macos-latest
-    continue-on-error: true
+  python-lint:
+    name: ruff-correctness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Ruff
+        run: python -m pip install ruff==0.12.4
+      - name: Check Python correctness
+        run: python -m ruff check scripts tests
+
+  clang-tidy:
+    name: clang-tidy-core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install packages
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang clang-tidy
+      - name: Configure
+        run: >-
+          cmake -S . -B build-tidy -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DBUILD_TESTING=OFF
+          -DALDOUS_TSP_BUILD_CLI=OFF
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_WERROR=ON
+          -DALDOUS_TSP_ENABLE_CLANG_TIDY=ON
+      - name: Run clang-tidy while building handwritten core sources
+        run: cmake --build build-tidy --target aldous_tsp_core --parallel 2
+
+  thread-sanitizer:
+    name: gcc-thread-sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++
+      - name: Configure
+        env:
+          CC: gcc
+          CXX: g++
+        run: >-
+          cmake -S . -B build-tsan -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTING=ON
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_WERROR=ON
+          -DALDOUS_TSP_ENABLE_TSAN=ON
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=OFF
+      - name: Build
+        run: cmake --build build-tsan --parallel 2
+      - name: Run concurrency-sensitive suites
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1:history_size=7
+        shell: bash
+        run: |
+          tests=(
+            test_knn_memory_representation_and_lazy_reverse
+            test_restart_worker_exception_propagation
+            test_experiment_worker_states_and_callback_exceptions
+            test_restart_thread_invariance
+            test_oracle_posix_spawn_timeout_and_concurrency
+            test_tsp_screening_thread_invariance
+            test_public_api_validation_and_concurrent_atomic_writers
+          )
+          for test_name in "${tests[@]}"; do
+            echo "::group::${test_name}"
+            timeout 90s ./build-tsan/aldous_tsp_test_core "${test_name}"
+            echo "::endgroup::"
+          done
+
+  historical-performance:
+    name: historical-hotpath-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ python3-jsonschema
+      - name: Resolve pinned baseline
+        id: baseline
+        shell: bash
+        run: |
+          commit=$(tr -d '[:space:]' < config/performance_baseline_commit.txt)
+          git cat-file -e "${commit}^{commit}"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          git worktree add --detach baseline-tree "$commit"
+      - name: Build pinned baseline
+        run: |
+          cmake -S baseline-tree -B baseline-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON
+          cmake --build baseline-build --target aldous_tsp --parallel 2
+      - name: Build candidate
+        run: |
+          cmake -S . -B candidate-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON
+          cmake --build candidate-build --target aldous_tsp --parallel 2
+      - name: Compare against pinned baseline
+        run: >-
+          python3 scripts/benchmark_hotpaths.py
+          --baseline-exe baseline-build/aldous_tsp
+          --candidate-exe candidate-build/aldous_tsp
+          --suite smoke
+          --repetitions 3
+          --out-dir historical-performance
+          --check
+          --max-wall-ratio 1.35
+          --max-quality-regression 1e-12
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: historical-performance-${{ steps.baseline.outputs.commit }}
+          path: historical-performance
+
+  macos:
+    name: macos-appleclang-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packages
+        run: |
           brew install ninja
-          python3 -m pip install --break-system-packages jsonschema
+          python -m pip install jsonschema
+      - name: Check generated option surfaces
+        run: python scripts/generate_options.py --check
       - name: Configure
         run: >-
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
           -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_WERROR=ON
           -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
       - name: Build
         run: cmake --build build --parallel
@@ -128,15 +260,22 @@ jobs:
   windows-msvc:
     name: windows-msvc-release
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install jsonschema
+      - name: Check generated option surfaces
+        run: python scripts/generate_options.py --check
       - name: Configure
         run: >-
           cmake -S . -B build
           -DBUILD_TESTING=ON
           -DALDOUS_TSP_ENABLE_WARNINGS=ON
-          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=OFF
+          -DALDOUS_TSP_ENABLE_WERROR=ON
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test

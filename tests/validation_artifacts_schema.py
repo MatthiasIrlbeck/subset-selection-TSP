@@ -10,7 +10,7 @@ try:
     import jsonschema
 except Exception as exc:
     print(f"jsonschema is required for validation_artifacts_schema.py: {exc}", file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit(2) from exc
 
 
 def project_version(root: Path) -> str:

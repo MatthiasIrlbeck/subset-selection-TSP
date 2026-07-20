@@ -18,11 +18,22 @@ option(ALDOUS_TSP_ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ALDOUS_TSP_ENABLE_WERROR "Treat compiler warnings as errors" OFF)
 option(ALDOUS_TSP_ENABLE_NATIVE "Enable -march=native on supported compilers" OFF)
 option(ALDOUS_TSP_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(ALDOUS_TSP_ENABLE_TSAN "Enable ThreadSanitizer (GNU/Clang on supported platforms)" OFF)
 option(ALDOUS_TSP_ENABLE_CLANG_TIDY "Run clang-tidy when available" OFF)
 option(ALDOUS_TSP_ENABLE_PYTHON_TESTS "Enable optional Python-driven benchmark/parity CTest smoke tests" OFF)
 option(ALDOUS_TSP_LOW_MEMORY_BUILD "Compile dense translation units with low optimization to reduce compiler memory" OFF)
 option(ALDOUS_TSP_BUILD_FUZZERS "Build dedicated libFuzzer targets (Clang only)" OFF)
 option(ALDOUS_TSP_FUZZ_ENABLE_ASAN "Combine AddressSanitizer with libFuzzer (disable only for incompatible local runtimes)" ON)
+
+if(ALDOUS_TSP_ENABLE_SANITIZERS AND ALDOUS_TSP_ENABLE_TSAN)
+  message(FATAL_ERROR "Address/Undefined sanitizers and ThreadSanitizer require separate builds")
+endif()
+if(ALDOUS_TSP_ENABLE_TSAN AND NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  message(FATAL_ERROR "ALDOUS_TSP_ENABLE_TSAN requires GCC or Clang")
+endif()
+if(ALDOUS_TSP_ENABLE_TSAN AND ALDOUS_TSP_BUILD_FUZZERS)
+  message(FATAL_ERROR "ThreadSanitizer and libFuzzer targets require separate builds")
+endif()
 
 if(ALDOUS_TSP_LOW_MEMORY_BUILD)
   set(ALDOUS_TSP_OPTIMIZATION_PROFILE "low-memory")
@@ -116,6 +127,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   string(APPEND ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED " Release:-O2")
   if(ALDOUS_TSP_ENABLE_SANITIZERS)
     string(APPEND ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED " -fsanitize=address,undefined -fno-omit-frame-pointer")
+  elseif(ALDOUS_TSP_ENABLE_TSAN)
+    string(APPEND ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED " -fsanitize=thread -fno-omit-frame-pointer")
   endif()
   if(ALDOUS_TSP_LOW_MEMORY_BUILD)
     string(APPEND ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED " low-memory-source:-O0 -g0")
@@ -220,7 +233,8 @@ string(REPLACE ";" " " ALDOUS_TSP_CXX_FLAGS_STR "${ALDOUS_TSP_CXX_FLAGS_EFFECTIV
 target_compile_definitions(aldous_tsp_core PRIVATE
   ALDOUS_TSP_BUILD_TYPE="$<CONFIG>"
   ALDOUS_TSP_BUILD_ENABLE_NATIVE=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_NATIVE}>,"ON","OFF">
-  ALDOUS_TSP_BUILD_ENABLE_SANITIZERS=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_SANITIZERS}>,"ON","OFF">
+  ALDOUS_TSP_BUILD_ENABLE_SANITIZERS=$<IF:$<OR:$<BOOL:${ALDOUS_TSP_ENABLE_SANITIZERS}>,$<BOOL:${ALDOUS_TSP_ENABLE_TSAN}>>,"ON","OFF">
+  ALDOUS_TSP_BUILD_ENABLE_TSAN=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_TSAN}>,"ON","OFF">
   ALDOUS_TSP_BUILD_ENABLE_WARNINGS=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_WARNINGS}>,"ON","OFF">
   ALDOUS_TSP_BUILD_ENABLE_WERROR=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_WERROR}>,"ON","OFF">
   ALDOUS_TSP_BUILD_LOW_MEMORY=$<IF:$<BOOL:${ALDOUS_TSP_LOW_MEMORY_BUILD}>,"ON","OFF">
@@ -244,6 +258,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   if(ALDOUS_TSP_ENABLE_SANITIZERS)
     target_compile_options(aldous_tsp_core PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(aldous_tsp_core PUBLIC -fsanitize=address,undefined)
+  elseif(ALDOUS_TSP_ENABLE_TSAN)
+    target_compile_options(aldous_tsp_core PUBLIC -fsanitize=thread -fno-omit-frame-pointer)
+    target_link_options(aldous_tsp_core PUBLIC -fsanitize=thread)
   endif()
 elseif(MSVC)
   list(APPEND ALDOUS_TSP_WARNING_FLAGS /W4)
@@ -263,6 +280,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   endif()
   if(ALDOUS_TSP_ENABLE_SANITIZERS)
     list(APPEND ALDOUS_TSP_TARGET_COMPILE_OPTIONS_LIST -fsanitize=address,undefined -fno-omit-frame-pointer)
+  elseif(ALDOUS_TSP_ENABLE_TSAN)
+    list(APPEND ALDOUS_TSP_TARGET_COMPILE_OPTIONS_LIST -fsanitize=thread -fno-omit-frame-pointer)
   endif()
   if(ALDOUS_TSP_LOW_MEMORY_BUILD)
     list(APPEND ALDOUS_TSP_SOURCE_COMPILE_OPTIONS_LIST -O0 -g0)

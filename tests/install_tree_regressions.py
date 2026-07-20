@@ -37,7 +37,6 @@ def main() -> int:
         assert "aldous_tsp::cli" in targets_on, "CLI target should be exported when CLI support is built"
 
         build_off = tmp / "build-cli-off"
-        prefix_off = tmp / "install-cli-off"
         configure = [
             "cmake", "-S", str(root), "-B", str(build_off),
             "-DCMAKE_BUILD_TYPE=Release",

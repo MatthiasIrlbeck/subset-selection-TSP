@@ -49,7 +49,7 @@ python3 scripts/benchmark_hotpaths.py \
   --check
 ```
 
-The production suite contains separate torus-distance, pair-exchange, subset-swap, and combined workloads. CI runs only the deterministic smoke suite. Timing fields are accumulated worker elapsed-seconds and may exceed wall time under restart parallelism; nested checkpoint polish is already included in the SA total.
+The production suite contains separate torus-distance, pair-exchange, subset-swap, and combined workloads. The ordinary CTest smoke validates the harness against one executable. A separate blocking CI job checks out and builds the immutable commit named in `config/performance_baseline_commit.txt`, then compares that historical executable with the candidate over three alternating-order repetitions. The gate rejects solution-quality changes above `1e-12` and candidate median wall time above 1.35 times the pinned baseline. Timing fields are accumulated worker elapsed-seconds and may exceed wall time under restart parallelism; nested checkpoint polish is already included in the SA total.
 
 
 ## Exhaustive 2-opt policy comparison

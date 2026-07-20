@@ -383,7 +383,7 @@ def main():
     frac_grid = [0.2, 0.3, 0.4, 0.5, 0.7, 1.0]
     headline, best_of_m = [], []
 
-    for (fname, idx), x in sorted(per_instance.items()):
+    for (_fname, idx), x in sorted(per_instance.items()):
         if len(x) < 12:
             print(f"instance {idx}: only {len(x)} usable draws -- "
                   f"endpoint estimation needs more restarts; skipping")
@@ -416,8 +416,8 @@ def main():
         if len(x) < 100:
             print(f"    NOTE: {len(x)} draws is far too few for endpoint estimation. "
                   f"Tail fits want O(100) draws per instance;")
-            print(f"          at converged depth (~60 iters/candidate) restarts are cheap, "
-                  f"so spend budget on RESTARTS, not instances.")
+            print("          at converged depth (~60 iters/candidate) restarts are cheap, "
+                  "so spend budget on RESTARTS, not instances.")
         print()
 
     if headline:

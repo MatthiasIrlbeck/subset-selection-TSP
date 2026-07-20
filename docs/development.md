@@ -26,6 +26,7 @@ ctest --preset debug-asan
 - `ALDOUS_TSP_ENABLE_WERROR`
 - `ALDOUS_TSP_ENABLE_NATIVE`
 - `ALDOUS_TSP_ENABLE_SANITIZERS`
+- `ALDOUS_TSP_ENABLE_TSAN` — build a separate GCC/Clang ThreadSanitizer profile; it is intentionally incompatible with ASan/UBSan and libFuzzer builds.
 - `ALDOUS_TSP_ENABLE_CLANG_TIDY`
 - `ALDOUS_TSP_ENABLE_PYTHON_TESTS`
 - `ALDOUS_TSP_LOW_MEMORY_BUILD` — opt into low-optimization source-file overrides for constrained builders. Keep this `OFF` for normal performance builds.
@@ -47,7 +48,9 @@ Current tests cover:
 - CLI self-test and quick smoke via CTest,
 - Python-driven backend parity, CLI regression, and schema-validation tests when `ALDOUS_TSP_ENABLE_PYTHON_TESTS=ON`.
 
-Dedicated libFuzzer targets and a scheduled ASan/UBSan campaign cover the CLI parser, instance/KNN construction, mutable tours, and bounded solver execution. Larger scenario benchmarks and per-oracle-call golden fixtures remain useful additions.
+Dedicated libFuzzer targets and a scheduled ASan/UBSan campaign cover the CLI parser, instance/KNN construction, mutable tours, and bounded solver execution. Regular CI also runs Ruff correctness checks, clang-tidy over the core build, and a focused GCC ThreadSanitizer suite covering restart workers, experiment cancellation, reverse-KNN lazy construction, oracle process concurrency, TSP screening, and concurrent atomic output.
+
+The macOS AppleClang and Windows MSVC jobs are blocking release gates and run the generated-option check plus the complete supported CTest inventory. The historical hot-path job builds the commit pinned in `config/performance_baseline_commit.txt` and compares deterministic smoke scenarios against the candidate with fixed quality and wall-ratio limits. Advance that pin deliberately after accepting a release baseline; never point the gate at the candidate itself.
 
 
 ## Generated option surfaces

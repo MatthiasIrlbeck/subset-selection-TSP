@@ -187,7 +187,7 @@ def run_self_test():
     true_f, true_slope = 0.7124, 1.35
     ks = [50, 100, 200, 400, 800, 1600]
     ok = True
-    for trial in range(200):
+    for _trial in range(200):
         pts = []
         for k in ks:
             noise = random.gauss(0.0, 0.002)

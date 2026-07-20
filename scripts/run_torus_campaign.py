@@ -19,7 +19,6 @@ Then, once f(0+) is estimated (e.g. from the smallest-p extrapolation):
 """
 import argparse
 import itertools
-import json
 import os
 import subprocess
 import sys

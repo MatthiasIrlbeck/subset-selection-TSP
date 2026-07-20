@@ -10,7 +10,7 @@ try:
     import jsonschema
 except Exception as exc:
     print(f"jsonschema is required for schema_validation.py: {exc}", file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit(2) from exc
 
 
 def main() -> int:
