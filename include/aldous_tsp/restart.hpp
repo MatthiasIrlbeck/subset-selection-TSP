@@ -167,6 +167,10 @@ struct RestartRecord {
     // metadata and is deliberately independent of execution order or threads.
     int seed_variant = 0;
     RestartPromotionStage promotion_stage = RestartPromotionStage::None;
+    // True when this recorded outcome received the expensive deterministic
+    // membership-neighborhood stage. Ordinary full-TSP promoted outcomes also
+    // set this flag because they receive their complete ILS/polish budget.
+    bool strong_polished = false;
     // Actual number of SA loop iterations allocated to this recorded candidate.
     // For a promoted raced candidate this includes its screening pilot plus the
     // full-depth rerun used to produce the final recorded outcome.

@@ -203,7 +203,8 @@ struct PathRelinkStep {
 PathRelinkStep path_relink_best_step(const Instance& inst,
                                      const Tour& tour,
                                      const std::vector<int>& remove_positions,
-                                     const std::vector<int>& add_nodes);
+                                     const std::vector<int>& add_nodes,
+                                     SearchStats* stats = nullptr);
 
 // Nearest-neighbor candidates restricted to the current subset members. The
 // full-instance KNN list (knn_k entries) contains on average only knn_k * p

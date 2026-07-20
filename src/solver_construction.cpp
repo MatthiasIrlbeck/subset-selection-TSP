@@ -40,6 +40,60 @@ std::vector<int> nearest_neighbor_order(const Instance& inst, const std::vector<
     return out;
 }
 
+std::vector<int> nearest_neighbor_full_order(const Instance& inst, int start_node) {
+    if (inst.N <= 0) {
+        return {};
+    }
+    start_node = std::max(0, std::min(start_node, inst.N - 1));
+    std::vector<int> out;
+    out.reserve(static_cast<std::size_t>(inst.N));
+    std::vector<unsigned char> used(static_cast<std::size_t>(inst.N), 0U);
+    out.push_back(start_node);
+    used[static_cast<std::size_t>(start_node)] = 1U;
+
+    for (int step = 1; step < inst.N; ++step) {
+        const int last = out.back();
+        int best = -1;
+        double best_d2 = std::numeric_limits<double>::infinity();
+
+        // Exact fast path: KNN rows are sorted by (distance, node id). If one
+        // of the K nearest points is unvisited, the first such point is the
+        // globally nearest unvisited point. A complete scan is needed only
+        // after the entire retained KNN row has already been consumed.
+        for (int rank = 0; rank < inst.knn_k; ++rank) {
+            const int node = inst.knn_at(last, rank);
+            if (node < 0 || node >= inst.N
+                || used[static_cast<std::size_t>(node)] != 0U) {
+                continue;
+            }
+            best = node;
+            best_d2 = inst.dist2(last, node);
+            break;
+        }
+
+        if (best < 0) {
+            for (int node = 0; node < inst.N; ++node) {
+                if (used[static_cast<std::size_t>(node)] != 0U) {
+                    continue;
+                }
+                const double d2 = inst.dist2(last, node);
+                if (d2 < best_d2
+                    || (d2 == best_d2 && (best < 0 || node < best))) {
+                    best = node;
+                    best_d2 = d2;
+                }
+            }
+        }
+        if (best < 0) {
+            throw std::logic_error(
+                "nearest_neighbor_full_order could not find an unvisited node");
+        }
+        out.push_back(best);
+        used[static_cast<std::size_t>(best)] = 1U;
+    }
+    return out;
+}
+
 std::vector<int> farthest_insertion_order(const Instance& inst, const std::vector<int>& subset) {
     const int k = static_cast<int>(subset.size());
     if (k <= 3) {

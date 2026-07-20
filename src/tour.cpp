@@ -37,6 +37,8 @@ void SearchStats::add(const SearchStats& other) {
     exact_subset_solved += other.exact_subset_solved;
     exact_subset_states += other.exact_subset_states;
     exact_subset_transitions += other.exact_subset_transitions;
+    tsp_candidate_starts += other.tsp_candidate_starts;
+    tsp_promoted_restarts += other.tsp_promoted_restarts;
     tsp_restarts += other.tsp_restarts;
     tsp_ils_iterations += other.tsp_ils_iterations;
     subset_restarts += other.subset_restarts;
@@ -48,6 +50,9 @@ void SearchStats::add(const SearchStats& other) {
     dense_restarts += other.dense_restarts;
     racing_pilot_restarts += other.racing_pilot_restarts;
     racing_promoted_restarts += other.racing_promoted_restarts;
+    strong_polish_candidates += other.strong_polish_candidates;
+    strong_polish_finalists += other.strong_polish_finalists;
+    strong_polish_improvements += other.strong_polish_improvements;
     elite_restarts += other.elite_restarts;
     kick_restarts += other.kick_restarts;
     elite_diversity_candidates += other.elite_diversity_candidates;
@@ -86,8 +91,13 @@ void SearchStats::add(const SearchStats& other) {
     ejection_chain_scans += other.ejection_chain_scans;
     ejection_chain_improvements += other.ejection_chain_improvements;
     ejection_chain_accepted_depth += other.ejection_chain_accepted_depth;
+    path_relink_pairs_considered += other.path_relink_pairs_considered;
+    path_relink_pairs_skipped_distance += other.path_relink_pairs_skipped_distance;
+    path_relink_pairs_skipped_budget += other.path_relink_pairs_skipped_budget;
     path_relink_attempts += other.path_relink_attempts;
     path_relink_feasible += other.path_relink_feasible;
+    path_relink_removed_sum += other.path_relink_removed_sum;
+    path_relink_candidate_scans += other.path_relink_candidate_scans;
     path_relink_elite_insertions += other.path_relink_elite_insertions;
     path_relink_best_improvements += other.path_relink_best_improvements;
     path_relink_improvements += other.path_relink_improvements;
@@ -587,6 +597,104 @@ std::vector<std::vector<int>> ElitePool::export_relink_nodes(
     for (const int index : selected) {
         out.push_back(entries_[static_cast<std::size_t>(index)].nodes);
     }
+    return out;
+}
+
+std::vector<EliteEntry> ElitePool::export_relink_entries(
+    const int limit, const int diverse_reserve, const int max_removed) const {
+    if (limit <= 0 || entries_.empty()) {
+        return {};
+    }
+    const int total = std::min(limit, static_cast<int>(entries_.size()));
+    if (total <= 0) {
+        return {};
+    }
+    if (mode_ != EliteMode::Set || total == 1 || diversity_slots_ <= 0
+        || diverse_reserve <= 0) {
+        return std::vector<EliteEntry>(entries_.begin(),
+                                      entries_.begin() + total);
+    }
+
+    const int reserve = std::min({diverse_reserve, diversity_slots_, total - 1});
+    const int quality_target = total - reserve;
+    std::vector<int> selected;
+    selected.reserve(static_cast<std::size_t>(total));
+    std::vector<unsigned char> used(entries_.size(), 0U);
+    for (int index = 0; index < quality_target; ++index) {
+        selected.push_back(index);
+        used[static_cast<std::size_t>(index)] = 1U;
+    }
+
+    for (int slot = 0; slot < reserve; ++slot) {
+        int best_index = -1;
+        double best_distance = -1.0;
+        for (int index = quality_target;
+             index < static_cast<int>(entries_.size()); ++index) {
+            if (used[static_cast<std::size_t>(index)] != 0U) {
+                continue;
+            }
+            bool feasible = false;
+            double min_distance = std::numeric_limits<double>::infinity();
+            for (const int retained_index : selected) {
+                const int removed = set_removed_count(
+                    entries_[static_cast<std::size_t>(index)].canonical_key,
+                    entries_[static_cast<std::size_t>(retained_index)].canonical_key);
+                if (removed > 0 && (max_removed <= 0 || removed <= max_removed)) {
+                    feasible = true;
+                }
+                min_distance = std::min(
+                    min_distance,
+                    set_jaccard_distance(
+                        entries_[static_cast<std::size_t>(index)].canonical_key,
+                        entries_[static_cast<std::size_t>(retained_index)].canonical_key));
+            }
+            if (!feasible
+                || min_distance + kDistanceEps < min_jaccard_distance_) {
+                continue;
+            }
+            const EliteEntry& candidate = entries_[static_cast<std::size_t>(index)];
+            if (best_index < 0
+                || min_distance > best_distance + kDistanceEps
+                || (std::fabs(min_distance - best_distance) <= kDistanceEps
+                    && (candidate.length
+                            < entries_[static_cast<std::size_t>(best_index)].length
+                        || (candidate.length
+                                == entries_[static_cast<std::size_t>(best_index)].length
+                            && candidate.canonical_key
+                                < entries_[static_cast<std::size_t>(best_index)].canonical_key)))) {
+                best_index = index;
+                best_distance = min_distance;
+            }
+        }
+        if (best_index < 0) {
+            break;
+        }
+        used[static_cast<std::size_t>(best_index)] = 1U;
+        selected.push_back(best_index);
+    }
+
+    // Diversity is a preference. Fill any unused positions by quality while
+    // preserving the literal total-node cap.
+    for (int index = 0; index < static_cast<int>(entries_.size())
+         && static_cast<int>(selected.size()) < total; ++index) {
+        if (used[static_cast<std::size_t>(index)] == 0U) {
+            used[static_cast<std::size_t>(index)] = 1U;
+            selected.push_back(index);
+        }
+    }
+
+    std::vector<EliteEntry> out;
+    out.reserve(selected.size());
+    for (const int index : selected) {
+        out.push_back(entries_[static_cast<std::size_t>(index)]);
+    }
+    // Pair ranking treats the first entry as the archive best. Keep that
+    // invariant and otherwise retain deterministic quality order.
+    std::stable_sort(out.begin(), out.end(), [](const EliteEntry& lhs,
+                                                const EliteEntry& rhs) {
+        if (lhs.length != rhs.length) { return lhs.length < rhs.length; }
+        return lhs.canonical_key < rhs.canonical_key;
+    });
     return out;
 }
 

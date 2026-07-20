@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -80,6 +81,11 @@ struct SearchStats {
     std::uint64_t exact_subset_solved = 0;
     std::uint64_t exact_subset_states = 0;
     std::uint64_t exact_subset_transitions = 0;
+    // Full-TSP construction/racing telemetry. Candidate starts receive the
+    // cheap construction + initial-polish pilot; promoted starts receive the
+    // configured ILS budget and produce restart records.
+    std::uint64_t tsp_candidate_starts = 0;
+    std::uint64_t tsp_promoted_restarts = 0;
     std::uint64_t tsp_restarts = 0;
     std::uint64_t tsp_ils_iterations = 0;
     std::uint64_t subset_restarts = 0;
@@ -95,6 +101,12 @@ struct SearchStats {
     // candidates, while these counters expose the actual staged allocation.
     std::uint64_t racing_pilot_restarts = 0;
     std::uint64_t racing_promoted_restarts = 0;
+    // Staged subset-search funnel. Candidates receive seed construction, local
+    // ordering, SA, and post-SA polish. Only selected finalists receive the
+    // expensive exact membership neighborhoods and optional inline oracle.
+    std::uint64_t strong_polish_candidates = 0;
+    std::uint64_t strong_polish_finalists = 0;
+    std::uint64_t strong_polish_improvements = 0;
     // All elite-seeded restarts. Scheduled kicks are included here and are
     // additionally counted by kick_restarts for exact kick accounting.
     std::uint64_t elite_restarts = 0;
@@ -135,8 +147,13 @@ struct SearchStats {
     std::uint64_t ejection_chain_scans = 0;
     std::uint64_t ejection_chain_improvements = 0;
     std::uint64_t ejection_chain_accepted_depth = 0;
+    std::uint64_t path_relink_pairs_considered = 0;
+    std::uint64_t path_relink_pairs_skipped_distance = 0;
+    std::uint64_t path_relink_pairs_skipped_budget = 0;
     std::uint64_t path_relink_attempts = 0;
     std::uint64_t path_relink_feasible = 0;
+    std::uint64_t path_relink_removed_sum = 0;
+    std::uint64_t path_relink_candidate_scans = 0;
     std::uint64_t path_relink_elite_insertions = 0;
     std::uint64_t path_relink_best_improvements = 0;
     std::uint64_t path_relink_improvements = 0; // Backward-compatible alias for best improvements.
@@ -250,15 +267,23 @@ struct SolverOptions {
     // Use the global exact subset-tour dynamic program whenever N is at most
     // this threshold. Zero disables it. The hard safety cap is 18.
     int exact_subset_max_n = 0;
+    // Number of cheap deterministic full-TSP starts screened before full ILS.
+    // The configured tsp_restarts is the number promoted. Values below
+    // tsp_restarts are raised to tsp_restarts. Farthest insertion is cubic and
+    // therefore opt-in through tsp_farthest_starts.
+    int tsp_candidate_starts = 12;
+    int tsp_farthest_starts = 0;
+    // Prefer promoted cycles whose undirected-edge Jaccard distance from
+    // already promoted cycles is at least this value, then fill any remaining
+    // slots by quality. Zero disables the diversity preference.
+    double tsp_min_edge_jaccard = 0.02;
     int tsp_restarts = 5;
     int tsp_ils = 300;
     int tsp_patience = 80;
     // Subset restarts. Values >= 1 are authoritative: the solver runs exactly
-    // this many. The default -1 means AUTO, which reproduces the historical
-    // effective behavior: 8 restarts when p <= 0.08 (the small-p seed pool used
-    // to force this regardless of the flag) and 3 otherwise. Before 0.9.2 the
-    // flag could not lower the count below the seed-pool size, so honoring it
-    // literally would have silently degraded default-quality at small p.
+    // this many. The default -1 means AUTO: staged search explores 12 restarts
+    // when p <= 0.08 and 5 otherwise, then strongly polishes only the configured
+    // finalists. Disabling staged search restores the historical 8/3 counts.
     int subset_restarts = -1;
     // Number of warm/continuation restarts when a parent solution is available.
     // Under Supplemental these are appended to --restarts. Under FixedBudget
@@ -274,6 +299,13 @@ struct SolverOptions {
     int racing_survivors = 2;
     int racing_pilot_iters = 2000;
     double racing_min_jaccard = 0.05;
+    // Search funnel: every restart receives construction, ordinary polish, and
+    // its SA budget; only the best quality-and-diversity finalists receive the
+    // expensive membership neighborhoods. AUTO uses a broader population when
+    // staged search is enabled (12 restarts at p<=0.08, 5 otherwise).
+    bool staged_search = true;
+    int strong_polish_finalists = 3;
+    double strong_polish_min_jaccard = 0.02;
     int sa_iters = 60000;
     // Additional SA iterations per subset element: the effective SA budget for
     // a size-k solve is sa_iters + sa_iters_per_k * k. The default 0 keeps the
@@ -426,7 +458,16 @@ struct SolverOptions {
     int elite_diversity_slots = 4;
     double elite_min_jaccard = 0.02;
     double elite_quality_slack = 0.03;
+    // Literal maximum number of archive nodes exposed to relinking. A fixed
+    // reserve can be selected for set diversity inside (not in addition to)
+    // that cap. Pair and work budgets are deterministic; zero removes the
+    // corresponding budget, while path_relink_top=0 disables relinking.
     int path_relink_top = 3;
+    int path_relink_diverse_reserve = 1;
+    int path_relink_max_pairs = 3;
+    int path_relink_max_removed = 64;
+    int path_relink_max_removed_sum = 128;
+    int path_relink_max_candidate_scans = 250000;
     int seed = 2024;
     SolverMode mode = SolverMode::Balanced;
 
@@ -473,6 +514,18 @@ struct RunOptions {
     int hk_iterations = 400;
     bool verbose = false;
     bool include_instance_rows = false;
+    // Stable campaign/replicate identities. These fields make it possible to
+    // preserve common-random-number correlation across p/k cells, distinguish
+    // repeated searches on one point set, and pair cheap/strong fidelities.
+    // point_seed/search_seed fall back to solver.seed when unset, preserving
+    // the historical stream contract for existing callers and CLI commands.
+    std::string campaign_id = "default";
+    int campaign_shard = 0;
+    int replicate_offset = 0;
+    std::optional<int> point_seed;
+    std::optional<int> search_seed;
+    std::string solver_policy_id = "default";
+    std::string fidelity_level = "strong";
     // After the descending warm-start sweep over p, run a second ascending
     // sweep seeding each p from the grown best solution at the next smaller p
     // and keep the better result per p. Roughly doubles subset wall-clock.
@@ -484,6 +537,14 @@ struct RunOptions {
     std::vector<double> p_values;
     SolverOptions solver;
 };
+
+inline int effective_point_seed(const RunOptions& options) noexcept {
+    return options.point_seed.value_or(options.solver.seed);
+}
+
+inline int effective_search_seed(const RunOptions& options) noexcept {
+    return options.search_seed.value_or(options.solver.seed);
+}
 
 const char* solver_mode_name(SolverMode mode) noexcept;
 bool parse_solver_mode(const std::string& text, SolverMode& out) noexcept;

@@ -274,6 +274,24 @@ void write_restart_sa_iteration_array(
     out << ']';
 }
 
+void write_restart_strong_polished_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << (records[i].strong_polished ? "true" : "false");
+    }
+    out << ']';
+}
+
+std::string hex_u64(const std::uint64_t value) {
+    std::ostringstream out;
+    out << std::hex << std::nouppercase << std::setw(16)
+        << std::setfill('0') << value;
+    return out.str();
+}
+
 std::string summary_key(double p) {
     return p_value_key(p);
 }
@@ -314,6 +332,8 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"exact_subset_solved\": " << stats.exact_subset_solved << ",\n"
         << indent << "  \"exact_subset_states\": " << stats.exact_subset_states << ",\n"
         << indent << "  \"exact_subset_transitions\": " << stats.exact_subset_transitions << ",\n"
+        << indent << "  \"tsp_candidate_starts\": " << stats.tsp_candidate_starts << ",\n"
+        << indent << "  \"tsp_promoted_restarts\": " << stats.tsp_promoted_restarts << ",\n"
         << indent << "  \"tsp_restarts\": " << stats.tsp_restarts << ",\n"
         << indent << "  \"tsp_ils_iterations\": " << stats.tsp_ils_iterations << ",\n"
         << indent << "  \"subset_restarts\": " << stats.subset_restarts << ",\n"
@@ -325,6 +345,9 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"dense_restarts\": " << stats.dense_restarts << ",\n"
         << indent << "  \"racing_pilot_restarts\": " << stats.racing_pilot_restarts << ",\n"
         << indent << "  \"racing_promoted_restarts\": " << stats.racing_promoted_restarts << ",\n"
+        << indent << "  \"strong_polish_candidates\": " << stats.strong_polish_candidates << ",\n"
+        << indent << "  \"strong_polish_finalists\": " << stats.strong_polish_finalists << ",\n"
+        << indent << "  \"strong_polish_improvements\": " << stats.strong_polish_improvements << ",\n"
         << indent << "  \"elite_restarts\": " << stats.elite_restarts << ",\n"
         << indent << "  \"kick_restarts\": " << stats.kick_restarts << ",\n"
         << indent << "  \"elite_diversity_candidates\": " << stats.elite_diversity_candidates << ",\n"
@@ -362,8 +385,13 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"ejection_chain_scans\": " << stats.ejection_chain_scans << ",\n"
         << indent << "  \"ejection_chain_improvements\": " << stats.ejection_chain_improvements << ",\n"
         << indent << "  \"ejection_chain_accepted_depth\": " << stats.ejection_chain_accepted_depth << ",\n"
+        << indent << "  \"path_relink_pairs_considered\": " << stats.path_relink_pairs_considered << ",\n"
+        << indent << "  \"path_relink_pairs_skipped_distance\": " << stats.path_relink_pairs_skipped_distance << ",\n"
+        << indent << "  \"path_relink_pairs_skipped_budget\": " << stats.path_relink_pairs_skipped_budget << ",\n"
         << indent << "  \"path_relink_attempts\": " << stats.path_relink_attempts << ",\n"
         << indent << "  \"path_relink_feasible\": " << stats.path_relink_feasible << ",\n"
+        << indent << "  \"path_relink_removed_sum\": " << stats.path_relink_removed_sum << ",\n"
+        << indent << "  \"path_relink_candidate_scans\": " << stats.path_relink_candidate_scans << ",\n"
         << indent << "  \"path_relink_elite_insertions\": " << stats.path_relink_elite_insertions << ",\n"
         << indent << "  \"path_relink_best_improvements\": " << stats.path_relink_best_improvements << ",\n"
         << indent << "  \"path_relink_improvements\": " << stats.path_relink_improvements << ",\n";
@@ -462,6 +490,9 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
         }
         out << "\n    {\n"
             << "      \"index\": " << row.index << ",\n"
+            << "      \"replicate_id\": " << row.replicate_id << ",\n"
+            << "      \"point_stream_id\": \"" << hex_u64(row.point_stream_id) << "\",\n"
+            << "      \"search_stream_id\": \"" << hex_u64(row.search_stream_id) << "\",\n"
             << "      \"ok\": " << (row.ok ? "true" : "false") << ",\n"
             << "      \"wall_seconds\": ";
         write_json_double(out, row.wall_seconds);
@@ -503,6 +534,8 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
                 write_restart_promotion_stage_array(out, pv.restarts);
                 out << ",\n          \"restart_sa_iterations\": ";
                 write_restart_sa_iteration_array(out, pv.restarts);
+                out << ",\n          \"restart_strong_polished\": ";
+                write_restart_strong_polished_array(out, pv.restarts);
                 out << ",\n          \"restart_centroids_x\": ";
                 write_restart_double_array(out, pv.restarts,
                     [](const RestartRecord& record) { return record.centroid_x; });
@@ -585,6 +618,15 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"effective_compile_options\": \"" << json_escape(ALDOUS_TSP_BUILD_EFFECTIVE_COMPILE_OPTIONS) << "\",\n"
         << "    \"cplusplus\": " << static_cast<long long>(__cplusplus) << "\n"
         << "  },\n"
+        << "  \"campaign_metadata\": {\n"
+        << "    \"campaign_id\": \"" << json_escape(doc.options.campaign_id) << "\",\n"
+        << "    \"campaign_shard\": " << doc.options.campaign_shard << ",\n"
+        << "    \"replicate_offset\": " << doc.options.replicate_offset << ",\n"
+        << "    \"point_seed\": " << effective_point_seed(doc.options) << ",\n"
+        << "    \"search_seed\": " << effective_search_seed(doc.options) << ",\n"
+        << "    \"solver_policy_id\": \"" << json_escape(doc.options.solver_policy_id) << "\",\n"
+        << "    \"fidelity_level\": \"" << json_escape(doc.options.fidelity_level) << "\"\n"
+        << "  },\n"
         << "  \"N\": " << doc.N << ",\n"
         << "  \"done\": " << doc.instances_done << ",\n"
         << "  \"target\": " << doc.instances_target << ",\n";
@@ -617,6 +659,11 @@ std::string results_to_json(const ResultsDocument& doc) {
     write_json_double(out, doc.options.solver.grid_cell);
     out << ",\n"
         << "    \"exact_subset_max_n\": " << doc.options.solver.exact_subset_max_n << ",\n"
+        << "    \"tsp_candidate_starts\": " << doc.options.solver.tsp_candidate_starts << ",\n"
+        << "    \"tsp_farthest_starts\": " << doc.options.solver.tsp_farthest_starts << ",\n"
+        << "    \"tsp_min_edge_jaccard\": ";
+    write_json_double(out, doc.options.solver.tsp_min_edge_jaccard);
+    out << ",\n"
         << "    \"tsp_restarts\": " << doc.options.solver.tsp_restarts << ",\n"
         << "    \"tsp_ils\": " << doc.options.solver.tsp_ils << ",\n"
         << "    \"tsp_patience\": " << doc.options.solver.tsp_patience << ",\n"
@@ -629,6 +676,11 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"racing_pilot_iters\": " << doc.options.solver.racing_pilot_iters << ",\n"
         << "    \"racing_min_jaccard\": ";
     write_json_double(out, doc.options.solver.racing_min_jaccard);
+    out << ",\n"
+        << "    \"staged_search\": " << (doc.options.solver.staged_search ? "true" : "false") << ",\n"
+        << "    \"strong_polish_finalists\": " << doc.options.solver.strong_polish_finalists << ",\n"
+        << "    \"strong_polish_min_jaccard\": ";
+    write_json_double(out, doc.options.solver.strong_polish_min_jaccard);
     out << ",\n"
         << "    \"sa_iters\": " << doc.options.solver.sa_iters << ",\n"
         << "    \"sa_iters_per_k\": " << doc.options.solver.sa_iters_per_k << ",\n"
@@ -692,6 +744,11 @@ std::string results_to_json(const ResultsDocument& doc) {
     write_json_double(out, doc.options.solver.elite_quality_slack);
     out << ",\n"
         << "    \"path_relink_top\": " << doc.options.solver.path_relink_top << ",\n"
+        << "    \"path_relink_diverse_reserve\": " << doc.options.solver.path_relink_diverse_reserve << ",\n"
+        << "    \"path_relink_max_pairs\": " << doc.options.solver.path_relink_max_pairs << ",\n"
+        << "    \"path_relink_max_removed\": " << doc.options.solver.path_relink_max_removed << ",\n"
+        << "    \"path_relink_max_removed_sum\": " << doc.options.solver.path_relink_max_removed_sum << ",\n"
+        << "    \"path_relink_max_candidate_scans\": " << doc.options.solver.path_relink_max_candidate_scans << ",\n"
         << "    \"verify_knn_checks\": " << doc.options.solver.verify_knn_checks << ",\n"
         << "    \"oracle_mode\": \"" << external_oracle_mode_name(doc.options.solver.oracle.cfg.mode) << "\",\n"
         << "    \"oracle_resolved\": \"" << resolved_oracle_mode_name(doc.options.solver.oracle.resolved) << "\",\n"
@@ -718,7 +775,14 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"oracle_use_for_tsp\": " << (doc.options.solver.oracle.cfg.use_for_tsp ? "true" : "false") << ",\n"
         << "    \"oracle_use_for_subset\": " << (doc.options.solver.oracle.cfg.use_for_subset ? "true" : "false") << ",\n"
         << "    \"oracle_inline_feedback\": " << (doc.options.solver.oracle.cfg.inline_feedback ? "true" : "false") << ",\n"
-        << "    \"oracle_verbose\": " << (doc.options.solver.oracle.cfg.verbose ? "true" : "false") << "\n"
+        << "    \"oracle_verbose\": " << (doc.options.solver.oracle.cfg.verbose ? "true" : "false") << ",\n"
+        << "    \"campaign_id\": \"" << json_escape(doc.options.campaign_id) << "\",\n"
+        << "    \"campaign_shard\": " << doc.options.campaign_shard << ",\n"
+        << "    \"replicate_offset\": " << doc.options.replicate_offset << ",\n"
+        << "    \"point_seed\": " << effective_point_seed(doc.options) << ",\n"
+        << "    \"search_seed\": " << effective_search_seed(doc.options) << ",\n"
+        << "    \"solver_policy_id\": \"" << json_escape(doc.options.solver_policy_id) << "\",\n"
+        << "    \"fidelity_level\": \"" << json_escape(doc.options.fidelity_level) << "\"\n"
         << "  },\n"
         << "  \"search_stats\": ";
     write_stats(out, doc.stats, "  ");

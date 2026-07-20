@@ -208,6 +208,13 @@ Simulation:
   --instances <int>              Monte Carlo instances (default: 15)
   --threads <int>                Worker threads (default: auto; 0 = auto)
   --seed <int>                   Base random seed (default: 2024)
+  --point-seed <int>             Point-instance seed (default: --seed)
+  --search-seed <int>            Heuristic-search seed (default: --seed)
+  --campaign-id <text>           Stable campaign identity (default: default)
+  --campaign-shard <int>         Nonnegative shard identity (default: 0)
+  --replicate-offset <int>       First campaign-global replicate ID (default: 0)
+  --solver-policy-id <text>      Search-policy identity (default: default)
+  --fidelity-level <text>        Fidelity identity, e.g. cheap/strong (default: strong)
   --p-values <csv>               Comma-separated p grid, e.g. 0.02,0.05,1
   --p-range <a:b:n>              Linear p grid from a to b with n values
   --p-file <file>                Read whitespace/comma separated p values
@@ -219,8 +226,8 @@ Solver:
   --grid-cell <float>            Force grid cell size for grid KNN
   --verify-knn <int>             Sampled KNN verification checks
   --restarts <int>               Subset restarts. Values >= 1 run exactly that
-                                 many. Default: auto = 8 when p <= 0.08, else 3
-                                 (the historical effective behavior)
+                                 many. Staged-search auto = 12 when p <= 0.08,
+                                 else 5; disabling staged search restores 8/3.
   --continuation-restarts <int>  Warm restarts when a neighboring-p parent exists
                                  (default: 1)
   --continuation-policy <name>   supplemental | fixed-budget (default: supplemental).
@@ -234,6 +241,11 @@ Solver:
                                  capped at the full restart budget (default: 2000)
   --racing-min-jaccard <float>   Minimum selected-set Jaccard distance preferred
                                  between promoted candidates (default: 0.05)
+  --staged-search[=bool]         Reserve expensive post-SA neighborhoods for
+                                 promoted finalists (default: true)
+  --strong-polish-finalists <n>  Finalists receiving the strong stage (default: 3)
+  --strong-polish-min-jaccard <x>
+                                 Preferred finalist set distance (default: 0.02)
   --sa-iters <int>               Subset SA iteration budget (default: 60000)
   --sa-iters-per-k <int>         Extra SA iterations per subset element k (default: 0)
   --sa-iters-per-n <int>         Extra SA iterations per CANDIDATE point N (default: 0).
@@ -298,6 +310,12 @@ Solver:
                                  (default: 400)
   --exact-subset-max-n <int>     Globally solve subset choice and tour when N is at
                                  most this value (default: 0 = off; hard max: 18)
+  --tsp-candidate-starts <int>   Cheap deterministic TSP starts screened before
+                                 ILS promotion (default: 12)
+  --tsp-farthest-starts <0|1>    Opt into one cubic farthest-insertion pilot
+                                 (default: 0)
+  --tsp-min-edge-jaccard <x>     Preferred edge distance among promoted starts
+                                 (default: 0.02)
   --tsp-restarts <int>           Full TSP restarts (default: 5)
   --tsp-ils <int>                Full-TSP ILS perturbation iterations
   --tsp-patience <int>           Full-TSP ILS stagnation patience
@@ -325,7 +343,16 @@ Solver:
   --elite-diversity-slots <int>  Supplemental set-diverse archive slots (default: 4)
   --elite-min-jaccard <x>        Minimum Jaccard distance for diverse slots (default: 0.02)
   --elite-quality-slack <x>      Relative quality window for diverse slots (default: 0.03)
-  --path-relink-top <int>        Elite-pool path relinking width
+  --path-relink-top <int>        Literal total relinking-node cap (default: 3)
+  --path-relink-diverse-reserve <int>
+                                 Diversity-preferred slots inside that cap (default: 1)
+  --path-relink-max-pairs <int>  Ranked pair-attempt cap (default: 3; 0 unlimited)
+  --path-relink-max-removed <int>
+                                 One-way set-difference cap per pair (default: 64)
+  --path-relink-max-removed-sum <int>
+                                 Cumulative difference budget (default: 128)
+  --path-relink-max-candidate-scans <int>
+                                 Exact relinking scan budget (default: 250000)
 
 External oracle:
   --oracle <name>                none | auto | lkh | concorde (default: none)
@@ -369,6 +396,13 @@ std::string config_summary(const RunOptions& opt) {
         << ", instances=" << opt.instances
         << ", threads=" << opt.threads
         << ", seed=" << opt.solver.seed
+        << ", point_seed=" << effective_point_seed(opt)
+        << ", search_seed=" << effective_search_seed(opt)
+        << ", campaign_id=" << opt.campaign_id
+        << ", campaign_shard=" << opt.campaign_shard
+        << ", replicate_offset=" << opt.replicate_offset
+        << ", solver_policy_id=" << opt.solver_policy_id
+        << ", fidelity_level=" << opt.fidelity_level
         << ", mode=" << solver_mode_name(opt.solver.mode)
         << ", knn=" << opt.solver.knn_k
         << ", knn_backend=" << knn_backend_name(opt.solver.knn_backend)
@@ -380,6 +414,9 @@ std::string config_summary(const RunOptions& opt) {
         << ", racing_survivors=" << opt.solver.racing_survivors
         << ", racing_pilot_iters=" << opt.solver.racing_pilot_iters
         << ", racing_min_jaccard=" << opt.solver.racing_min_jaccard
+        << ", staged_search=" << (opt.solver.staged_search ? "on" : "off")
+        << ", strong_polish_finalists=" << opt.solver.strong_polish_finalists
+        << ", strong_polish_min_jaccard=" << opt.solver.strong_polish_min_jaccard
         << ", sa_iters=" << opt.solver.sa_iters
         << ", sa_iters_per_k=" << opt.solver.sa_iters_per_k
         << ", sa_iters_per_n=" << opt.solver.sa_iters_per_n
@@ -406,10 +443,19 @@ std::string config_summary(const RunOptions& opt) {
         << ", hk_iterations=" << opt.hk_iterations
         << ", exact_subset_max_n=" << opt.solver.exact_subset_max_n
         << ", tsp_restarts=" << opt.solver.tsp_restarts
+        << ", tsp_candidate_starts=" << opt.solver.tsp_candidate_starts
+        << ", tsp_farthest_starts=" << opt.solver.tsp_farthest_starts
+        << ", tsp_min_edge_jaccard=" << opt.solver.tsp_min_edge_jaccard
         << ", final_exhaustive_k=" << opt.solver.final_exhaustive_k
         << ", pair_exchange_max_k=" << opt.solver.pair_exchange_max_k
         << ", ejection_chain_starts=" << opt.solver.ejection_chain_starts
         << ", ejection_chain_depth=" << opt.solver.ejection_chain_depth
+        << ", path_relink_top=" << opt.solver.path_relink_top
+        << ", path_relink_diverse_reserve=" << opt.solver.path_relink_diverse_reserve
+        << ", path_relink_max_pairs=" << opt.solver.path_relink_max_pairs
+        << ", path_relink_max_removed=" << opt.solver.path_relink_max_removed
+        << ", path_relink_max_removed_sum=" << opt.solver.path_relink_max_removed_sum
+        << ", path_relink_max_candidate_scans=" << opt.solver.path_relink_max_candidate_scans
         << ", exhaustive_two_opt_policy=" << exhaustive_two_opt_policy_name(opt.solver.exhaustive_two_opt_policy)
         << ", oracle=" << opt.solver.oracle.status
         << ", p_values=";
@@ -429,6 +475,17 @@ bool validate_options(RunOptions& opt, std::string& err) {
     canonicalize_p_values(opt.p_values);
     if (opt.N < 3) { err = "--N must be >= 3"; return false; }
     if (opt.instances < 1) { err = "--instances must be >= 1"; return false; }
+    if (opt.campaign_shard < 0) { err = "--campaign-shard must be >= 0"; return false; }
+    if (opt.replicate_offset < 0) { err = "--replicate-offset must be >= 0"; return false; }
+    const auto valid_identity = [](const std::string& value) {
+        return !value.empty() && value.size() <= 256U
+            && std::none_of(value.begin(), value.end(), [](unsigned char ch) {
+                return ch < 0x20U || ch == 0x7fU;
+            });
+    };
+    if (!valid_identity(opt.campaign_id)) { err = "--campaign-id must be 1..256 printable characters"; return false; }
+    if (!valid_identity(opt.solver_policy_id)) { err = "--solver-policy-id must be 1..256 printable characters"; return false; }
+    if (!valid_identity(opt.fidelity_level)) { err = "--fidelity-level must be 1..256 printable characters"; return false; }
     if (opt.solver.subset_restarts < 1 && opt.solver.subset_restarts != -1) { err = "--restarts must be >= 1 (or omit it for auto)"; return false; }
     if (opt.solver.continuation_restarts < 0) { err = "--continuation-restarts must be >= 0"; return false; }
     if (opt.solver.racing_candidates < 0) { err = "--racing-candidates must be >= 0"; return false; }
@@ -439,6 +496,13 @@ bool validate_options(RunOptions& opt, std::string& err) {
         return false;
     }
     if (opt.solver.racing_pilot_iters < 0) { err = "--racing-pilot-iters must be >= 0"; return false; }
+    if (opt.solver.strong_polish_finalists < 1) { err = "--strong-polish-finalists must be >= 1"; return false; }
+    if (!std::isfinite(opt.solver.strong_polish_min_jaccard)
+        || opt.solver.strong_polish_min_jaccard < 0.0
+        || opt.solver.strong_polish_min_jaccard > 1.0) {
+        err = "--strong-polish-min-jaccard must be finite and in [0,1]";
+        return false;
+    }
     if (!std::isfinite(opt.solver.racing_min_jaccard)
         || opt.solver.racing_min_jaccard < 0.0
         || opt.solver.racing_min_jaccard > 1.0) {
@@ -451,6 +515,17 @@ bool validate_options(RunOptions& opt, std::string& err) {
         return false;
     }
     if (opt.solver.tsp_restarts < 1) { err = "--tsp-restarts must be >= 1"; return false; }
+    if (opt.solver.tsp_candidate_starts < 1) { err = "--tsp-candidate-starts must be >= 1"; return false; }
+    if (opt.solver.tsp_farthest_starts < 0 || opt.solver.tsp_farthest_starts > 1) {
+        err = "--tsp-farthest-starts must be 0 or 1";
+        return false;
+    }
+    if (!std::isfinite(opt.solver.tsp_min_edge_jaccard)
+        || opt.solver.tsp_min_edge_jaccard < 0.0
+        || opt.solver.tsp_min_edge_jaccard > 1.0) {
+        err = "--tsp-min-edge-jaccard must be finite and in [0,1]";
+        return false;
+    }
     if (opt.solver.sa_iters < 0) { err = "--sa-iters must be >= 0"; return false; }
     if (opt.solver.sa_iters_per_k < 0) { err = "--sa-iters-per-k must be >= 0"; return false; }
     if (opt.solver.sa_iters_per_n < 0) { err = "--sa-iters-per-n must be >= 0"; return false; }
@@ -503,6 +578,16 @@ bool validate_options(RunOptions& opt, std::string& err) {
         return false;
     }
     if (opt.solver.path_relink_top < 0) { err = "--path-relink-top must be >= 0"; return false; }
+    if (opt.solver.path_relink_diverse_reserve < 0) { err = "--path-relink-diverse-reserve must be >= 0"; return false; }
+    if (opt.solver.path_relink_top > 0
+        && opt.solver.path_relink_diverse_reserve > opt.solver.path_relink_top) {
+        err = "--path-relink-diverse-reserve must not exceed --path-relink-top";
+        return false;
+    }
+    if (opt.solver.path_relink_max_pairs < 0) { err = "--path-relink-max-pairs must be >= 0"; return false; }
+    if (opt.solver.path_relink_max_removed < 0) { err = "--path-relink-max-removed must be >= 0"; return false; }
+    if (opt.solver.path_relink_max_removed_sum < 0) { err = "--path-relink-max-removed-sum must be >= 0"; return false; }
+    if (opt.solver.path_relink_max_candidate_scans < 0) { err = "--path-relink-max-candidate-scans must be >= 0"; return false; }
     if (opt.solver.verify_knn_checks < 0) { err = "--verify-knn must be >= 0"; return false; }
     if (opt.solver.grid_cell < 0.0 || !std::isfinite(opt.solver.grid_cell)) { err = "--grid-cell must be finite and >= 0"; return false; }
     if (opt.solver.tsp_ils < 0) { err = "--tsp-ils must be >= 0"; return false; }
@@ -642,6 +727,7 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             if (consume_bool(handle_bool("--periodic", opt.periodic))) { continue; }
             if (consume_bool(handle_bool("--control-variate", opt.control_variate))) { continue; }
             if (consume_bool(handle_bool("--held-karp", opt.held_karp))) { continue; }
+            if (consume_bool(handle_bool("--staged-search", opt.solver.staged_search))) { continue; }
             if (consume_bool(handle_bool("--disable-two-opt", opt.solver.disable_two_opt))) { continue; }
             if (consume_bool(handle_bool("--disable-or-opt", opt.solver.disable_or_opt))) { continue; }
             if (consume_bool(handle_bool("--disable-subset-swap", opt.solver.disable_subset_swap))) { continue; }
@@ -661,6 +747,23 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
         if (flag == "--instances") { if (!parse_int_flag(i, flag, opt.instances)) { return false; } continue; }
         if (flag == "--threads") { if (!parse_int_flag(i, flag, opt.threads)) { return false; } continue; }
         if (flag == "--seed") { if (!parse_int_flag(i, flag, opt.solver.seed)) { return false; } continue; }
+        if (flag == "--point-seed") {
+            int value = 0;
+            if (!parse_int_flag(i, flag, value)) { return false; }
+            opt.point_seed = value;
+            continue;
+        }
+        if (flag == "--search-seed") {
+            int value = 0;
+            if (!parse_int_flag(i, flag, value)) { return false; }
+            opt.search_seed = value;
+            continue;
+        }
+        if (flag == "--campaign-id") { if (!value_for(i, flag, opt.campaign_id)) { return false; } continue; }
+        if (flag == "--campaign-shard") { if (!parse_int_flag(i, flag, opt.campaign_shard)) { return false; } continue; }
+        if (flag == "--replicate-offset") { if (!parse_int_flag(i, flag, opt.replicate_offset)) { return false; } continue; }
+        if (flag == "--solver-policy-id") { if (!value_for(i, flag, opt.solver_policy_id)) { return false; } continue; }
+        if (flag == "--fidelity-level") { if (!value_for(i, flag, opt.fidelity_level)) { return false; } continue; }
         if (flag == "--knn") { if (!parse_int_flag(i, flag, opt.solver.knn_k)) { return false; } continue; }
         if (flag == "--knn-backend") {
             std::string value;
@@ -716,6 +819,20 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             }
             continue;
         }
+        if (flag == "--strong-polish-finalists") {
+            if (!parse_int_flag(i, flag, opt.solver.strong_polish_finalists)) { return false; }
+            continue;
+        }
+        if (flag == "--strong-polish-min-jaccard") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.strong_polish_min_jaccard)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n",
+                             flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
         if (flag == "--cv-mc-samples") { if (!parse_int_flag(i, flag, opt.cv_mc_samples)) { return false; } continue; }
         if (flag == "--hk-iterations") { if (!parse_int_flag(i, flag, opt.hk_iterations)) { return false; } continue; }
         if (flag == "--sa-iters") { if (!parse_int_flag(i, flag, opt.solver.sa_iters)) { return false; } continue; }
@@ -745,6 +862,18 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             continue;
         }
         if (flag == "--exact-subset-max-n") { if (!parse_int_flag(i, flag, opt.solver.exact_subset_max_n)) { return false; } continue; }
+        if (flag == "--tsp-candidate-starts") { if (!parse_int_flag(i, flag, opt.solver.tsp_candidate_starts)) { return false; } continue; }
+        if (flag == "--tsp-farthest-starts") { if (!parse_int_flag(i, flag, opt.solver.tsp_farthest_starts)) { return false; } continue; }
+        if (flag == "--tsp-min-edge-jaccard") {
+            std::string value;
+            if (!value_for(i, flag, value)) { return false; }
+            if (!parse_double(value, opt.solver.tsp_min_edge_jaccard)) {
+                std::fprintf(stderr, "Invalid floating-point value for %s: %s\n",
+                             flag.c_str(), value.c_str());
+                return false;
+            }
+            continue;
+        }
         if (flag == "--tsp-restarts") { if (!parse_int_flag(i, flag, opt.solver.tsp_restarts)) { return false; } continue; }
         if (flag == "--tsp-ils") { if (!parse_int_flag(i, flag, opt.solver.tsp_ils)) { return false; } continue; }
         if (flag == "--tsp-patience") { if (!parse_int_flag(i, flag, opt.solver.tsp_patience)) { return false; } continue; }
@@ -806,6 +935,11 @@ bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test) {
             continue;
         }
         if (flag == "--path-relink-top") { if (!parse_int_flag(i, flag, opt.solver.path_relink_top)) { return false; } continue; }
+        if (flag == "--path-relink-diverse-reserve") { if (!parse_int_flag(i, flag, opt.solver.path_relink_diverse_reserve)) { return false; } continue; }
+        if (flag == "--path-relink-max-pairs") { if (!parse_int_flag(i, flag, opt.solver.path_relink_max_pairs)) { return false; } continue; }
+        if (flag == "--path-relink-max-removed") { if (!parse_int_flag(i, flag, opt.solver.path_relink_max_removed)) { return false; } continue; }
+        if (flag == "--path-relink-max-removed-sum") { if (!parse_int_flag(i, flag, opt.solver.path_relink_max_removed_sum)) { return false; } continue; }
+        if (flag == "--path-relink-max-candidate-scans") { if (!parse_int_flag(i, flag, opt.solver.path_relink_max_candidate_scans)) { return false; } continue; }
         if (flag == "--verify-knn") {
             if (!parse_int_flag(i, flag, opt.solver.verify_knn_checks)) { return false; }
             continue;

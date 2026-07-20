@@ -34,6 +34,11 @@ struct SubsetSolveRequest {
 };
 
 std::vector<int> nearest_neighbor_order(const Instance& inst, const std::vector<int>& subset, int start_index);
+// Exact nearest-unvisited construction over the complete instance. The
+// precomputed KNN row is used as a fast certificate whenever it still contains
+// an unvisited node; otherwise the implementation falls back to a complete
+// scan, preserving exact deterministic nearest-neighbor semantics.
+std::vector<int> nearest_neighbor_full_order(const Instance& inst, int start_node);
 std::vector<int> farthest_insertion_order(const Instance& inst, const std::vector<int>& subset);
 
 bool exact_small_tsp_cycle(const Instance& inst, const std::vector<int>& set_nodes, std::vector<int>& best_cycle, double& best_len);

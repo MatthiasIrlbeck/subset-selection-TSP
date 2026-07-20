@@ -46,6 +46,13 @@ public:
     // would have considered and can only add extra basins.
     [[nodiscard]] std::vector<std::vector<int>> export_relink_nodes(
         int limit, int max_removed) const;
+    // Selects at most `limit` complete entries for path relinking. Up to
+    // `diverse_reserve` positions inside that literal cap prefer supplemental
+    // set-diverse entries; any unfilled reserve is returned to the ordinary
+    // quality-ranked prefix. Returned entries retain lengths and canonical keys
+    // so the relinking controller can rank pairs without recomputation.
+    [[nodiscard]] std::vector<EliteEntry> export_relink_entries(
+        int limit, int diverse_reserve, int max_removed) const;
     [[nodiscard]] std::uint64_t diversity_candidates() const noexcept {
         return diversity_candidates_;
     }

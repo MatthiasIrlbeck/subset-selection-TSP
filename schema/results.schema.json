@@ -120,6 +120,9 @@
       "items": {
         "$ref": "#/$defs/instance_row"
       }
+    },
+    "campaign_metadata": {
+      "$ref": "#/$defs/campaign_metadata"
     }
   },
   "additionalProperties": false,
@@ -351,6 +354,23 @@
           "type": "number",
           "minimum": 0
         },
+        "tsp_candidate_starts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Cheap deterministic full-TSP starts screened before full ILS; values below tsp_restarts are raised to tsp_restarts."
+        },
+        "tsp_farthest_starts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Opt into at most one cubic farthest-insertion pilot; zero keeps the scalable nearest-neighbor default."
+        },
+        "tsp_min_edge_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred undirected-cycle-edge Jaccard distance between promoted TSP starts."
+        },
         "tsp_restarts": {
           "type": "integer",
           "minimum": 1
@@ -366,7 +386,7 @@
         "subset_restarts": {
           "type": "integer",
           "minimum": -1,
-          "description": "-1 = auto (8 when p <= 0.08, else 3); values >= 1 configure the base restart population"
+          "description": "-1 = auto (staged search: 12 when p <= 0.08, else 5; staged search disabled: 8/3); values >= 1 configure the base restart population"
         },
         "continuation_restarts": {
           "type": "integer",
@@ -399,6 +419,21 @@
           "minimum": 0,
           "maximum": 1,
           "description": "Preferred minimum selected-set Jaccard distance between promoted candidates."
+        },
+        "staged_search": {
+          "type": "boolean",
+          "description": "Run cheap exploration for every subset restart and reserve expensive deterministic neighborhoods for promoted finalists."
+        },
+        "strong_polish_finalists": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Quality-and-diversity selected core restart finalists receiving strong post-SA neighborhoods."
+        },
+        "strong_polish_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred minimum selected-set Jaccard distance between strong-polish finalists."
         },
         "sa_iters": {
           "type": "integer",
@@ -489,6 +524,31 @@
         "path_relink_top": {
           "type": "integer",
           "minimum": 0
+        },
+        "path_relink_diverse_reserve": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Diversity-preferred archive slots inside the literal path_relink_top node cap."
+        },
+        "path_relink_max_pairs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum ranked relinking pair attempts; 0 is unlimited."
+        },
+        "path_relink_max_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum one-way selected-set difference per pair; 0 is unlimited."
+        },
+        "path_relink_max_removed_sum": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cumulative one-way selected-set difference across attempted pairs; 0 is unlimited."
+        },
+        "path_relink_max_candidate_scans": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Deterministic candidate-swap scan budget across relinking pairs; 0 is unlimited."
         },
         "verify_knn_checks": {
           "type": "integer",
@@ -682,6 +742,35 @@
           "minimum": 0,
           "maximum": 18,
           "description": "Run the global exact cardinality-k subset-tour oracle when N is at most this threshold; 0 disables it."
+        },
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "campaign_shard": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replicate_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "point_seed": {
+          "type": "integer"
+        },
+        "search_seed": {
+          "type": "integer"
+        },
+        "solver_policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fidelity_level": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "additionalProperties": false
@@ -740,6 +829,14 @@
         "oracle_gain"
       ],
       "properties": {
+        "tsp_candidate_starts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tsp_promoted_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
         "tsp_restarts": {
           "type": "integer",
           "minimum": 0
@@ -785,6 +882,21 @@
         },
         "racing_promoted_restarts": {
           "description": "Raced candidates promoted to a full-depth rerun after screening.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_candidates": {
+          "description": "Eligible post-SA restart candidates considered by the staged strong-search funnel.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_finalists": {
+          "description": "Candidates promoted to subset swap, pair exchange, ruin/recreate, ejection-chain, and inline-oracle stages.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_improvements": {
+          "description": "Strong-polish finalists whose recorded restart length strictly improved.",
           "type": "integer",
           "minimum": 0
         },
@@ -937,11 +1049,31 @@
           "minimum": 0,
           "description": "Sum of accepted improving prefix depths across completed searches."
         },
+        "path_relink_pairs_considered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_pairs_skipped_distance": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_pairs_skipped_budget": {
+          "type": "integer",
+          "minimum": 0
+        },
         "path_relink_attempts": {
           "type": "integer",
           "minimum": 0
         },
         "path_relink_feasible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_removed_sum": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_candidate_scans": {
           "type": "integer",
           "minimum": 0
         },
@@ -1473,6 +1605,13 @@
             "minimum": 0
           }
         },
+        "restart_strong_polished": {
+          "type": "array",
+          "description": "Whether each recorded restart received the strong finalist neighborhood stage.",
+          "items": {
+            "type": "boolean"
+          }
+        },
         "restart_centroids_x": {
           "type": "array",
           "description": "Toroidal centroid x of each restart's subset.",
@@ -1614,6 +1753,18 @@
           "items": {
             "$ref": "#/$defs/oracle_call_record"
           }
+        },
+        "replicate_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "point_stream_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "search_stream_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
         }
       },
       "additionalProperties": false
@@ -1722,6 +1873,50 @@
           "type": "number",
           "minimum": 0,
           "description": "Elapsed worker-seconds spent in the global exact subset-tour dynamic program."
+        }
+      },
+      "additionalProperties": false
+    },
+    "campaign_metadata": {
+      "type": "object",
+      "required": [
+        "campaign_id",
+        "campaign_shard",
+        "replicate_offset",
+        "point_seed",
+        "search_seed",
+        "solver_policy_id",
+        "fidelity_level"
+      ],
+      "properties": {
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "campaign_shard": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replicate_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "point_seed": {
+          "type": "integer"
+        },
+        "search_seed": {
+          "type": "integer"
+        },
+        "solver_policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fidelity_level": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "additionalProperties": false

@@ -51,15 +51,16 @@ or Held-Karp bounds remain separate diagnostics and are not used as proof.
 
 ## Full TSP layer
 
-For `p = 1`, the solver uses a multi-restart iterated local search:
+For `p = 1`, the solver uses a screened multi-start iterated local search:
 
-1. first restart from farthest insertion,
-2. later restarts from nearest-neighbor starts,
-3. exact small-tour ordering of the already fixed node set when `k <= 16`,
-4. exhaustive 2-opt up to `--final-exhaustive-k`, otherwise KNN-candidate 2-opt with don't-look bits and reverse-KNN wakeups,
-5. Or-opt-1 reinsertion,
-6. 3-cut segment-shuffle ILS perturbations controlled by `--tsp-ils` and `--tsp-patience`,
-7. elite-pool final polishing.
+1. build `--tsp-candidate-starts` cheap deterministic candidates with exact KNN-guided nearest-unvisited construction,
+2. optionally include one cubic farthest-insertion diagnostic start through `--tsp-farthest-starts 1`,
+3. apply a common initial polish and rank candidates by length with an edge-Jaccard diversity preference,
+4. promote exactly `--tsp-restarts` candidates (or all candidates when fewer were requested),
+5. run promoted ILS searches in safe deterministic parallel waves with independent restart streams,
+6. use exact small-tour ordering of the already fixed node set when `k <= 16`,
+7. use exhaustive 2-opt up to `--final-exhaustive-k`, otherwise KNN-candidate 2-opt with don't-look bits and reverse-KNN wakeups,
+8. apply Or-opt-1, 3-cut segment-shuffle perturbations controlled by `--tsp-ils` and `--tsp-patience`, and elite-pool final polishing.
 
 The implementation intentionally keeps `--final-exhaustive-k` because sparse subset tours can need an exhaustive final local-opt check even when KNN-candidate search is faster. Candidate scoring uses batched distance evaluation; an AVX2 kernel exists behind `ALDOUS_TSP_ENABLE_NATIVE` (default OFF) with a scalar fallback. A `-march=native` build was measured ~38% slower than the default build on an AVX-512 host with GCC, so treat the native kernel as experimental and benchmark on the target machine before enabling it. Accepted 2-opt, node-move, and subset-swap moves use incremental tour mutation and local edge-cache repair.
 
@@ -77,15 +78,15 @@ Seed sources:
 
 Search stages:
 
-1. polish the seed tour,
-2. optionally run high-p reference-guided exchange descent,
-3. simulated annealing over one-for-one subset swaps,
-4. deterministic subset swap descent,
-5. two-for-two pair exchange,
-6. ruin/recreate LNS with regret repair,
-7. bounded variable-depth membership ejection chains,
-8. elite-pool path relinking between top solutions,
-9. final fixed-subset polish.
+1. construct a broad, stream-stable population of independent, continuation, and optional raced seeds,
+2. give every restart ordinary seed polishing and simulated annealing,
+3. select quality-and-Jaccard-diverse finalists separately within each controller role,
+4. give only those finalists deterministic subset-swap descent, two-for-two pair exchange, adaptive ruin/recreate LNS, and bounded variable-depth membership ejection chains,
+5. rebuild the elite archive from final restart states,
+6. rank elite pairs and run path relinking under literal node, pair, symmetric-difference, and candidate-scan budgets,
+7. apply final fixed-subset polishing.
+
+With automatic restart allocation, staged search explores 12 restarts for `p <= 0.08` and 5 otherwise, then strongly polishes three finalists by default. Disabling staged search restores the historical automatic 8/3 populations and runs the strong neighborhoods inline for every non-pilot restart.
 
 The two-for-two stage evaluates the same regret-2 repair neighborhood without rebuilding a tour for every candidate pair. For each removal pair it batches candidate-to-cycle distances, computes stable best/second-best insertion profiles, evaluates all unordered add pairs by edge deltas, and materializes only the winning repaired cycle. `pair_exchange_max_k` defaults to `5000` as a resource safety gate while production-scale memory and runtime coverage expands; `0` removes the gate.
 

@@ -25,10 +25,18 @@ import subprocess
 import sys
 
 
-def run_batch(exe, lkh, p, N, instances, runs, out):
+def run_batch(exe, lkh, p, N, instances, runs, out, metadata):
     cmd = [
         exe, "--N", str(N), "--instances", str(instances), "--p-values", f"{p:g}",
         "--periodic", "--control-variate", "--held-karp",
+        "--include-instance-rows",
+        "--campaign-id", metadata["campaign_id"],
+        "--campaign-shard", str(metadata["campaign_shard"]),
+        "--replicate-offset", str(metadata["replicate_offset"]),
+        "--point-seed", str(metadata["point_seed"]),
+        "--search-seed", str(metadata["search_seed"]),
+        "--solver-policy-id", metadata["solver_policy_id"],
+        "--fidelity-level", metadata["fidelity_level"],
         "--oracle", "lkh", "--oracle-format", "matrix", "--lkh-path", lkh,
         "--oracle-tsp-top", "1", "--oracle-subset-top", "1",
         "--oracle-max-k", "3000", "--oracle-lkh-runs", str(runs),
@@ -49,6 +57,13 @@ def main():
     ap.add_argument("--instances", type=int, default=24)
     ap.add_argument("--lkh-runs", type=int, default=10)
     ap.add_argument("--out-dir", default="torus_campaign")
+    ap.add_argument("--campaign-id", default="torus-campaign")
+    ap.add_argument("--campaign-shard", type=int, default=0)
+    ap.add_argument("--replicate-offset", type=int, default=0)
+    ap.add_argument("--point-seed", type=int, default=2024)
+    ap.add_argument("--search-seed", type=int, default=2024)
+    ap.add_argument("--solver-policy-id", default="publication")
+    ap.add_argument("--fidelity-level", default="strong")
     ap.add_argument("--f0", type=float, default=None,
                     help="f(0+) estimate; enables the alpha fit")
     ap.add_argument("--min-n", type=int, default=40,
@@ -56,6 +71,20 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="print the (p,k,N) plan without running")
     args = ap.parse_args()
+    if args.campaign_shard < 0:
+        ap.error("--campaign-shard must be nonnegative")
+    if args.replicate_offset < 0:
+        ap.error("--replicate-offset must be nonnegative")
+
+    metadata = {
+        "campaign_id": args.campaign_id,
+        "campaign_shard": args.campaign_shard,
+        "replicate_offset": args.replicate_offset,
+        "point_seed": args.point_seed,
+        "search_seed": args.search_seed,
+        "solver_policy_id": args.solver_policy_id,
+        "fidelity_level": args.fidelity_level,
+    }
 
     ps = [float(x) for x in args.ps.split(",")]
     ks = [int(x) for x in args.ks.split(",")]
@@ -79,7 +108,10 @@ def main():
     for p, k, N in plan:
         out = os.path.join(args.out_dir, f"p{p:g}_k{k}.json")
         print(f"  running p={p:g} k={k} N={N} ...", flush=True)
-        run_batch(args.exe, args.lkh_path, p, N, args.instances, args.lkh_runs, out)
+        run_batch(
+            args.exe, args.lkh_path, p, N, args.instances, args.lkh_runs,
+            out, metadata,
+        )
         files.append(out)
 
     here = os.path.dirname(os.path.abspath(__file__))
@@ -99,7 +131,8 @@ def main():
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"\nfigure: {fig}")
     print(f"For f(0+) and alpha with bootstrap confidence intervals, run:\n"
-          f"  scripts/analyze_campaign.py {args.out_dir}/*.json")
+          f"  scripts/analyze_campaign.py --solver-policy-id {args.solver_policy_id} "
+          f"--fidelity-level {args.fidelity_level} {args.out_dir}/*.json")
     if args.f0 is None:
         print("Tip: estimate f(0+) from the smallest-p intercept (or a p->0 fit of "
               "f(p)) and rerun with --f0 to fit alpha.")

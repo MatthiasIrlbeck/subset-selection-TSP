@@ -92,7 +92,7 @@ void estimate_full_bound_expectation(const RunOptions& opt, ResultsDocument& doc
     for (int s = 0; s < samples; ++s) {
         Instance inst;
         inst.periodic = opt.periodic;
-        Rng rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed),
+        Rng rng(make_stream_seed(static_cast<std::uint64_t>(effective_point_seed(opt)),
                                  0xC0DEC0DEC0DEC0DEULL,
                                  static_cast<std::uint64_t>(s) ^ 0x9E3779B97F4A7C15ULL));
         inst.generate(opt.N, rng);
@@ -140,6 +140,9 @@ void record_knn_build_stats(SearchStats& stats, const KnnBuildInfo& info) {
 
 struct CoreInstanceRunResult {
     int index = -1;
+    std::uint64_t replicate_id = 0;
+    std::uint64_t point_stream_id = 0;
+    std::uint64_t search_stream_id = 0;
     double wall_seconds = 0.0;
     std::vector<double> values;
     std::vector<std::vector<RestartRecord>> restarts;  // per p, raw typed records
@@ -159,9 +162,19 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     const auto start = Clock::now();
     CoreInstanceRunResult out;
     out.index = index;
+    out.replicate_id = static_cast<std::uint64_t>(opt.replicate_offset)
+        + static_cast<std::uint64_t>(index);
+    out.point_stream_id = make_stream_seed(
+        static_cast<std::uint64_t>(effective_point_seed(opt)),
+        out.replicate_id,
+        0x243f6a8885a308d3ULL);
+    out.search_stream_id = make_stream_seed(
+        static_cast<std::uint64_t>(effective_search_seed(opt)),
+        out.replicate_id,
+        0x13198a2e03707344ULL);
     out.values.assign(opt.p_values.size(), std::numeric_limits<double>::quiet_NaN());
 
-    Rng point_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed), static_cast<std::uint64_t>(index), 0x243f6a8885a308d3ULL));
+    Rng point_rng(out.point_stream_id);
     Instance inst;
     inst.periodic = opt.periodic;
     inst.generate(opt.N, point_rng);
@@ -177,7 +190,9 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     }
 
     if (opt.solver.verify_knn_checks > 0) {
-        Rng verify_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed), static_cast<std::uint64_t>(index), 0x13198a2e03707344ULL));
+        Rng verify_rng(make_stream_seed(out.point_stream_id,
+                                       0x9e3779b97f4a7c15ULL,
+                                       0x94d049bb133111ebULL));
         if (!inst.verify_knn(opt.solver.verify_knn_checks, verify_rng)) {
             throw std::runtime_error(
                 "KNN verification failed for instance " + std::to_string(index));
@@ -197,8 +212,8 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     for (int pi = static_cast<int>(np) - 1; pi >= 0; --pi) {
         const double p = opt.p_values[static_cast<std::size_t>(pi)];
         const int k = std::max(3, std::min(opt.N, static_cast<int>(std::llround(p * static_cast<double>(opt.N)))));
-        Rng local_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed),
-                                       static_cast<std::uint64_t>(index),
+        Rng local_rng(make_stream_seed(out.search_stream_id,
+                                       out.replicate_id,
                                        mix_hash64(static_cast<std::uint64_t>(std::llround(p * 1000000.0)))));
         const auto solve_start = Clock::now();
         SolveResult solved = solve_subset(inst, k, local_rng, opt.solver, warm.empty() ? nullptr : &warm);
@@ -242,8 +257,8 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
                 grow = sweep_nodes[pi];
                 continue;
             }
-            Rng up_rng(make_stream_seed(static_cast<std::uint64_t>(opt.solver.seed),
-                                        static_cast<std::uint64_t>(index),
+            Rng up_rng(make_stream_seed(out.search_stream_id,
+                                        out.replicate_id,
                                         mix_hash64(static_cast<std::uint64_t>(std::llround(p * 1000000.0)) ^ 0x2b7e151628aed2a6ULL)));
             const auto solve_start = Clock::now();
             SubsetSolveRequest continuation_request;
@@ -429,6 +444,9 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
             InstanceResultRow row;
             row.ok = true;
             row.index = r.index;
+            row.replicate_id = r.replicate_id;
+            row.point_stream_id = r.point_stream_id;
+            row.search_stream_id = r.search_stream_id;
             row.wall_seconds = r.wall_seconds;
             row.values = r.values;
             row.stats = r.stats;

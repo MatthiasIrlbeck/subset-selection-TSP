@@ -106,6 +106,13 @@ struct InstancePValueRow {
 struct InstanceResultRow {
     bool ok = true;
     int index = -1;
+    // Stable campaign-global point-set identity. `index` remains local to this
+    // result shard; replicate_id is offset by RunOptions::replicate_offset.
+    std::uint64_t replicate_id = 0;
+    // Deterministic 64-bit stream fingerprints. JSON emits fixed-width lower-
+    // case hexadecimal strings so JavaScript consumers do not lose precision.
+    std::uint64_t point_stream_id = 0;
+    std::uint64_t search_stream_id = 0;
     double wall_seconds = 0.0;
     std::vector<double> values;
     std::vector<InstancePValueRow> p_results;

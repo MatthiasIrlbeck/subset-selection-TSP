@@ -2007,10 +2007,10 @@ void test_restarts_flag_is_authoritative() {
                 "the solver runs exactly the requested number of subset restarts");
     }
 
-    // The AUTO default (-1) must reproduce the historical effective behavior:
-    // 8 restarts at p <= 0.08 (the seed pool used to force this) and 3 above.
-    // Honoring the flag literally with a default of 3 silently degraded
-    // default-quality at small p, which is the tool's core regime.
+    // The AUTO default broadens the exploration population under staged search:
+    // 12 restarts at p <= 0.08 and 5 above, while reserving expensive strong
+    // neighborhoods for promoted finalists. Disabling staged search restores
+    // the historical 8/3 population.
     {
         SolverOptions opt;
         opt.sa_iters = 0;
@@ -2024,10 +2024,22 @@ void test_restarts_flag_is_authoritative() {
         require(opt.subset_restarts == -1, "default restart count is auto");
         Rng rng(99u);
         const SolveResult smallp = solve_subset(inst, k, rng, opt, nullptr);  // p = 0.05
-        require(smallp.stats.subset_restarts == 8, "auto default runs 8 restarts at p <= 0.08");
+        require(smallp.stats.subset_restarts == 12,
+                "staged auto default explores 12 restarts at p <= 0.08");
         Rng rng2(99u);
         const SolveResult largep = solve_subset(inst, 90, rng2, opt, nullptr);  // p = 0.30
-        require(largep.stats.subset_restarts == 3, "auto default runs 3 restarts at p > 0.08");
+        require(largep.stats.subset_restarts == 5,
+                "staged auto default explores 5 restarts at p > 0.08");
+
+        opt.staged_search = false;
+        Rng rng3(99u);
+        const SolveResult legacy_smallp = solve_subset(inst, k, rng3, opt, nullptr);
+        require(legacy_smallp.stats.subset_restarts == 8,
+                "disabling staged search restores 8 small-p restarts");
+        Rng rng4(99u);
+        const SolveResult legacy_largep = solve_subset(inst, 90, rng4, opt, nullptr);
+        require(legacy_largep.stats.subset_restarts == 3,
+                "disabling staged search restores 3 larger-p restarts");
     }
 }
 
@@ -2212,12 +2224,27 @@ void test_best_restart_diagnostic() {
     require(tsp.restarts.size() == tsp.stats.tsp_restarts
                 && tsp.restarts.size() == 4U,
             "full TSP emits one record per executed restart");
-    require(tsp.restarts.front().kind == RestartKind::TspFarthestInsertion,
-            "the first TSP restart records farthest insertion");
-    for (std::size_t i = 1; i < tsp.restarts.size(); ++i) {
-        require(tsp.restarts[i].kind == RestartKind::TspNearestNeighbor,
-                "later TSP restarts record nearest-neighbor construction");
+    require(tsp.stats.tsp_candidate_starts
+                == static_cast<std::uint64_t>(opt.tsp_candidate_starts),
+            "full TSP records every screened candidate start");
+    require(tsp.stats.tsp_promoted_restarts == tsp.restarts.size(),
+            "full TSP records every promoted ILS restart");
+    for (const RestartRecord& record : tsp.restarts) {
+        require(record.kind == RestartKind::TspNearestNeighbor,
+                "default full-TSP starts use scalable nearest-neighbor construction");
+        require(record.strong_polished,
+                "promoted full-TSP restarts are marked strongly polished");
     }
+
+    opt.tsp_farthest_starts = 1;
+    opt.tsp_candidate_starts = opt.tsp_restarts;
+    Rng diagnostic_rng(9497);
+    const SolveResult diagnostic = solve_tsp(inst, diagnostic_rng, opt);
+    require(std::any_of(diagnostic.restarts.begin(), diagnostic.restarts.end(),
+                        [](const RestartRecord& record) {
+                            return record.kind == RestartKind::TspFarthestInsertion;
+                        }),
+            "farthest insertion remains available as an explicit diagnostic start");
 }
 
 
@@ -2684,9 +2711,11 @@ void test_second_sweep_never_worse() {
                 }
             }
             if (pv.k == base.N) {
-                require(pv.restarts[0].kind == RestartKind::TspFarthestInsertion
-                            && pv.restarts[1].kind == RestartKind::TspNearestNeighbor,
-                        "p=1 rows serialize the full-TSP restart population");
+                require(std::all_of(pv.restarts.begin(), pv.restarts.end(),
+                                    [](const RestartRecord& record) {
+                                        return record.kind == RestartKind::TspNearestNeighbor;
+                                    }),
+                        "p=1 rows serialize the promoted scalable TSP population");
             }
         }
     }
@@ -3762,6 +3791,9 @@ void test_oracle_posix_spawn_timeout_and_concurrency() {
     options.oracle = concurrent_ctx;
     options.subset_restarts = 8;
     options.restart_threads = 4;
+    // This test targets concurrent inline oracle calls rather than finalist
+    // staging, so retain the all-restarts strong-search contract explicitly.
+    options.staged_search = false;
     options.sa_iters = 0;
     options.final_exhaustive_k = 0;
     options.disable_two_opt = true;
@@ -3782,6 +3814,237 @@ void test_oracle_posix_spawn_timeout_and_concurrency() {
             "concurrent spawned oracle calls all return usable tours");
 
     std::filesystem::remove_all(dir, ec);
+}
+
+
+void test_full_nearest_neighbor_constructor() {
+    Rng rng(0x5eed1234U);
+    for (bool periodic : {false, true}) {
+        for (int trial = 0; trial < 12; ++trial) {
+            const int n = 7 + trial;
+            Instance inst;
+            inst.periodic = periodic;
+            inst.generate(n, rng);
+            // Exercise both a narrow retained row and a saturated row. The
+            // constructor must fall back to an exact scan after consuming KNN.
+            const int knn = (trial % 2 == 0) ? std::min(3, n - 1) : n - 1;
+            inst.build_knn(knn, KnnBackend::GridExact);
+            std::vector<int> all(static_cast<std::size_t>(n));
+            std::iota(all.begin(), all.end(), 0);
+            for (int start : {0, n / 2, n - 1}) {
+                const std::vector<int> expected =
+                    nearest_neighbor_order(inst, all, start);
+                const std::vector<int> actual =
+                    nearest_neighbor_full_order(inst, start);
+                require(actual == expected,
+                        "KNN-guided full-TSP construction matches exact nearest-neighbor order");
+            }
+        }
+    }
+
+    // Pin deterministic node-ID tie breaking at a symmetric point.
+    Instance tied;
+    tied.set_points({{0.0, 0.0}, {1.0, 0.0}, {-1.0, 0.0}, {0.0, 2.0}});
+    tied.build_knn(1, KnnBackend::GridExact);
+    const std::vector<int> tied_order = nearest_neighbor_full_order(tied, 0);
+    require(tied_order.size() == 4U && tied_order[1] == 1,
+            "full nearest-neighbor construction breaks equal-distance ties by node ID");
+}
+
+void test_tsp_screening_thread_invariance() {
+    Instance inst;
+    inst.periodic = true;
+    Rng generator(0x12345678U);
+    inst.generate(96, generator);
+    inst.build_knn(16, KnnBackend::GridExact);
+
+    SolverOptions serial;
+    serial.seed = 777;
+    serial.tsp_candidate_starts = 9;
+    serial.tsp_restarts = 4;
+    serial.tsp_farthest_starts = 0;
+    serial.tsp_ils = 12;
+    serial.tsp_patience = 5;
+    serial.restart_threads = 1;
+    serial.final_exhaustive_k = 0;
+
+    SolverOptions parallel = serial;
+    parallel.restart_threads = 4;
+    Rng serial_rng(9191);
+    Rng parallel_rng(9191);
+    const SolveResult a = solve_tsp(inst, serial_rng, serial);
+    const SolveResult b = solve_tsp(inst, parallel_rng, parallel);
+
+    require(a.tour.nodes == b.tour.nodes && a.tour.length == b.tour.length,
+            "screened full-TSP result is invariant to restart worker count");
+    require(a.stats.tsp_candidate_starts == 9U
+                && a.stats.tsp_promoted_restarts == 4U
+                && a.stats.tsp_restarts == 4U,
+            "full-TSP telemetry distinguishes screened and promoted starts");
+    require(a.restarts.size() == 4U && b.restarts.size() == a.restarts.size(),
+            "full-TSP emits one record per promoted candidate");
+    for (std::size_t i = 0; i < a.restarts.size(); ++i) {
+        const RestartRecord& lhs = a.restarts[i];
+        const RestartRecord& rhs = b.restarts[i];
+        require(lhs.length == rhs.length && lhs.kind == rhs.kind
+                    && lhs.role == rhs.role
+                    && lhs.seed_variant == rhs.seed_variant
+                    && lhs.strong_polished == rhs.strong_polished,
+                "screened TSP restart records are thread invariant");
+        require(lhs.kind == RestartKind::TspNearestNeighbor
+                    && lhs.role == RestartRole::RacedProduction
+                    && lhs.strong_polished,
+                "default screened TSP records scalable promoted starts");
+    }
+}
+
+void test_staged_search_funnel() {
+    Instance inst;
+    inst.periodic = true;
+    Rng generator(808080);
+    inst.generate(140, generator);
+    inst.build_knn(18, KnnBackend::GridExact);
+
+    SolverOptions staged;
+    staged.seed = 8081;
+    staged.subset_restarts = 6;
+    staged.staged_search = true;
+    staged.strong_polish_finalists = 2;
+    staged.strong_polish_min_jaccard = 0.02;
+    staged.sa_iters = 250;
+    staged.restart_threads = 3;
+    staged.final_exhaustive_k = 0;
+    staged.pair_exchange_passes = 0;
+    staged.ruin_recreate_rounds = 1;
+    staged.ejection_chain_starts = 1;
+    staged.disable_path_relink = true;
+
+    Rng staged_rng(8082);
+    const SolveResult result = solve_subset(inst, 56, staged_rng, staged);
+    require(result.stats.strong_polish_candidates == 6U,
+            "staged search records every eligible post-SA candidate");
+    require(result.stats.strong_polish_finalists == 2U,
+            "staged search strongly polishes only the configured finalists");
+    require(static_cast<std::size_t>(std::count_if(
+                result.restarts.begin(), result.restarts.end(),
+                [](const RestartRecord& record) { return record.strong_polished; })) == 2U,
+            "restart provenance identifies exactly the promoted finalists");
+
+    // Promoting every restart must reproduce the historical inline trajectory.
+    SolverOptions all_staged = staged;
+    all_staged.subset_restarts = 4;
+    all_staged.strong_polish_finalists = 4;
+    all_staged.restart_threads = 1;
+    SolverOptions inline_search = all_staged;
+    inline_search.staged_search = false;
+    Rng all_staged_rng(8083);
+    Rng inline_rng(8083);
+    const SolveResult staged_all = solve_subset(inst, 56, all_staged_rng, all_staged);
+    const SolveResult inline_all = solve_subset(inst, 56, inline_rng, inline_search);
+    require(staged_all.tour.nodes == inline_all.tour.nodes
+                && staged_all.tour.length == inline_all.tour.length,
+            "staging all candidates preserves the legacy inline result");
+    require(staged_all.restarts.size() == inline_all.restarts.size(),
+            "all-finalist staging preserves the restart population");
+    for (std::size_t i = 0; i < staged_all.restarts.size(); ++i) {
+        require(staged_all.restarts[i].length == inline_all.restarts[i].length,
+                "all-finalist staging resumes each restart from its exact RNG state");
+    }
+}
+
+void test_path_relink_literal_work_budgets() {
+    Instance inst;
+    inst.periodic = true;
+    Rng generator(91919);
+    inst.generate(180, generator);
+    inst.build_knn(20, KnnBackend::GridExact);
+
+    SolverOptions options;
+    options.seed = 91920;
+    options.subset_restarts = 7;
+    options.strong_polish_finalists = 3;
+    options.sa_iters = 100;
+    options.restart_threads = 2;
+    options.final_exhaustive_k = 0;
+    options.path_relink_top = 3;
+    options.path_relink_diverse_reserve = 1;
+    options.path_relink_max_pairs = 1;
+    options.path_relink_max_removed = 64;
+    options.path_relink_max_removed_sum = 64;
+    options.path_relink_max_candidate_scans = 200000;
+
+    Rng solve_rng(91921);
+    const SolveResult bounded = solve_subset(inst, 72, solve_rng, options);
+    require(bounded.stats.path_relink_pairs_considered <= 3U,
+            "literal path-relink node cap exposes at most choose(top,2) pairs");
+    require(bounded.stats.path_relink_attempts <= 1U,
+            "path-relink pair-attempt budget is enforced literally");
+    require(bounded.stats.path_relink_removed_sum <= 64U,
+            "path-relink cumulative symmetric-difference budget is enforced");
+    require(bounded.stats.path_relink_candidate_scans <= 200000U,
+            "path-relink candidate-scan budget is enforced");
+
+    SolverOptions blocked = options;
+    blocked.path_relink_max_candidate_scans = 1;
+    Rng blocked_rng(91921);
+    const SolveResult no_work = solve_subset(inst, 72, blocked_rng, blocked);
+    require(no_work.stats.path_relink_attempts == 0U
+                && no_work.stats.path_relink_candidate_scans == 0U,
+            "a candidate-scan budget below every ranked pair prevents relinking work");
+    require(no_work.stats.path_relink_pairs_skipped_budget > 0U,
+            "budget-rejected path-relink pairs are reported");
+}
+
+void test_campaign_stream_identity_contract() {
+    RunOptions base;
+    base.N = 10;
+    base.instances = 3;
+    base.threads = 2;
+    base.p_values = {0.5};
+    base.include_instance_rows = true;
+    base.campaign_id = "identity-test";
+    base.campaign_shard = 7;
+    base.replicate_offset = 40;
+    base.point_seed = 111;
+    base.search_seed = 222;
+    base.solver_policy_id = "exact-calibration";
+    base.fidelity_level = "strong";
+    base.solver.exact_subset_max_n = 10;
+    base.solver.restart_threads = 1;
+
+    const ResultsDocument first = ExperimentRunner(base).run();
+    RunOptions changed_search = base;
+    changed_search.search_seed = 333;
+    const ResultsDocument second = ExperimentRunner(changed_search).run();
+    RunOptions changed_points = base;
+    changed_points.point_seed = 444;
+    const ResultsDocument third = ExperimentRunner(changed_points).run();
+
+    require(first.instance_rows.size() == 3U
+                && second.instance_rows.size() == first.instance_rows.size()
+                && third.instance_rows.size() == first.instance_rows.size(),
+            "campaign identity test retains every instance row");
+    for (std::size_t i = 0; i < first.instance_rows.size(); ++i) {
+        const InstanceResultRow& a = first.instance_rows[i];
+        const InstanceResultRow& b = second.instance_rows[i];
+        const InstanceResultRow& c = third.instance_rows[i];
+        require(a.replicate_id == 40U + i,
+                "replicate IDs use the campaign-global offset");
+        require(a.point_stream_id == b.point_stream_id
+                    && a.search_stream_id != b.search_stream_id,
+                "changing only the search seed preserves point streams");
+        require(a.point_stream_id != c.point_stream_id,
+                "changing the point seed changes point streams");
+        require(a.values == b.values,
+                "exact calibration values are independent of the search seed");
+    }
+    const std::string json = results_to_json(first);
+    require(json.find("\"campaign_metadata\"") != std::string::npos
+                && json.find("\"campaign_id\": \"identity-test\"")
+                    != std::string::npos
+                && json.find("\"point_stream_id\": \"")
+                    != std::string::npos,
+            "JSON exposes campaign metadata and fixed-width stream identifiers");
 }
 
 void test_json_numeric_precision() {
@@ -3913,6 +4176,11 @@ int main(int argc, char** argv) {
     RUN_TEST(test_solver_ablation_flags_are_exact);
     RUN_TEST(test_restart_thread_invariance);
     RUN_TEST(test_best_restart_diagnostic);
+    RUN_TEST(test_full_nearest_neighbor_constructor);
+    RUN_TEST(test_tsp_screening_thread_invariance);
+    RUN_TEST(test_staged_search_funnel);
+    RUN_TEST(test_path_relink_literal_work_budgets);
+    RUN_TEST(test_campaign_stream_identity_contract);
     RUN_TEST(test_seed_resize_chain_differential);
     RUN_TEST(test_continuation_stream_contract);
     RUN_TEST(test_deterministic_restart_racing);

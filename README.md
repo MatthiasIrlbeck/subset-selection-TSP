@@ -14,16 +14,16 @@ The project is organized as a reusable C++17 library plus a thin command-line ap
 - batched distance scoring, including an AVX2 kernel behind `ALDOUS_TSP_ENABLE_NATIVE` (off by default) and a scalar fallback; the native build was measured *slower* than the default build on an AVX-512 host with GCC (downclocking/codegen effects), so benchmark on your target before enabling it
 - incremental tour mutation operations for 2-opt, node moves, and subset swaps
 - collision-safe elite-pool deduplication using canonical keys
-- full-TSP multi-restart ILS with farthest insertion, nearest-neighbor starts, 3-cut perturbations, 2-opt, and Or-opt-1
+- full-TSP candidate screening with scalable nearest-neighbor starts, optional farthest insertion, deterministic diversity-aware promotion, parallel ILS, 3-cut perturbations, 2-opt, and Or-opt-1
 - subset simulated annealing with KNN-guided swap candidates
 - optional global exact cardinality-`k` subset-and-tour dynamic program for `N <= 18`, disabled by default
 - small-p spatial/dense seed pools
 - high-p deletion seeds and high-p reference-guided exchange descent
-- deterministic subset swap descent, two-for-two pair exchange, ruin/recreate LNS, and elite path relinking
+- a staged subset-search funnel, deterministic subset swap descent, two-for-two pair exchange, ruin/recreate LNS, ejection chains, and budgeted elite path relinking
 - fixed simulated-annealing temperature schedule
 - optional exhaustive final 2-opt threshold for small tours; by default exhaustive 2-opt is final-only rather than used in every polishing pass
 - configurable p-grid via `--p-values`, `--p-range`, or `--p-file`
-- atomic JSON output with schema-versioned metadata and search statistics
+- atomic JSON output with schema-versioned metadata, stable campaign/replicate identities, and search statistics
 - CTest unit tests, CLI smoke tests, Python regression tests, sanitizer-compatible build, and strict JSON schema validation
 - plotting utility and CSV summary export
 - optional external LKH/Concorde oracle post-processing with timeout, tour validation, fake-oracle tests, and top-N elite polishing

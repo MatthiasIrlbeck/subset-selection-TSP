@@ -121,6 +121,87 @@ std::vector<SeedCandidate> select_continuation_candidates(
     return selected;
 }
 
+int sorted_set_removed_count(const std::vector<int>& lhs,
+                             const std::vector<int>& rhs) noexcept {
+    std::size_t li = 0U;
+    std::size_t ri = 0U;
+    int intersection = 0;
+    while (li < lhs.size() && ri < rhs.size()) {
+        if (lhs[li] < rhs[ri]) {
+            ++li;
+        } else if (rhs[ri] < lhs[li]) {
+            ++ri;
+        } else {
+            ++intersection;
+            ++li;
+            ++ri;
+        }
+    }
+    return static_cast<int>(lhs.size()) - intersection;
+}
+
+std::vector<std::uint64_t> canonical_undirected_edges(
+    const std::vector<int>& cycle) {
+    std::vector<std::uint64_t> edges;
+    edges.reserve(cycle.size());
+    for (std::size_t i = 0; i < cycle.size(); ++i) {
+        const std::uint32_t a = static_cast<std::uint32_t>(
+            std::min(cycle[i], cycle[(i + 1U) % cycle.size()]));
+        const std::uint32_t b = static_cast<std::uint32_t>(
+            std::max(cycle[i], cycle[(i + 1U) % cycle.size()]));
+        edges.push_back((static_cast<std::uint64_t>(a) << 32U)
+                        | static_cast<std::uint64_t>(b));
+    }
+    std::sort(edges.begin(), edges.end());
+    return edges;
+}
+
+double cycle_edge_jaccard_distance(const std::vector<int>& lhs,
+                                   const std::vector<int>& rhs) {
+    const std::vector<std::uint64_t> left = canonical_undirected_edges(lhs);
+    const std::vector<std::uint64_t> right = canonical_undirected_edges(rhs);
+    std::size_t li = 0U;
+    std::size_t ri = 0U;
+    std::size_t intersection = 0U;
+    while (li < left.size() && ri < right.size()) {
+        if (left[li] < right[ri]) {
+            ++li;
+        } else if (right[ri] < left[li]) {
+            ++ri;
+        } else {
+            ++intersection;
+            ++li;
+            ++ri;
+        }
+    }
+    const std::size_t edge_union = left.size() + right.size() - intersection;
+    return edge_union == 0U
+        ? 0.0
+        : 1.0 - static_cast<double>(intersection)
+                    / static_cast<double>(edge_union);
+}
+
+std::uint64_t estimated_bidirectional_relink_scans(const int removed) noexcept {
+    if (removed <= 0) { return 0U; }
+    // Two directions, each evaluating r^2 candidate swaps for r=d..1:
+    // 2 * sum(r^2) = d(d+1)(2d+1)/3. Divide before multiplying and saturate.
+    std::uint64_t a = static_cast<std::uint64_t>(removed);
+    std::uint64_t b = a + 1U;
+    std::uint64_t c = 2U * a + 1U;
+    if (a % 3U == 0U) {
+        a /= 3U;
+    } else if (b % 3U == 0U) {
+        b /= 3U;
+    } else {
+        c /= 3U;
+    }
+    constexpr std::uint64_t max = std::numeric_limits<std::uint64_t>::max();
+    if (a != 0U && b > max / a) { return max; }
+    const std::uint64_t ab = a * b;
+    if (ab != 0U && c > max / ab) { return max; }
+    return ab * c;
+}
+
 void record_subset_restart_kind(SearchStats& stats, RestartKind kind) noexcept {
     switch (kind) {
         case RestartKind::Random: ++stats.random_restarts; break;
@@ -179,6 +260,15 @@ SolveResult solve_subset(const Instance& inst,
         || options.racing_min_jaccard > 1.0) {
         throw std::invalid_argument("racing_min_jaccard must be finite and in [0,1]");
     }
+    if (options.strong_polish_finalists < 1) {
+        throw std::invalid_argument("strong_polish_finalists must be >= 1");
+    }
+    if (!std::isfinite(options.strong_polish_min_jaccard)
+        || options.strong_polish_min_jaccard < 0.0
+        || options.strong_polish_min_jaccard > 1.0) {
+        throw std::invalid_argument(
+            "strong_polish_min_jaccard must be finite and in [0,1]");
+    }
     if (options.racing_candidates > 0 && options.time_budget_per_p > 0.0) {
         throw std::invalid_argument(
             "deterministic restart racing is incompatible with time_budget_per_p");
@@ -194,6 +284,14 @@ SolveResult solve_subset(const Instance& inst,
     if (!std::isfinite(options.elite_quality_slack)
         || options.elite_quality_slack < 0.0) {
         throw std::invalid_argument("elite_quality_slack must be finite and >= 0");
+    }
+    if (options.path_relink_top < 0
+        || options.path_relink_diverse_reserve < 0
+        || options.path_relink_max_pairs < 0
+        || options.path_relink_max_removed < 0
+        || options.path_relink_max_removed_sum < 0
+        || options.path_relink_max_candidate_scans < 0) {
+        throw std::invalid_argument("path-relink limits must be >= 0");
     }
     if (options.ejection_chain_starts < 0
         || options.ejection_chain_depth < 0
@@ -212,7 +310,9 @@ SolveResult solve_subset(const Instance& inst,
     // independent draw or worsen the best-of-restarts result.
     const int resolved_restarts = options.subset_restarts >= 1
         ? options.subset_restarts
-        : (p <= 0.08 ? 8 : 3);
+        : (options.staged_search
+               ? (p <= 0.08 ? 12 : 5)
+               : (p <= 0.08 ? 8 : 3));
     const bool has_warm = warm_start != nullptr && !warm_start->empty();
     if (request.continuation_only && !has_warm) {
         throw std::invalid_argument("continuation-only subset solve requires a warm start");
@@ -478,7 +578,9 @@ SolveResult solve_subset(const Instance& inst,
     struct RestartOutcome {
         std::vector<int> nodes;
         RestartRecord record;
+        Rng rng_state;
         bool elite_seed = false;
+        bool strong_eligible = false;
         SearchStats stats;
     };
 
@@ -746,27 +848,33 @@ SolveResult solve_subset(const Instance& inst,
             ScopedPhaseTimer phase_timer(out.stats.phases.post_sa_polish_seconds);
             polish_tour(tour, inst, options, &out.stats, pilot_only ? 1 : 2);
         }
-        if (!pilot_only && !options.disable_subset_swap) {
+        const bool run_strong_inline = !pilot_only && !options.staged_search;
+        if (run_strong_inline && !options.disable_subset_swap) {
             ScopedPhaseTimer phase_timer(out.stats.phases.subset_swap_seconds);
-            subset_swap_descent_impl(tour, inst, options.subset_swap_descent_passes, !options.disable_two_opt, &out.stats);
+            subset_swap_descent_impl(tour, inst, options.subset_swap_descent_passes,
+                                     !options.disable_two_opt, &out.stats);
             polish_tour(tour, inst, options, &out.stats, 1);
         }
-        if (!pilot_only && !options.disable_pair_exchange) {
+        if (run_strong_inline && !options.disable_pair_exchange) {
             ScopedPhaseTimer phase_timer(out.stats.phases.pair_exchange_seconds);
-            subset_pair_exchange_descent(tour, inst, rrng, options, &out.stats, options.pair_exchange_passes);
+            subset_pair_exchange_descent(tour, inst, rrng, options, &out.stats,
+                                          options.pair_exchange_passes);
         }
-        if (!pilot_only && !options.disable_ruin_recreate) {
+        if (run_strong_inline && !options.disable_ruin_recreate) {
             ScopedPhaseTimer phase_timer(out.stats.phases.ruin_recreate_seconds);
-            subset_ruin_recreate_lns(tour, inst, rrng, options, &out.stats, options.ruin_recreate_rounds);
+            subset_ruin_recreate_lns(tour, inst, rrng, options, &out.stats,
+                                     options.ruin_recreate_rounds);
         }
-        if (!pilot_only && !options.disable_ejection_chain) {
+        if (run_strong_inline && !options.disable_ejection_chain) {
             ScopedPhaseTimer phase_timer(out.stats.phases.ejection_chain_seconds);
             (void)subset_ejection_chain_search(tour, inst, rrng, options,
                                                &out.stats);
         }
-        if (!pilot_only && options.oracle.cfg.inline_feedback) {
+        if (run_strong_inline && options.oracle.cfg.inline_feedback) {
             ScopedPhaseTimer phase_timer(out.stats.phases.oracle_seconds);
-            (void)external_oracle_polish_tour(tour, inst, options.oracle, false, &out.stats, !options.disable_two_opt);
+            (void)external_oracle_polish_tour(
+                tour, inst, options.oracle, false, &out.stats,
+                !options.disable_two_opt);
         }
         out.nodes = tour.nodes;
         out.record = make_restart_record(inst, out.nodes, tour.length, kind);
@@ -774,22 +882,43 @@ SolveResult solve_subset(const Instance& inst,
         out.record.seed_variant = seed_variant;
         out.record.promotion_stage = promotion_stage;
         out.record.sa_iterations = static_cast<std::uint64_t>(restart_sa_iters);
+        out.record.strong_polished = run_strong_inline;
+        out.rng_state = rrng;
+        out.strong_eligible = !pilot_only;
         return out;
+    };
+
+    struct StagedCandidate {
+        std::size_t record_index = 0U;
+        std::vector<int> nodes;
+        Rng rng_state;
     };
 
     int launched = 0;
     bool kick_snapshot_taken = false;
     double best_outcome_len = std::numeric_limits<double>::infinity();
     std::vector<RestartOutcome> outcomes;
+    std::vector<std::vector<int>> restart_nodes;
+    std::vector<StagedCandidate> staged_candidates;
     auto merge_outcome = [&](RestartOutcome& outcome) {
         result.stats.add(outcome.stats);
         elite.try_add(outcome.nodes, outcome.record.length);
         ++result.stats.subset_restarts;
         record_subset_restart_kind(result.stats, outcome.record.kind);
+        const std::size_t record_index = result.restarts.size();
         result.restarts.push_back(outcome.record);
+        restart_nodes.push_back(outcome.nodes);
+        if (options.staged_search && outcome.strong_eligible) {
+            StagedCandidate staged;
+            staged.record_index = record_index;
+            staged.nodes = outcome.nodes;
+            staged.rng_state = outcome.rng_state;
+            staged_candidates.push_back(std::move(staged));
+            ++result.stats.strong_polish_candidates;
+        }
         if (outcome.record.length < best_outcome_len - kImprovementEps) {
             best_outcome_len = outcome.record.length;
-            result.best_restart = static_cast<int>(result.restarts.size()) - 1;
+            result.best_restart = static_cast<int>(record_index);
         }
     };
     for (;;) {
@@ -950,34 +1079,377 @@ SolveResult solve_subset(const Instance& inst,
         }
     }
 
-    if (!options.disable_path_relink) {
+    if (options.staged_search && !staged_candidates.empty()) {
+        std::vector<unsigned char> membership(static_cast<std::size_t>(inst.N), 0U);
+        auto jaccard_distance = [&](const std::vector<int>& lhs,
+                                    const std::vector<int>& rhs) {
+            for (const int node : lhs) {
+                membership[static_cast<std::size_t>(node)] = 1U;
+            }
+            int intersection = 0;
+            for (const int node : rhs) {
+                intersection += membership[static_cast<std::size_t>(node)] != 0U ? 1 : 0;
+            }
+            for (const int node : lhs) {
+                membership[static_cast<std::size_t>(node)] = 0U;
+            }
+            const int set_union = static_cast<int>(lhs.size() + rhs.size()) - intersection;
+            return set_union > 0
+                ? 1.0 - static_cast<double>(intersection) / static_cast<double>(set_union)
+                : 0.0;
+        };
+
+        auto select_diverse = [&](std::vector<std::size_t> pool,
+                                  const int requested) {
+            const int target = std::min(requested, static_cast<int>(pool.size()));
+            std::stable_sort(pool.begin(), pool.end(), [&](const std::size_t lhs,
+                                                            const std::size_t rhs) {
+                const RestartRecord& a = result.restarts[
+                    staged_candidates[lhs].record_index];
+                const RestartRecord& b = result.restarts[
+                    staged_candidates[rhs].record_index];
+                if (a.length != b.length) { return a.length < b.length; }
+                if (a.role != b.role) {
+                    return restart_role_code(a.role) < restart_role_code(b.role);
+                }
+                if (a.kind != b.kind) {
+                    return restart_kind_code(a.kind) < restart_kind_code(b.kind);
+                }
+                if (a.seed_variant != b.seed_variant) {
+                    return a.seed_variant < b.seed_variant;
+                }
+                return staged_candidates[lhs].record_index
+                       < staged_candidates[rhs].record_index;
+            });
+
+            std::vector<std::size_t> selected;
+            selected.reserve(static_cast<std::size_t>(target));
+            for (const std::size_t candidate : pool) {
+                bool diverse = true;
+                for (const std::size_t prior : selected) {
+                    if (jaccard_distance(staged_candidates[candidate].nodes,
+                                         staged_candidates[prior].nodes)
+                        + kDistanceEps < options.strong_polish_min_jaccard) {
+                        diverse = false;
+                        break;
+                    }
+                }
+                if (diverse) {
+                    selected.push_back(candidate);
+                    if (static_cast<int>(selected.size()) == target) { break; }
+                }
+            }
+            // Diversity is a preference; never leave a configured finalist slot
+            // idle when a quality-ranked candidate remains available.
+            for (const std::size_t candidate : pool) {
+                if (static_cast<int>(selected.size()) == target) { break; }
+                if (std::find(selected.begin(), selected.end(), candidate)
+                    == selected.end()) {
+                    selected.push_back(candidate);
+                }
+            }
+            return selected;
+        };
+
+        std::vector<std::size_t> core_pool;
+        std::vector<std::size_t> continuation_pool;
+        std::vector<std::size_t> raced_pool;
+        for (std::size_t i = 0; i < staged_candidates.size(); ++i) {
+            const RestartRole role = result.restarts[
+                staged_candidates[i].record_index].role;
+            if (role == RestartRole::RacedProduction) {
+                raced_pool.push_back(i);
+            } else if (role == RestartRole::Continuation) {
+                continuation_pool.push_back(i);
+            } else {
+                core_pool.push_back(i);
+            }
+        }
+
+        std::vector<std::size_t> finalists;
+        auto append_unique = [&](const std::vector<std::size_t>& chosen) {
+            for (const std::size_t candidate : chosen) {
+                if (std::find(finalists.begin(), finalists.end(), candidate)
+                    == finalists.end()) {
+                    finalists.push_back(candidate);
+                }
+            }
+        };
+        if (request.continuation_only) {
+            std::vector<std::size_t> all(staged_candidates.size());
+            std::iota(all.begin(), all.end(), 0U);
+            append_unique(select_diverse(std::move(all),
+                                         options.strong_polish_finalists));
+        } else if (options.continuation_policy == ContinuationPolicy::FixedBudget) {
+            core_pool.insert(core_pool.end(), continuation_pool.begin(),
+                             continuation_pool.end());
+            append_unique(select_diverse(std::move(core_pool),
+                                         options.strong_polish_finalists));
+        } else {
+            // Supplemental continuation and racing cannot displace the stable
+            // independent population. They receive small explicit finalist
+            // reserves in addition to the configured core quota.
+            append_unique(select_diverse(std::move(core_pool),
+                                         options.strong_polish_finalists));
+            append_unique(select_diverse(std::move(continuation_pool), 1));
+        }
+        append_unique(select_diverse(
+            std::move(raced_pool), std::max(1, options.racing_survivors)));
+        std::stable_sort(finalists.begin(), finalists.end(),
+                         [&](const std::size_t lhs, const std::size_t rhs) {
+            return staged_candidates[lhs].record_index
+                   < staged_candidates[rhs].record_index;
+        });
+
+        struct StrongOutcome {
+            std::size_t staged_index = 0U;
+            std::vector<int> nodes;
+            RestartRecord record;
+            SearchStats stats;
+        };
+        std::vector<StrongOutcome> strong_outcomes(finalists.size());
+        auto run_strong = [&](const std::size_t staged_index) {
+            StrongOutcome out;
+            out.staged_index = staged_index;
+            const StagedCandidate& candidate = staged_candidates[staged_index];
+            const RestartRecord old_record = result.restarts[candidate.record_index];
+            Tour tour;
+            tour.init(inst.N);
+            tour.set_tour(candidate.nodes, inst);
+            // Resume the exact incrementally maintained value and RNG state at
+            // the post-SA boundary. With every candidate promoted, this is
+            // bit-equivalent to the legacy inline strong-search path.
+            tour.length = old_record.length;
+            Rng strong_rng = candidate.rng_state;
+            if (!options.disable_subset_swap) {
+                ScopedPhaseTimer phase_timer(out.stats.phases.subset_swap_seconds);
+                subset_swap_descent_impl(tour, inst,
+                                         options.subset_swap_descent_passes,
+                                         !options.disable_two_opt, &out.stats);
+                polish_tour(tour, inst, options, &out.stats, 1);
+            }
+            if (!options.disable_pair_exchange) {
+                ScopedPhaseTimer phase_timer(out.stats.phases.pair_exchange_seconds);
+                subset_pair_exchange_descent(tour, inst, strong_rng, options,
+                                              &out.stats,
+                                              options.pair_exchange_passes);
+            }
+            if (!options.disable_ruin_recreate) {
+                ScopedPhaseTimer phase_timer(out.stats.phases.ruin_recreate_seconds);
+                subset_ruin_recreate_lns(tour, inst, strong_rng, options,
+                                         &out.stats,
+                                         options.ruin_recreate_rounds);
+            }
+            if (!options.disable_ejection_chain) {
+                ScopedPhaseTimer phase_timer(out.stats.phases.ejection_chain_seconds);
+                (void)subset_ejection_chain_search(tour, inst, strong_rng,
+                                                   options, &out.stats);
+            }
+            if (options.oracle.cfg.inline_feedback) {
+                ScopedPhaseTimer phase_timer(out.stats.phases.oracle_seconds);
+                (void)external_oracle_polish_tour(
+                    tour, inst, options.oracle, false, &out.stats,
+                    !options.disable_two_opt);
+            }
+            if (tour.length > old_record.length + kImprovementEps) {
+                throw std::logic_error("strong polish worsened a restart");
+            }
+            out.nodes = tour.nodes;
+            out.record = make_restart_record(inst, out.nodes, tour.length,
+                                             old_record.kind);
+            out.record.role = old_record.role;
+            out.record.seed_variant = old_record.seed_variant;
+            out.record.promotion_stage = old_record.promotion_stage;
+            out.record.sa_iterations = old_record.sa_iterations;
+            out.record.strong_polished = true;
+            out.stats.strong_polish_finalists = 1;
+            if (tour.length < old_record.length - kImprovementEps) {
+                out.stats.strong_polish_improvements = 1;
+            }
+            return out;
+        };
+
+        for (int begin = 0; begin < static_cast<int>(finalists.size());
+             begin += restart_threads) {
+            const int wave = std::min(restart_threads,
+                                      static_cast<int>(finalists.size()) - begin);
+            detail::run_parallel_indexed(wave, [&](const int offset) {
+                const int position = begin + offset;
+                strong_outcomes[static_cast<std::size_t>(position)] =
+                    run_strong(finalists[static_cast<std::size_t>(position)]);
+            });
+        }
+        for (StrongOutcome& outcome : strong_outcomes) {
+            const StagedCandidate& candidate = staged_candidates[outcome.staged_index];
+            result.stats.add(outcome.stats);
+            result.restarts[candidate.record_index] = outcome.record;
+            restart_nodes[candidate.record_index] = outcome.nodes;
+        }
+
+        // Rebuild the archive from each restart's final stage. This prevents a
+        // finalist's weaker pre-polish snapshot from occupying an elite or
+        // relinking slot alongside its refined version.
+        const std::uint64_t early_diversity_candidates = elite.diversity_candidates();
+        const std::uint64_t early_diversity_retained = elite.diversity_retained();
+        const std::uint64_t early_diversity_rejected = elite.diversity_rejected();
+        ElitePool final_elite(std::max(8, total_restarts + 8),
+                              EliteMode::Set,
+                              options.elite_diversity_slots,
+                              options.elite_min_jaccard,
+                              options.elite_quality_slack);
+        for (std::size_t i = 0; i < result.restarts.size(); ++i) {
+            final_elite.try_add(restart_nodes[i], result.restarts[i].length);
+        }
+        result.stats.elite_diversity_candidates += early_diversity_candidates;
+        result.stats.elite_diversity_retained += early_diversity_retained;
+        result.stats.elite_diversity_rejected += early_diversity_rejected;
+        elite = std::move(final_elite);
+
+        best_outcome_len = std::numeric_limits<double>::infinity();
+        result.best_restart = -1;
+        for (std::size_t i = 0; i < result.restarts.size(); ++i) {
+            if (result.restarts[i].length < best_outcome_len - kImprovementEps) {
+                best_outcome_len = result.restarts[i].length;
+                result.best_restart = static_cast<int>(i);
+            }
+        }
+    }
+
+    if (!options.disable_path_relink && options.path_relink_top >= 2) {
         ScopedPhaseTimer phase_timer(result.stats.phases.path_relink_seconds);
         Rng relink_rng(make_stream_seed(solve_stream_base,
                                         0x510e527fade682d1ULL,
                                         0x1f83d9abfb41bd6bULL));
-        auto elite_nodes = elite.export_relink_nodes(
-            std::max(0, options.path_relink_top), kPathRelinkMaxDiff);
-        const int top = static_cast<int>(elite_nodes.size());
-        for (int i = 0; i < top; ++i) {
-            for (int j = i + 1; j < top; ++j) {
-                std::vector<int> rel_nodes;
-                double rel_len = std::numeric_limits<double>::infinity();
-                if (subset_path_relink_bidirectional(inst, elite_nodes[static_cast<std::size_t>(i)], elite_nodes[static_cast<std::size_t>(j)], relink_rng, options, rel_nodes, rel_len, &result.stats)) {
-                    const auto before_entries = elite.entries().size();
-                    const double before_best = elite.entries().empty() ? std::numeric_limits<double>::infinity() : elite.entries().front().length;
-                    const double before_worst = elite.entries().empty() ? std::numeric_limits<double>::infinity() : elite.entries().back().length;
-                    elite.try_add(rel_nodes, rel_len);
-                    const auto after_entries = elite.entries().size();
-                    const double after_best = elite.entries().empty() ? std::numeric_limits<double>::infinity() : elite.entries().front().length;
-                    if (after_entries > before_entries || rel_len < before_worst - kImprovementEps) {
-                        ++result.stats.path_relink_elite_insertions;
-                    }
-                    if (after_best < before_best - kImprovementEps) {
-                        ++result.stats.path_relink_best_improvements;
-                        ++result.stats.path_relink_improvements;
-                    }
+        const std::vector<EliteEntry> relink_entries = elite.export_relink_entries(
+            options.path_relink_top,
+            options.path_relink_diverse_reserve,
+            options.path_relink_max_removed);
+
+        struct PairCandidate {
+            int first = -1;
+            int second = -1;
+            int removed = 0;
+            std::uint64_t estimated_scans = 0U;
+            double utility = -std::numeric_limits<double>::infinity();
+            double worst_length = std::numeric_limits<double>::infinity();
+        };
+        std::vector<PairCandidate> pairs;
+        const double best_length = relink_entries.empty()
+            ? std::numeric_limits<double>::infinity()
+            : relink_entries.front().length;
+        for (int i = 0; i < static_cast<int>(relink_entries.size()); ++i) {
+            for (int j = i + 1; j < static_cast<int>(relink_entries.size()); ++j) {
+                ++result.stats.path_relink_pairs_considered;
+                const EliteEntry& a = relink_entries[static_cast<std::size_t>(i)];
+                const EliteEntry& b = relink_entries[static_cast<std::size_t>(j)];
+                const int removed = sorted_set_removed_count(
+                    a.canonical_key, b.canonical_key);
+                if (removed == 0
+                    || (options.path_relink_max_removed > 0
+                        && removed > options.path_relink_max_removed)) {
+                    ++result.stats.path_relink_pairs_skipped_distance;
+                    continue;
+                }
+                const std::uint64_t estimated_scans =
+                    estimated_bidirectional_relink_scans(removed);
+                const double set_union = static_cast<double>(a.nodes.size())
+                    + static_cast<double>(removed);
+                const double set_distance = set_union > 0.0
+                    ? 2.0 * static_cast<double>(removed) / set_union
+                    : 0.0;
+                const double edge_distance = cycle_edge_jaccard_distance(
+                    a.nodes, b.nodes);
+                const double scale = std::max(std::fabs(best_length), kDistanceEps);
+                const double quality_gap = std::max(
+                    0.0, (0.5 * (a.length + b.length) - best_length) / scale);
+                const double work_penalty = 1.0
+                    + static_cast<double>(estimated_scans) / 100000.0;
+                const double anchor_bonus = (i == 0 || j == 0) ? 1.20 : 1.0;
+                PairCandidate pair;
+                pair.first = i;
+                pair.second = j;
+                pair.removed = removed;
+                pair.estimated_scans = estimated_scans;
+                pair.worst_length = std::max(a.length, b.length);
+                pair.utility = anchor_bonus * (set_distance + 0.5 * edge_distance)
+                    / ((1.0 + 50.0 * quality_gap) * work_penalty);
+                pairs.push_back(pair);
+            }
+        }
+        std::stable_sort(pairs.begin(), pairs.end(), [](const PairCandidate& lhs,
+                                                        const PairCandidate& rhs) {
+            if (lhs.utility != rhs.utility) { return lhs.utility > rhs.utility; }
+            if (lhs.worst_length != rhs.worst_length) {
+                return lhs.worst_length < rhs.worst_length;
+            }
+            if (lhs.estimated_scans != rhs.estimated_scans) {
+                return lhs.estimated_scans < rhs.estimated_scans;
+            }
+            if (lhs.first != rhs.first) { return lhs.first < rhs.first; }
+            return lhs.second < rhs.second;
+        });
+
+        int selected_pairs = 0;
+        std::uint64_t removed_sum = 0U;
+        std::uint64_t estimated_scan_sum = 0U;
+        for (const PairCandidate& pair : pairs) {
+            const bool exceeds_pairs = options.path_relink_max_pairs > 0
+                && selected_pairs >= options.path_relink_max_pairs;
+            const std::uint64_t pair_removed =
+                static_cast<std::uint64_t>(pair.removed);
+            const std::uint64_t removed_limit =
+                static_cast<std::uint64_t>(options.path_relink_max_removed_sum);
+            const bool exceeds_removed = options.path_relink_max_removed_sum > 0
+                && (pair_removed > removed_limit
+                    || removed_sum > removed_limit - pair_removed);
+            const bool exceeds_scans = options.path_relink_max_candidate_scans > 0
+                && (pair.estimated_scans
+                        > static_cast<std::uint64_t>(options.path_relink_max_candidate_scans)
+                    || estimated_scan_sum
+                        > static_cast<std::uint64_t>(options.path_relink_max_candidate_scans)
+                            - pair.estimated_scans);
+            if (exceeds_pairs || exceeds_removed || exceeds_scans) {
+                ++result.stats.path_relink_pairs_skipped_budget;
+                continue;
+            }
+            ++selected_pairs;
+            removed_sum += static_cast<std::uint64_t>(pair.removed);
+            estimated_scan_sum += pair.estimated_scans;
+
+            std::vector<int> rel_nodes;
+            double rel_len = std::numeric_limits<double>::infinity();
+            if (subset_path_relink_bidirectional(
+                    inst,
+                    relink_entries[static_cast<std::size_t>(pair.first)].nodes,
+                    relink_entries[static_cast<std::size_t>(pair.second)].nodes,
+                    relink_rng, options, rel_nodes, rel_len, &result.stats)) {
+                const auto before_entries = elite.entries().size();
+                const double before_best = elite.entries().empty()
+                    ? std::numeric_limits<double>::infinity()
+                    : elite.entries().front().length;
+                const double before_worst = elite.entries().empty()
+                    ? std::numeric_limits<double>::infinity()
+                    : elite.entries().back().length;
+                elite.try_add(rel_nodes, rel_len);
+                const auto after_entries = elite.entries().size();
+                const double after_best = elite.entries().empty()
+                    ? std::numeric_limits<double>::infinity()
+                    : elite.entries().front().length;
+                if (after_entries > before_entries
+                    || rel_len < before_worst - kImprovementEps) {
+                    ++result.stats.path_relink_elite_insertions;
+                }
+                if (after_best < before_best - kImprovementEps) {
+                    ++result.stats.path_relink_best_improvements;
+                    ++result.stats.path_relink_improvements;
                 }
             }
+        }
+        result.stats.path_relink_removed_sum += removed_sum;
+        if (options.path_relink_max_candidate_scans > 0
+            && result.stats.path_relink_candidate_scans
+                > static_cast<std::uint64_t>(options.path_relink_max_candidate_scans)) {
+            throw std::logic_error("path relinking exceeded its candidate-scan budget");
         }
     }
 

@@ -62,7 +62,8 @@ def valid_json(path):
         return False
 
 
-def run_batch(exe, out, base_args, oracle_args, restarts_if_builtin, timeout, logf, tag):
+def run_batch(exe, out, base_args, oracle_args, restarts_if_builtin, timeout, logf, tag,
+              metadata_args=None):
     if valid_json(out):
         log(f"  skip (exists): {tag}", logf)
         return True
@@ -71,6 +72,8 @@ def run_batch(exe, out, base_args, oracle_args, restarts_if_builtin, timeout, lo
         cmd += oracle_args
     else:
         cmd += ["--restarts", str(restarts_if_builtin)]
+    if metadata_args:
+        cmd += metadata_args
     cmd += ["--output", out, "--include-instance-rows", "--force"]
     t0 = datetime.datetime.now()
     try:
@@ -87,7 +90,8 @@ def run_batch(exe, out, base_args, oracle_args, restarts_if_builtin, timeout, lo
     return True
 
 
-def stage_sweep(exe, out_dir, instances, threads, sa_iters_per_n, timeout, logf):
+def stage_sweep(exe, out_dir, instances, threads, sa_iters_per_n, timeout, logf,
+                metadata_args):
     log("=== STAGE: robustness sweep (both boundary conditions) ===", logf)
     d = os.path.join(out_dir, "sweep")
     os.makedirs(d, exist_ok=True)
@@ -109,13 +113,15 @@ def stage_sweep(exe, out_dir, instances, threads, sa_iters_per_n, timeout, logf)
     ]
     ok = 0
     for tag, args in configs:
-        if run_batch(exe, os.path.join(d, tag + ".json"), args, None, 8, timeout, logf, tag):
+        if run_batch(exe, os.path.join(d, tag + ".json"), args, None, 8, timeout,
+                     logf, tag, metadata_args):
             ok += 1
     log(f"sweep done: {ok}/{len(configs)} batches ok", logf)
 
 
 def stage_campaign(exe, out_dir, lkh, ps, ks, instances, threads, lkh_runs,
-                   builtin_restarts, sa_iters_per_n, max_n, timeout, logf):
+                   builtin_restarts, sa_iters_per_n, max_n, timeout, logf,
+                   metadata_args):
     mode = f"LKH ({lkh})" if lkh else "built-in solver (no LKH found)"
     log(f"=== STAGE: Aldous campaign -- solver mode: {mode} ===", logf)
     d = os.path.join(out_dir, "campaign")
@@ -151,12 +157,12 @@ def stage_campaign(exe, out_dir, lkh, ps, ks, instances, threads, lkh_runs,
                 "--p-values", f"{p:g}", "--periodic", "--control-variate", "--held-karp",
                 "--sa-iters-per-n", str(sa_iters_per_n)]
         if run_batch(exe, os.path.join(d, tag + ".json"), base, oracle,
-                     builtin_restarts, timeout, logf, tag):
+                     builtin_restarts, timeout, logf, tag, metadata_args):
             ok += 1
     log(f"campaign done: {ok}/{len(plan)} batches ok", logf)
 
 
-def stage_analysis(out_dir, pmax, boot, logf):
+def stage_analysis(out_dir, pmax, boot, logf, solver_policy_id, fidelity_level):
     log("=== STAGE: analysis ===", logf)
     d = os.path.join(out_dir, "campaign")
     files = [os.path.join(d, f) for f in os.listdir(d) if f.endswith(".json")] if os.path.isdir(d) else []
@@ -169,6 +175,8 @@ def stage_analysis(out_dir, pmax, boot, logf):
         for script, extra in [("extrapolate_fpN.py", []),
                               ("analyze_campaign.py",
                                ["--pmax", str(pmax), "--boot", str(boot),
+                                "--solver-policy-id", solver_policy_id,
+                                "--fidelity-level", fidelity_level,
                                 "--plot", os.path.join(out_dir, "fit.png")])]:
             cmd = [sys.executable, os.path.join(HERE, script)] + extra + files
             r = subprocess.run(cmd, capture_output=True, text=True)
@@ -188,6 +196,13 @@ def main():
     ap.add_argument("--threads", type=int, default=0, help="0 = auto")
     ap.add_argument("--ps", default="0.01,0.02,0.05,0.1,0.2")
     ap.add_argument("--ks", default="250,500,1000,2000")
+    ap.add_argument("--campaign-id", default="full-study")
+    ap.add_argument("--campaign-shard", type=int, default=0)
+    ap.add_argument("--replicate-offset", type=int, default=0)
+    ap.add_argument("--point-seed", type=int, default=2024)
+    ap.add_argument("--search-seed", type=int, default=2024)
+    ap.add_argument("--solver-policy-id", default="publication")
+    ap.add_argument("--fidelity-level", default="strong")
     ap.add_argument("--lkh-runs", type=int, default=10)
     ap.add_argument("--builtin-restarts", type=int, default=8,
                     help="subset restarts when LKH is not used")
@@ -209,6 +224,17 @@ def main():
     threads = args.threads if args.threads > 0 else os.cpu_count() or 1
     ps = [float(x) for x in args.ps.split(",")]
     ks = [int(x) for x in args.ks.split(",")]
+    if args.campaign_shard < 0 or args.replicate_offset < 0:
+        ap.error("campaign shard and replicate offset must be nonnegative")
+    metadata_args = [
+        "--campaign-id", args.campaign_id,
+        "--campaign-shard", str(args.campaign_shard),
+        "--replicate-offset", str(args.replicate_offset),
+        "--point-seed", str(args.point_seed),
+        "--search-seed", str(args.search_seed),
+        "--solver-policy-id", args.solver_policy_id,
+        "--fidelity-level", args.fidelity_level,
+    ]
 
     with open(os.path.join(args.out_dir, "run.log"), "a") as logf:
         lkh = detect_lkh(args.lkh_path)
@@ -219,13 +245,14 @@ def main():
 
         if args.stage in ("all", "sweep"):
             stage_sweep(args.exe, args.out_dir, args.instances, threads,
-                        args.sa_iters_per_n, timeout, logf)
+                        args.sa_iters_per_n, timeout, logf, metadata_args)
         if args.stage in ("all", "campaign"):
             stage_campaign(args.exe, args.out_dir, lkh, ps, ks, args.instances, threads,
                            args.lkh_runs, args.builtin_restarts, args.sa_iters_per_n,
-                           args.max_n, timeout, logf)
+                           args.max_n, timeout, logf, metadata_args)
         if args.stage in ("all", "analysis"):
-            stage_analysis(args.out_dir, args.pmax, args.boot, logf)
+            stage_analysis(args.out_dir, args.pmax, args.boot, logf,
+                           args.solver_policy_id, args.fidelity_level)
         log("################ done ################", logf)
     return 0
 

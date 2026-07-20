@@ -1216,7 +1216,8 @@ bool subset_pair_exchange_descent(Tour& tour, const Instance& inst, Rng& rng, co
 PathRelinkStep path_relink_best_step(const Instance& inst,
                                      const Tour& tour,
                                      const std::vector<int>& remove_positions,
-                                     const std::vector<int>& add_nodes) {
+                                     const std::vector<int>& add_nodes,
+                                     SearchStats* stats) {
     PathRelinkStep best;
     if (tour.k < 4 || !tour.edge_valid || remove_positions.empty() || add_nodes.empty()) {
         return best;
@@ -1230,6 +1231,10 @@ PathRelinkStep path_relink_best_step(const Instance& inst,
         for (int remove_pos : remove_positions) {
             candidates.push_back({remove_pos, add});
         }
+    }
+    if (stats != nullptr) {
+        stats->path_relink_candidate_scans +=
+            static_cast<std::uint64_t>(candidates.size());
     }
     const BatchedSwapResult chosen = best_batched_swap(inst, tour, candidates);
     if (chosen.valid) {
@@ -1274,7 +1279,8 @@ bool subset_path_relink_oneway(const Instance& inst, const std::vector<int>& src
         if (remove_positions.empty() || add_nodes.empty()) {
             break;
         }
-        const PathRelinkStep chosen = path_relink_best_step(inst, cur, remove_positions, add_nodes);
+        const PathRelinkStep chosen = path_relink_best_step(
+            inst, cur, remove_positions, add_nodes, stats);
         if (!chosen.valid) {
             break;
         }
@@ -1322,7 +1328,9 @@ bool subset_path_relink_bidirectional(const Instance& inst, const std::vector<in
         for (int v : a) {
             if (v < 0 || v >= inst.N || in_b[static_cast<std::size_t>(v)] == 0U) { ++diff; }
         }
-        if (diff == 0 || diff > kPathRelinkMaxDiff) {
+        if (diff == 0
+            || (options.path_relink_max_removed > 0
+                && diff > options.path_relink_max_removed)) {
             return false;
         }
     }

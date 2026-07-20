@@ -88,16 +88,19 @@ def main() -> int:
             p_row["restart_variants"],
             p_row["restart_promotion_stages"],
             p_row["restart_sa_iterations"],
+            p_row["restart_strong_polished"],
             p_row["restart_centroids_x"],
             p_row["restart_centroids_y"],
             p_row["restart_radii"],
         ]
         assert all(len(values) == p_row["executed_restarts"] for values in arrays), p_row
-        assert p_row["restart_promotion_stages"] == [0] * p_row["executed_restarts"], p_row
         assert 0 <= p_row["best_restart"] < p_row["executed_restarts"], p_row
         if p_row["k"] == doc["N"]:
-            assert p_row["restart_kinds"] == [8, 9], p_row
+            assert p_row["restart_kinds"] == [9, 9], p_row
             assert p_row["restart_sweeps"] == [0, 0], p_row
+            assert p_row["restart_roles"] == [4, 4], p_row
+            assert p_row["restart_promotion_stages"] == [2, 2], p_row
+            assert p_row["restart_strong_polished"] == [True, True], p_row
         elif index > 0:
             # Continuation is supplemental: all primary records precede the
             # single secondary-sweep continuation record in this smoke run.
@@ -119,6 +122,19 @@ def main() -> int:
     assert doc["config"]["racing_survivors"] == 2, doc["config"]
     assert doc["config"]["racing_pilot_iters"] == 2000, doc["config"]
     assert doc["config"]["racing_min_jaccard"] == 0.05, doc["config"]
+    assert doc["config"]["tsp_candidate_starts"] == 12, doc["config"]
+    assert doc["config"]["tsp_farthest_starts"] == 0, doc["config"]
+    assert doc["config"]["tsp_min_edge_jaccard"] == 0.02, doc["config"]
+    assert doc["config"]["staged_search"] is True, doc["config"]
+    assert doc["config"]["strong_polish_finalists"] == 3, doc["config"]
+    assert doc["config"]["strong_polish_min_jaccard"] == 0.02, doc["config"]
+    assert doc["config"]["path_relink_diverse_reserve"] == 1, doc["config"]
+    assert doc["config"]["path_relink_max_pairs"] == 3, doc["config"]
+    assert doc["campaign_metadata"]["campaign_id"] == "default", doc["campaign_metadata"]
+    assert doc["campaign_metadata"]["point_seed"] == 123, doc["campaign_metadata"]
+    assert doc["campaign_metadata"]["search_seed"] == 123, doc["campaign_metadata"]
+    assert len(doc["instance_rows"][0]["point_stream_id"]) == 16, doc["instance_rows"][0]
+    assert len(doc["instance_rows"][0]["search_stream_id"]) == 16, doc["instance_rows"][0]
     assert "pair_exchange_skipped_large_k" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["exact_subset_calls"] == 0, doc["search_stats"]
     assert doc["search_stats"]["exact_subset_solved"] == 0, doc["search_stats"]
@@ -126,6 +142,12 @@ def main() -> int:
     assert "exact_subset_transitions" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["racing_pilot_restarts"] == 0, doc["search_stats"]
     assert doc["search_stats"]["racing_promoted_restarts"] == 0, doc["search_stats"]
+    assert doc["search_stats"]["tsp_candidate_starts"] == 12, doc["search_stats"]
+    assert doc["search_stats"]["tsp_promoted_restarts"] == 2, doc["search_stats"]
+    assert "strong_polish_candidates" in doc["search_stats"], doc["search_stats"]
+    assert "strong_polish_finalists" in doc["search_stats"], doc["search_stats"]
+    assert "path_relink_pairs_considered" in doc["search_stats"], doc["search_stats"]
+    assert "path_relink_candidate_scans" in doc["search_stats"], doc["search_stats"]
     phases = doc["search_stats"]["phase_timing"]
     expected_phase_fields = {
         "seed_construction_seconds", "tsp_construction_seconds",

@@ -1,220 +1,332 @@
 #!/usr/bin/env python3
-"""Estimate f(0+) and the small-p exponent alpha from a torus campaign.
+"""Estimate f(0+) and the small-p exponent from correlated campaign results.
 
-This is the last stage of the pipeline. Given the per-(p, k) result batches from
-run_torus_campaign.py, it:
+The analysis has two finite-size/statistical stages:
 
-  1. extrapolates every p to N -> inf with the torus O(1/N) form
-     f(p, N) = f(p) + slope / k  (weighted by instance stderr);
-  2. fits the small-p law  f(p) = f0 + C * p^alpha  by profiling the single
-     nonlinear parameter alpha (for each alpha the model is linear in (f0, C), so
-     it is solved exactly), giving f(0+) = f0 and the exponent alpha;
-  3. propagates instance noise through BOTH stages with a master bootstrap --
-     resample instances at every (p, k), rerun stages 1-2 -- to attach
-     percentile confidence intervals to f(p), f(0+), C, and alpha.
+  1. for every p, fit the torus form f(p, N) = f(p) + slope/k;
+  2. fit f(p) = f0 + C p^alpha by profiling alpha.
 
-It also extrapolates the conditional Held-Karp diagnostic the same way and
-reports the tour-to-bound gap per p, so you can see whether the TOUR ORDERING on
-the selected subsets was converged.
+New result files carry stable campaign, replicate, point-stream, search-stream,
+solver-policy, and fidelity identities. When complete replicate vectors are
+available, the master bootstrap resamples whole point-set replicates and thus
+preserves common-random-number correlation across every (p, k) cell. Legacy
+summary-only files remain supported through an explicitly reported independent-
+cell bootstrap.
 
-IMPORTANT -- what the Held-Karp number is and is not. HK lower-bounds the optimal
-tour through THE SUBSET THE SOLVER CHOSE. It is NOT a lower bound on
+Repeated search streams on one point set are averaged before the primary fit so
+point sets receive equal weight. A nested method-of-moments report separates
+point-instance variance from search-seed variance where repeated searches are
+available. When cheap and strong fidelity rows share point identities, the
+script also reports the paired multifidelity estimator
 
-    f(p) = min over subsets S of |S|=k  of  TSP(S)/k ,
+    mean(cheap over all points) + mean(strong - cheap over paired points).
 
-because a better subset drives the tour AND its HK bound down together: the
-"floor" moves whenever the search improves. HK therefore brackets TOUR-SOLVING
-error only. It says nothing about SUBSET-SELECTION error -- and subset selection
-is a minimisation, so an under-converged search biases f(p) upward with no lower
-bracket to catch it. Use scripts/convergence_study.py to bound that error; it
-cannot be read off the HK column.
-
-Inputs are the campaign JSON files (one p each, or multi-p). Per-instance tour
-values come from each summary row's `values`; the conditional tour diagnostic
-comes from `conditional_held_karp_bound_mean` (or
-`conditional_two_nn_bound_mean` if absent). Schema-13 legacy names are accepted.
+Conditional Held-Karp/two-NN values remain diagnostics for the tour through the
+chosen subset. They are not global lower bounds on the optimum over subsets.
 
 Usage:
   analyze_campaign.py torus_campaign/*.json
-  analyze_campaign.py --pmax 0.2 --boot 2000 --plot fit.png torus_campaign/*.json
+  analyze_campaign.py --pmax 0.2 --boot 2000 --plot fit.png campaign/*.json
+  analyze_campaign.py --bootstrap-mode block --analysis-json analysis.json files...
   analyze_campaign.py --self-test
 """
+from __future__ import annotations
+
 import argparse
 import json
 import math
 import random
 import sys
 from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
 
 
-def wls(x, y, w):
-    """Weighted least squares y = a + b*x. Returns (a, b, var_a)."""
-    sw = sum(w)
-    swx = sum(wi * xi for wi, xi in zip(w, x))
-    swy = sum(wi * yi for wi, yi in zip(w, y))
-    swxx = sum(wi * xi * xi for wi, xi in zip(w, x))
-    swxy = sum(wi * xi * yi for wi, xi, yi in zip(w, x, y))
+Cell = tuple[float, int]
+BlockKey = tuple[str, int]
+
+
+@dataclass(frozen=True)
+class Observation:
+    campaign_id: str
+    campaign_shard: int
+    replicate_id: int
+    point_stream_id: str
+    search_stream_id: str
+    solver_policy_id: str
+    fidelity_level: str
+    p: float
+    k: int
+    value: float
+    source: str
+
+
+# Side tables populated by load_campaign. Keeping load_campaign's historical
+# return value ({p: {k: values}}) avoids breaking existing Python callers.
+_conditional_bound_of: dict[Cell, float] = {}
+_conditional_gaps: dict[float, float] = {}
+_replicate_blocks: dict[BlockKey, dict[Cell, float]] = {}
+_nested_search_groups: dict[Cell, dict[BlockKey, list[float]]] = {}
+_all_observations: list[Observation] = []
+_load_info: dict[str, object] = {}
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _std(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean = _mean(values)
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / (len(values) - 1))
+
+
+def _ci(samples: list[float], lo: float = 2.5, hi: float = 97.5) -> tuple[float, float]:
+    if not samples:
+        return (float("nan"), float("nan"))
+    ordered = sorted(samples)
+    return (
+        ordered[int(lo / 100.0 * (len(ordered) - 1))],
+        ordered[int(hi / 100.0 * (len(ordered) - 1))],
+    )
+
+
+def _fmt(interval: tuple[float, float]) -> str:
+    return f"[{interval[0]:.4f}, {interval[1]:.4f}]"
+
+
+def wls(x: list[float], y: list[float], weights: list[float]) -> tuple[float, float, float]:
+    """Weighted least squares y = intercept + slope*x."""
+    sw = sum(weights)
+    swx = sum(weight * value for weight, value in zip(weights, x))
+    swy = sum(weight * value for weight, value in zip(weights, y))
+    swxx = sum(weight * value * value for weight, value in zip(weights, x))
+    swxy = sum(weight * xv * yv for weight, xv, yv in zip(weights, x, y))
     denom = sw * swxx - swx * swx
     if abs(denom) < 1e-300:
         return swy / sw, 0.0, float("inf")
-    b = (sw * swxy - swx * swy) / denom
-    a = (swy - b * swx) / sw
-    var_a = swxx / denom
-    return a, b, var_a
+    slope = (sw * swxy - swx * swy) / denom
+    intercept = (swy - slope * swx) / sw
+    return intercept, slope, swxx / denom
 
 
-def extrapolate_intercept(points):
-    """points: list of (k, mean, weight). Fit mean = a + b/k -> return (a, se_a)."""
+def extrapolate_intercept(points: list[tuple[int, float, float]]) -> tuple[float, float]:
+    """Fit mean = intercept + slope/k from (k, mean, weight) points."""
     if len(points) == 1:
         return points[0][1], 0.0
     x = [1.0 / k for k, _, _ in points]
-    y = [m for _, m, _ in points]
-    w = [wt for _, _, wt in points]
-    a, _b, var_a = wls(x, y, w)
-    se = math.sqrt(var_a) if math.isfinite(var_a) else 0.0
-    return a, se
+    y = [mean for _, mean, _ in points]
+    weights = [weight for _, _, weight in points]
+    intercept, _slope, variance = wls(x, y, weights)
+    stderr = math.sqrt(variance) if math.isfinite(variance) else 0.0
+    return intercept, stderr
 
 
-def profile_power_fit(ps, fs, ws, alpha_grid):
-    """Fit f = f0 + C * p^alpha. Profile alpha over a grid; (f0, C) linear each step.
-
-    Returns (f0, C, alpha, ssr). Uses weights ws on the f values.
-    """
-    best = None
+def profile_power_fit(
+    ps: list[float],
+    values: list[float],
+    weights: list[float],
+    alpha_grid: list[float],
+) -> tuple[float, float, float, float]:
+    """Fit f = f0 + C*p^alpha by profiling alpha over a fixed grid."""
+    best: tuple[float, float, float, float] | None = None
     for alpha in alpha_grid:
-        x = [p ** alpha for p in ps]
-        f0, C, _ = wls(x, fs, ws)
-        ssr = sum(wi * (fi - f0 - C * xi) ** 2 for wi, fi, xi in zip(ws, fs, x))
+        transformed = [p**alpha for p in ps]
+        f0, coefficient, _ = wls(transformed, values, weights)
+        ssr = sum(
+            weight * (value - f0 - coefficient * xvalue) ** 2
+            for weight, value, xvalue in zip(weights, values, transformed)
+        )
+        candidate = (f0, coefficient, alpha, ssr)
         if best is None or ssr < best[3]:
-            best = (f0, C, alpha, ssr)
-    # Parabolic refinement around the best grid alpha.
-    f0, C, alpha, ssr = best
-    idx = alpha_grid.index(alpha)
-    if 0 < idx < len(alpha_grid) - 1:
-        a0, a1, a2 = alpha_grid[idx - 1], alpha, alpha_grid[idx + 1]
-        for a in [a1 + (a1 - a0) * t for t in (-0.5, -0.25, 0.25, 0.5)]:
-            if a <= 0:
+            best = candidate
+    if best is None:
+        raise ValueError("alpha grid is empty")
+
+    f0, coefficient, alpha, ssr = best
+    index = alpha_grid.index(alpha)
+    if 0 < index < len(alpha_grid) - 1:
+        step = alpha_grid[index] - alpha_grid[index - 1]
+        for refined_alpha in (alpha - 0.5 * step, alpha - 0.25 * step,
+                              alpha + 0.25 * step, alpha + 0.5 * step):
+            if refined_alpha <= 0.0:
                 continue
-            x = [p ** a for p in ps]
-            f0c, Cc, _ = wls(x, fs, ws)
-            s = sum(wi * (fi - f0c - Cc * xi) ** 2 for wi, fi, xi in zip(ws, fs, x))
-            if s < ssr:
-                f0, C, alpha, ssr = f0c, Cc, a, s
-    return f0, C, alpha, ssr
+            transformed = [p**refined_alpha for p in ps]
+            f0_candidate, coefficient_candidate, _ = wls(
+                transformed, values, weights
+            )
+            candidate_ssr = sum(
+                weight * (value - f0_candidate - coefficient_candidate * xvalue) ** 2
+                for weight, value, xvalue in zip(weights, values, transformed)
+            )
+            if candidate_ssr < ssr:
+                f0 = f0_candidate
+                coefficient = coefficient_candidate
+                alpha = refined_alpha
+                ssr = candidate_ssr
+    return f0, coefficient, alpha, ssr
 
 
-def analyze(ladders, pmax, boot, alpha_grid, seed=12345):
-    """ladders: {p: {k: [instance values]}}. Returns a result dict."""
-    ps_all = sorted(ladders)
-    ps = [p for p in ps_all if p <= pmax]
+def _cell_weight(values: list[float]) -> float:
+    count = len(values)
+    stderr = _std(values) / math.sqrt(count) if count > 1 else 0.0
+    return 1.0 / max(stderr, 1e-9) ** 2
+
+
+def _extrapolate_ladders(
+    ladders: dict[float, dict[int, list[float]]], ps: list[float]
+) -> dict[float, tuple[float, float]]:
+    output: dict[float, tuple[float, float]] = {}
+    for p in ps:
+        points = [
+            (k, _mean(values), _cell_weight(values))
+            for k, values in ladders[p].items()
+        ]
+        points.sort()
+        output[p] = extrapolate_intercept(points)
+    return output
+
+
+def _complete_blocks(
+    ladders: dict[float, dict[int, list[float]]],
+    ps: list[float],
+    blocks: dict[BlockKey, dict[Cell, float]],
+) -> tuple[list[BlockKey], set[Cell]]:
+    required = {(p, k) for p in ps for k in ladders[p]}
+    complete = sorted(block for block, cells in blocks.items() if required <= cells.keys())
+    return complete, required
+
+
+def analyze(
+    ladders: dict[float, dict[int, list[float]]],
+    pmax: float,
+    boot: int,
+    alpha_grid: list[float],
+    seed: int = 12345,
+    bootstrap_mode: str = "auto",
+    replicate_blocks: dict[BlockKey, dict[Cell, float]] | None = None,
+    identities_complete: bool | None = None,
+) -> dict[str, object]:
+    """Run the finite-size fit and a correlation-aware master bootstrap."""
+    ps = [p for p in sorted(ladders) if p <= pmax]
     if len(ps) < 3:
         raise SystemExit(f"need >= 3 p-values with p <= {pmax}; have {len(ps)}")
+    if boot < 0:
+        raise ValueError("bootstrap count must be nonnegative")
+    if bootstrap_mode not in {"auto", "block", "independent"}:
+        raise ValueError("bootstrap_mode must be auto, block, or independent")
 
-    # --- point estimates ---
-    def fp_of(sample_means):
-        """sample_means: {p: {k: mean}} -> {p: (f(p), se)} via 1/k extrapolation."""
-        out = {}
-        for p in ps:
-            pts = []
-            for k, vals in ladders[p].items():
-                m = sample_means[p][k]
-                n = len(vals)
-                sd = _std(vals)
-                se = sd / math.sqrt(n) if n > 1 else 0.0
-                wt = 1.0 / max(se, 1e-9) ** 2
-                pts.append((k, m, wt))
-            pts.sort()
-            out[p] = extrapolate_intercept(pts)
-        return out
+    blocks = _replicate_blocks if replicate_blocks is None else replicate_blocks
+    if identities_complete is None:
+        identities_complete = bool(_load_info.get("identities_complete", False))
+    complete_blocks, required_cells = _complete_blocks(ladders, ps, blocks)
+    can_block = identities_complete and len(complete_blocks) >= 2
+    if bootstrap_mode == "block" and not can_block:
+        raise ValueError(
+            "block bootstrap requested, but fewer than two complete identified "
+            "replicate vectors are available"
+        )
+    effective_mode = "replicate-block" if (
+        bootstrap_mode == "block" or (bootstrap_mode == "auto" and can_block)
+    ) else "independent-cell"
 
-    point_means = {p: {k: _mean(v) for k, v in ladders[p].items()} for p in ps}
-    fp_point = fp_of(point_means)
-    fps = [fp_point[p][0] for p in ps]
-    # Weights for the power-law fit: inverse variance of each f(p).
-    fw = [1.0 / max(se, 1e-9) ** 2 for _, se in (fp_point[p] for p in ps)]
-    f0, C, alpha, _ = profile_power_fit(ps, fps, fw, alpha_grid)
+    fp_point = _extrapolate_ladders(ladders, ps)
+    fp_values = [fp_point[p][0] for p in ps]
+    fit_weights = [1.0 / max(fp_point[p][1], 1e-9) ** 2 for p in ps]
+    f0, coefficient, alpha, _ = profile_power_fit(
+        ps, fp_values, fit_weights, alpha_grid
+    )
 
-    # --- master bootstrap over instances ---
     rng = random.Random(seed)
-    bs_f0, bs_C, bs_alpha = [], [], []
-    bs_fp = {p: [] for p in ps}
-    for _ in range(boot):
-        means = {}
-        for p in ps:
-            means[p] = {}
-            for k, vals in ladders[p].items():
-                n = len(vals)
-                means[p][k] = sum(vals[rng.randrange(n)] for _ in range(n)) / n
-        fp_b = fp_of(means)
-        fvals = [fp_b[p][0] for p in ps]
-        for p, fv in zip(ps, fvals):
-            bs_fp[p].append(fv)
-        f0b, Cb, ab, _ = profile_power_fit(ps, fvals, fw, alpha_grid)
-        bs_f0.append(f0b)
-        bs_C.append(Cb)
-        bs_alpha.append(ab)
+    bootstrap_f0: list[float] = []
+    bootstrap_coefficient: list[float] = []
+    bootstrap_alpha: list[float] = []
+    bootstrap_fp: dict[float, list[float]] = {p: [] for p in ps}
 
-    # --- Conditional Held-Karp (or two-NN) tour-ordering diagnostic ---
-    bound_means = {}
-    have_bound = True
-    for p in ps:
-        bound_means[p] = {}
-        for k in ladders[p]:
-            bound = _conditional_bound_of.get((p, k))
-            if bound is None:
-                have_bound = False
-            bound_means[p][k] = bound
+    for _ in range(boot):
+        sampled: dict[float, dict[int, list[float]]] = {
+            p: {k: [] for k in ladders[p]} for p in ps
+        }
+        if effective_mode == "replicate-block":
+            drawn = [complete_blocks[rng.randrange(len(complete_blocks))]
+                     for _ in complete_blocks]
+            for block in drawn:
+                block_values = blocks[block]
+                for p, k in required_cells:
+                    sampled[p][k].append(block_values[(p, k)])
+        else:
+            for p in ps:
+                for k, values in ladders[p].items():
+                    sampled[p][k] = [values[rng.randrange(len(values))]
+                                     for _ in values]
+
+        fp_bootstrap = _extrapolate_ladders(sampled, ps)
+        sampled_fp_values = [fp_bootstrap[p][0] for p in ps]
+        # Recompute finite-size and power-fit weights inside every draw. Holding
+        # the original weights fixed understates uncertainty when cell variances
+        # themselves are estimated from the campaign.
+        sampled_weights = [
+            1.0 / max(fp_bootstrap[p][1], 1e-9) ** 2 for p in ps
+        ]
+        for p, value in zip(ps, sampled_fp_values):
+            bootstrap_fp[p].append(value)
+        f0_bootstrap, coefficient_bootstrap, alpha_bootstrap, _ = profile_power_fit(
+            ps, sampled_fp_values, sampled_weights, alpha_grid
+        )
+        bootstrap_f0.append(f0_bootstrap)
+        bootstrap_coefficient.append(coefficient_bootstrap)
+        bootstrap_alpha.append(alpha_bootstrap)
+
     conditional_f0_diagnostic = None
-    if have_bound:
-        bound_points = {p: {k: bound_means[p][k] for k in ladders[p]} for p in ps}
-        fp_bound = fp_of(bound_points)
+    have_conditional_bounds = all(
+        (p, k) in _conditional_bound_of for p in ps for k in ladders[p]
+    )
+    if have_conditional_bounds:
+        bound_fp: dict[float, tuple[float, float]] = {}
+        for p in ps:
+            points = [
+                (k, _conditional_bound_of[(p, k)], _cell_weight(ladders[p][k]))
+                for k in ladders[p]
+            ]
+            points.sort()
+            bound_fp[p] = extrapolate_intercept(points)
         conditional_f0_diagnostic, _, _, _ = profile_power_fit(
-            ps, [fp_bound[p][0] for p in ps], fw, alpha_grid)
+            ps,
+            [bound_fp[p][0] for p in ps],
+            fit_weights,
+            alpha_grid,
+        )
 
     return {
         "ps": ps,
         "fp_point": fp_point,
-        "fp_ci": {p: _ci(bs_fp[p]) for p in ps},
-        "f0": f0, "f0_ci": _ci(bs_f0),
-        "C": C, "C_ci": _ci(bs_C),
-        "alpha": alpha, "alpha_ci": _ci(bs_alpha),
+        "fp_ci": {p: _ci(bootstrap_fp[p]) for p in ps},
+        "f0": f0,
+        "f0_ci": _ci(bootstrap_f0),
+        "C": coefficient,
+        "C_ci": _ci(bootstrap_coefficient),
+        "alpha": alpha,
+        "alpha_ci": _ci(bootstrap_alpha),
+        "bootstrap_mode": effective_mode,
+        "bootstrap_replicates": boot,
+        "complete_replicate_blocks": len(complete_blocks),
+        "required_cells": len(required_cells),
         "conditional_f0_diagnostic": conditional_f0_diagnostic,
-        "conditional_gaps": _conditional_gaps,
-        # Deprecated result aliases for callers of older script versions.
+        "conditional_gaps": dict(_conditional_gaps),
+        # Deprecated aliases retained for callers of earlier script versions.
         "f0_lb": conditional_f0_diagnostic,
-        "gaps": _conditional_gaps,
+        "gaps": dict(_conditional_gaps),
     }
 
 
-def _mean(v):
-    return sum(v) / len(v)
-
-
-def _std(v):
-    if len(v) < 2:
-        return 0.0
-    m = _mean(v)
-    return math.sqrt(sum((x - m) ** 2 for x in v) / (len(v) - 1))
-
-
-def _ci(samples, lo=2.5, hi=97.5):
-    if not samples:
-        return (float("nan"), float("nan"))
-    s = sorted(samples)
-    return (s[int(lo / 100 * (len(s) - 1))], s[int(hi / 100 * (len(s) - 1))])
-
-
-# Module-level side tables filled by load_campaign (kept simple for the profile fit).
-_conditional_bound_of = {}
-_conditional_gaps = {}
-
-
-def _conditional_bound_from_row(row):
+def _conditional_bound_from_row(row: dict[str, object]) -> float | None:
     for key in (
         "conditional_held_karp_bound_mean",
         "conditional_two_nn_bound_mean",
-        "held_karp_bound_mean",       # schema-13 compatibility
-        "subset_bound_mean",          # schema-13 compatibility
+        "held_karp_bound_mean",
+        "subset_bound_mean",
     ):
         value = row.get(key)
         if value is not None:
@@ -222,215 +334,744 @@ def _conditional_bound_from_row(row):
     return None
 
 
-def load_campaign(paths):
-    """Return {p: {k: [tour values]}} and merge conditional diagnostics.
+def _campaign_metadata(doc: dict[str, object]) -> dict[str, object]:
+    config = doc.get("config") or {}
+    metadata = doc.get("campaign_metadata") or {}
+    return {
+        "campaign_id": metadata.get("campaign_id", config.get("campaign_id", "legacy")),
+        "campaign_shard": metadata.get("campaign_shard", config.get("campaign_shard", 0)),
+        "replicate_offset": metadata.get("replicate_offset", config.get("replicate_offset", 0)),
+        "point_seed": metadata.get("point_seed", config.get("point_seed", config.get("seed", 2024))),
+        "search_seed": metadata.get("search_seed", config.get("search_seed", config.get("seed", 2024))),
+        "solver_policy_id": metadata.get("solver_policy_id", config.get("solver_policy_id", "default")),
+        "fidelity_level": metadata.get("fidelity_level", config.get("fidelity_level", "strong")),
+    }
 
-    Repeated shards for the same (p, k) cell are merged by instance count.
-    Cells with incompatible N or geometry are rejected instead of being silently
-    combined into one finite-size point.
+
+def _finite(value: object, context: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{context} is nonfinite")
+    return number
+
+
+def _values_match(left: list[float], right: list[float]) -> bool:
+    if len(left) != len(right):
+        return False
+    return all(
+        math.isclose(a, b, rel_tol=1e-10, abs_tol=1e-12)
+        for a, b in zip(sorted(left), sorted(right))
+    )
+
+
+def load_campaign(
+    paths: Iterable[str],
+    fidelity_level: str = "strong",
+    solver_policy_id: str = "default",
+) -> dict[float, dict[int, list[float]]]:
+    """Load selected-policy observations and preserve campaign identities.
+
+    Identified instance rows are grouped by point-set replicate and averaged
+    across repeated search streams before entering the main ladder. This gives
+    every point set equal weight. Legacy summary-only values are accepted, but
+    their presence disables automatic block bootstrap because their correlation
+    structure is unknowable.
     """
-    ladders = defaultdict(lambda: defaultdict(list))
     _conditional_bound_of.clear()
     _conditional_gaps.clear()
-    bound_sum = defaultdict(float)
-    bound_count = defaultdict(int)
-    gap_sum = defaultdict(float)
-    gap_count = defaultdict(int)
-    cell_metadata = {}
-    for path in paths:
+    _replicate_blocks.clear()
+    _nested_search_groups.clear()
+    _all_observations.clear()
+    _load_info.clear()
+
+    legacy_values: dict[Cell, list[float]] = defaultdict(list)
+    selected_raw: dict[Cell, dict[BlockKey, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    point_streams: dict[BlockKey, str] = {}
+    seen_observations: set[tuple[object, ...]] = set()
+    bound_sum: dict[Cell, float] = defaultdict(float)
+    bound_count: dict[Cell, int] = defaultdict(int)
+    gap_sum: dict[float, float] = defaultdict(float)
+    gap_count: dict[float, int] = defaultdict(int)
+    cell_metadata: dict[Cell, tuple[object, object]] = {}
+    identified_selected = 0
+    legacy_selected = 0
+    files_loaded = 0
+
+    for filename in paths:
+        path = str(filename)
         with open(path, encoding="utf-8") as stream:
             doc = json.load(stream)
-        config = doc.get("config", {})
+        files_loaded += 1
+        metadata = _campaign_metadata(doc)
+        campaign_id = str(metadata["campaign_id"])
+        campaign_shard = int(metadata["campaign_shard"])
+        policy = str(metadata["solver_policy_id"])
+        fidelity = str(metadata["fidelity_level"])
+        selected_document = policy == solver_policy_id and fidelity == fidelity_level
+        config = doc.get("config") or {}
         doc_n = doc.get("N")
         periodic = config.get("periodic")
+
+        summary_by_cell: dict[Cell, dict[str, object]] = {}
         for row in doc.get("summary_rows", []):
-            p, k = float(row["p"]), int(row["k"])
-            vals = row.get("values") or []
-            if not vals:
+            p = _finite(row["p"], f"{path}: summary p")
+            k = int(row["k"])
+            cell = (p, k)
+            summary_by_cell[cell] = row
+            if not selected_document:
                 continue
-            declared_n = int(row.get("n", len(vals)))
-            if declared_n != len(vals):
+            values = [_finite(value, f"{path}: summary value")
+                      for value in (row.get("values") or [])]
+            if not values:
+                continue
+            declared_count = int(row.get("n", len(values)))
+            if declared_count != len(values):
                 raise ValueError(
-                    f"{path}: summary cell (p={p}, k={k}) declares n={declared_n} "
-                    f"but carries {len(vals)} values")
-            actual_mean = _mean(vals)
+                    f"{path}: summary cell (p={p}, k={k}) declares n={declared_count} "
+                    f"but carries {len(values)} values"
+                )
+            actual_mean = _mean(values)
             if "mean" in row and not math.isclose(
-                    float(row["mean"]), actual_mean, rel_tol=1e-10, abs_tol=1e-12):
+                _finite(row["mean"], f"{path}: summary mean"),
+                actual_mean,
+                rel_tol=1e-10,
+                abs_tol=1e-12,
+            ):
                 raise ValueError(
                     f"{path}: summary mean for (p={p}, k={k}) is inconsistent "
-                    "with its values array")
-            metadata = (doc_n, periodic)
-            previous = cell_metadata.get((p, k))
-            if previous is not None and previous != metadata:
+                    "with its values array"
+                )
+            metadata_key = (doc_n, periodic)
+            previous = cell_metadata.get(cell)
+            if previous is not None and previous != metadata_key:
                 raise ValueError(
                     f"incompatible duplicate campaign cell (p={p}, k={k}): "
-                    f"metadata {previous} versus {metadata}")
-            cell_metadata[(p, k)] = metadata
-            ladders[p][k].extend(vals)
+                    f"metadata {previous} versus {metadata_key}"
+                )
+            cell_metadata[cell] = metadata_key
             bound = _conditional_bound_from_row(row)
             if bound is not None:
-                bound_sum[(p, k)] += bound * declared_n
-                bound_count[(p, k)] += declared_n
-                gap_sum[p] += (actual_mean - bound) * declared_n
-                gap_count[p] += declared_n
+                bound_sum[cell] += bound * declared_count
+                bound_count[cell] += declared_count
+                gap_sum[p] += (actual_mean - bound) * declared_count
+                gap_count[p] += declared_count
+
+        rows = doc.get("instance_rows") or []
+        identified_rows = bool(rows) and all(
+            all(key in row for key in (
+                "replicate_id", "point_stream_id", "search_stream_id"
+            ))
+            for row in rows
+        )
+        if rows and not identified_rows:
+            # A partial identity contract is more dangerous than no identity:
+            # never infer correlation from positional row order.
+            missing = next(
+                row for row in rows
+                if not all(key in row for key in (
+                    "replicate_id", "point_stream_id", "search_stream_id"
+                ))
+            )
+            raise ValueError(
+                f"{path}: instance row {missing.get('index', '?')} has an incomplete "
+                "campaign identity"
+            )
+
+        if identified_rows:
+            instance_values: dict[Cell, list[float]] = defaultdict(list)
+            for row in rows:
+                replicate_id = int(row["replicate_id"])
+                if replicate_id < 0:
+                    raise ValueError(f"{path}: replicate_id must be nonnegative")
+                point_stream_id = str(row["point_stream_id"])
+                search_stream_id = str(row["search_stream_id"])
+                block = (campaign_id, replicate_id)
+                previous_stream = point_streams.get(block)
+                if previous_stream is not None and previous_stream != point_stream_id:
+                    raise ValueError(
+                        f"{path}: campaign replicate {block} maps to conflicting "
+                        "point streams"
+                    )
+                point_streams[block] = point_stream_id
+                for p_row in row.get("p_results", []):
+                    p = _finite(p_row["p"], f"{path}: instance p")
+                    k = int(p_row["k"])
+                    value = _finite(p_row["value"], f"{path}: instance value")
+                    observation = Observation(
+                        campaign_id=campaign_id,
+                        campaign_shard=campaign_shard,
+                        replicate_id=replicate_id,
+                        point_stream_id=point_stream_id,
+                        search_stream_id=search_stream_id,
+                        solver_policy_id=policy,
+                        fidelity_level=fidelity,
+                        p=p,
+                        k=k,
+                        value=value,
+                        source=path,
+                    )
+                    duplicate_key = (
+                        campaign_id, replicate_id, point_stream_id,
+                        search_stream_id, policy, fidelity, p, k,
+                    )
+                    if duplicate_key in seen_observations:
+                        raise ValueError(
+                            f"duplicate campaign observation for campaign={campaign_id}, "
+                            f"replicate={replicate_id}, p={p}, k={k}, "
+                            f"policy={policy}, fidelity={fidelity}, "
+                            f"search_stream={search_stream_id}"
+                        )
+                    seen_observations.add(duplicate_key)
+                    _all_observations.append(observation)
+                    if selected_document:
+                        cell = (p, k)
+                        selected_raw[cell][block].append(value)
+                        instance_values[cell].append(value)
+                        identified_selected += 1
+
+            if selected_document:
+                for cell, row in summary_by_cell.items():
+                    summary_values = [float(value) for value in (row.get("values") or [])]
+                    if summary_values and not _values_match(
+                        summary_values, instance_values.get(cell, [])
+                    ):
+                        raise ValueError(
+                            f"{path}: identified instance values for cell {cell} do not "
+                            "match its summary values"
+                        )
+        elif selected_document:
+            for cell, row in summary_by_cell.items():
+                values = [_finite(value, f"{path}: legacy summary value")
+                          for value in (row.get("values") or [])]
+                if values:
+                    legacy_values[cell].extend(values)
+                    legacy_selected += len(values)
+
+    ladders: dict[float, dict[int, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for cell, points in selected_raw.items():
+        p, k = cell
+        for block, values in sorted(points.items()):
+            point_mean = _mean(values)
+            ladders[p][k].append(point_mean)
+            _replicate_blocks.setdefault(block, {})[cell] = point_mean
+            _nested_search_groups.setdefault(cell, {})[block] = list(values)
+    for (p, k), values in legacy_values.items():
+        ladders[p][k].extend(values)
+
     for cell, total in bound_sum.items():
         _conditional_bound_of[cell] = total / bound_count[cell]
     for p, total in gap_sum.items():
         _conditional_gaps[p] = total / gap_count[p]
-    return {p: dict(ks) for p, ks in ladders.items()}
 
-
-def run_self_test():
-    """Synthetic campaign with known (f0, C, alpha): the fit must recover them."""
-    true_f0, true_C, true_alpha = 0.625, 0.35, 0.75
-    ps = [0.01, 0.02, 0.05, 0.1, 0.2]
-    ks = [500, 1000, 2000]
-    slope = 1.2  # 1/k finite-size term
-    rng = random.Random(7)
-    ladders = {}
-    for p in ps:
-        ladders[p] = {}
-        fp_true = true_f0 + true_C * p ** true_alpha
-        for k in ks:
-            vals = [fp_true + slope / k + rng.gauss(0, 0.004) for _ in range(40)]
-            ladders[p][k] = vals
-            _conditional_bound_of[(p, k)] = fp_true + slope / k - 0.09
-    grid = [0.02 + 0.01 * i for i in range(300)]
-    res = analyze(ladders, pmax=1.0, boot=400, alpha_grid=grid)
-    ok_f0 = res["f0_ci"][0] <= true_f0 <= res["f0_ci"][1]
-    ok_a = res["alpha_ci"][0] <= true_alpha <= res["alpha_ci"][1]
-    print(f"self-test: f0={res['f0']:.4f} CI{_fmt(res['f0_ci'])} (true {true_f0}) "
-          f"{'PASS' if ok_f0 else 'FAIL'}")
-    print(f"           alpha={res['alpha']:.3f} CI{_fmt(res['alpha_ci'])} "
-          f"(true {true_alpha}) {'PASS' if ok_a else 'FAIL'}")
-
-    # A bound on the chosen subset need not bound the optimum over subsets.
-    # Here the found subset has conditional bound 10 and tour 11, while another
-    # subset has tour 9. The conditional bound is therefore above the global
-    # subset optimum and cannot be described as a floor on it.
-    semantics_ok = 10.0 > 9.0 and 10.0 <= 11.0
-
-    # Regression for multi-file weighting: the old loader overwrote the first
-    # shard's bound with the final shard's mean and averaged gaps per row.
-    import tempfile
-    from pathlib import Path
-    with tempfile.TemporaryDirectory() as tmp:
-        base = {
-            "N": 100,
-            "config": {"periodic": True},
-        }
-        shard_a = dict(base, summary_rows=[{
-            "p": 0.2, "k": 20, "n": 2,
-            "values": [0.8, 1.0], "mean": 0.9,
-            "conditional_held_karp_bound_mean": 0.5,
-        }])
-        shard_b = dict(base, summary_rows=[{
-            "p": 0.2, "k": 20, "n": 4,
-            "values": [0.7, 0.8, 0.9, 1.0], "mean": 0.85,
-            "conditional_held_karp_bound_mean": 0.7,
-        }])
-        pa, pb = Path(tmp) / "a.json", Path(tmp) / "b.json"
-        pa.write_text(json.dumps(shard_a), encoding="utf-8")
-        pb.write_text(json.dumps(shard_b), encoding="utf-8")
-        merged = load_campaign([str(pa), str(pb)])
-        expected_bound = (0.5 * 2 + 0.7 * 4) / 6
-        expected_gap = ((0.9 - 0.5) * 2 + (0.85 - 0.7) * 4) / 6
-        merge_ok = (
-            len(merged[0.2][20]) == 6
-            and math.isclose(_conditional_bound_of[(0.2, 20)], expected_bound)
-            and math.isclose(_conditional_gaps[0.2], expected_gap)
+    if not ladders:
+        raise ValueError(
+            f"no observations matched solver policy {solver_policy_id!r} and "
+            f"fidelity {fidelity_level!r}"
         )
-    print(f"           conditional-bound semantics {'PASS' if semantics_ok else 'FAIL'}; "
-          f"weighted shard merge {'PASS' if merge_ok else 'FAIL'}")
-    return 0 if (ok_f0 and ok_a and semantics_ok and merge_ok) else 1
+    identities_complete = legacy_selected == 0 and identified_selected > 0
+    _load_info.update({
+        "files_loaded": files_loaded,
+        "solver_policy_id": solver_policy_id,
+        "fidelity_level": fidelity_level,
+        "identified_observations": identified_selected,
+        "legacy_observations": legacy_selected,
+        "replicate_blocks": len(_replicate_blocks),
+        "identities_complete": identities_complete,
+    })
+    return {p: dict(k_values) for p, k_values in ladders.items()}
 
 
-def _fmt(ci):
-    return f"[{ci[0]:.4f}, {ci[1]:.4f}]"
+def nested_variance_decomposition(
+    groups: dict[Cell, dict[BlockKey, list[float]]] | None = None,
+) -> list[dict[str, object]]:
+    """Method-of-moments point/search variance decomposition per cell."""
+    source = _nested_search_groups if groups is None else groups
+    output: list[dict[str, object]] = []
+    for (p, k), point_groups in sorted(source.items()):
+        usable = [values for values in point_groups.values() if values]
+        repeated = [values for values in usable if len(values) > 1]
+        if len(usable) < 2 or not repeated:
+            continue
+        within_ss = 0.0
+        within_df = 0
+        for values in repeated:
+            mean = _mean(values)
+            within_ss += sum((value - mean) ** 2 for value in values)
+            within_df += len(values) - 1
+        search_variance = within_ss / within_df if within_df > 0 else 0.0
+        point_means = [_mean(values) for values in usable]
+        between_variance = _std(point_means) ** 2
+        mean_inverse_repeats = _mean([1.0 / len(values) for values in usable])
+        point_variance = max(
+            0.0, between_variance - search_variance * mean_inverse_repeats
+        )
+        total_variance = point_variance + search_variance
+        output.append({
+            "p": p,
+            "k": k,
+            "point_replicates": len(usable),
+            "search_observations": sum(len(values) for values in usable),
+            "repeated_point_replicates": len(repeated),
+            "point_variance": point_variance,
+            "search_variance": search_variance,
+            "point_sd": math.sqrt(point_variance),
+            "search_sd": math.sqrt(search_variance),
+            "search_variance_fraction": (
+                search_variance / total_variance if total_variance > 0.0 else 0.0
+            ),
+        })
+    return output
 
 
-def make_plot(res, ladders, path):
+def multifidelity_estimates(
+    cheap_fidelity: str,
+    strong_fidelity: str,
+    solver_policy_id: str,
+    boot: int,
+    seed: int = 24680,
+    observations: list[Observation] | None = None,
+) -> list[dict[str, object]]:
+    """Paired cheap-plus-correction estimates for every shared campaign cell."""
+    source = _all_observations if observations is None else observations
+    grouped: dict[tuple[Cell, str, BlockKey], list[float]] = defaultdict(list)
+    for observation in source:
+        if observation.solver_policy_id != solver_policy_id:
+            continue
+        if observation.fidelity_level not in {cheap_fidelity, strong_fidelity}:
+            continue
+        cell = (observation.p, observation.k)
+        block = (observation.campaign_id, observation.replicate_id)
+        grouped[(cell, observation.fidelity_level, block)].append(observation.value)
+
+    maps: dict[Cell, dict[str, dict[BlockKey, float]]] = defaultdict(
+        lambda: {cheap_fidelity: {}, strong_fidelity: {}}
+    )
+    for (cell, fidelity, block), values in grouped.items():
+        maps[cell][fidelity][block] = _mean(values)
+
+    rng = random.Random(seed)
+    output: list[dict[str, object]] = []
+    for (p, k), fidelity_maps in sorted(maps.items()):
+        cheap = fidelity_maps[cheap_fidelity]
+        strong = fidelity_maps[strong_fidelity]
+        paired = sorted(cheap.keys() & strong.keys())
+        if not cheap or not paired:
+            continue
+        unpaired = sorted(cheap.keys() - strong.keys())
+        cheap_mean = _mean(list(cheap.values()))
+        corrections = [strong[block] - cheap[block] for block in paired]
+        correction = _mean(corrections)
+        estimate = cheap_mean + correction
+        samples: list[float] = []
+        if boot > 0 and len(cheap) >= 2 and len(paired) >= 2:
+            for _ in range(boot):
+                # Stratified block bootstrap preserves both the strong-subsample
+                # size and the covariance between paired cheap values and their
+                # strong-minus-cheap corrections.
+                paired_draw = [paired[rng.randrange(len(paired))] for _ in paired]
+                unpaired_draw = (
+                    [unpaired[rng.randrange(len(unpaired))] for _ in unpaired]
+                    if unpaired else []
+                )
+                cheap_draw = [cheap[block] for block in paired_draw + unpaired_draw]
+                correction_draw = [
+                    strong[block] - cheap[block] for block in paired_draw
+                ]
+                samples.append(_mean(cheap_draw) + _mean(correction_draw))
+        output.append({
+            "p": p,
+            "k": k,
+            "cheap_fidelity": cheap_fidelity,
+            "strong_fidelity": strong_fidelity,
+            "cheap_replicates": len(cheap),
+            "paired_strong_replicates": len(paired),
+            "cheap_mean": cheap_mean,
+            "paired_strong_mean": _mean([strong[block] for block in paired]),
+            "paired_correction": correction,
+            "estimate": estimate,
+            "ci": _ci(samples),
+        })
+    return output
+
+
+def make_plot(result: dict[str, object], path: str) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
-    ps = res["ps"]
-    fps = [res["fp_point"][p][0] for p in ps]
-    lo = [res["fp_ci"][p][0] for p in ps]
-    hi = [res["fp_ci"][p][1] for p in ps]
-    fig, ax = plt.subplots(figsize=(8, 5.2))
-    ax.errorbar(ps, fps, yerr=[np.array(fps) - lo, np.array(hi) - fps],
-                fmt="o", color="#c0392b", capsize=3, label="extrapolated f(p) (95% CI)")
-    xx = np.linspace(0, max(ps) * 1.05, 200)
-    ax.plot(xx, res["f0"] + res["C"] * xx ** res["alpha"], color="#2471a3",
-            label=f"fit  f0 + C p^alpha  (alpha={res['alpha']:.2f})")
-    ax.axhline(res["f0"], color="#2471a3", ls=":", lw=1)
-    ax.fill_between([0, max(ps) * 1.05], res["f0_ci"][0], res["f0_ci"][1],
-                    color="#2471a3", alpha=0.12, label=f"f(0+) = {res['f0']:.3f} {_fmt(res['f0_ci'])}")
-    if res["conditional_f0_diagnostic"] is not None:
-        value = res["conditional_f0_diagnostic"]
-        ax.axhline(value, color="#27ae60", ls="--", lw=1,
-                   label=f"conditional HK diagnostic = {value:.3f}\n(not a floor on f(0+))")
-    ax.scatter([0], [res["f0"]], marker="*", s=160, color="#2471a3",
-               edgecolor="k", zorder=6)
-    ax.set_xlabel("p")
-    ax.set_ylabel("f(p)")
-    ax.set_title("Aldous subset-TSP: f(p) -> f(0+) and the exponent alpha")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=0.3)
-    ax.set_xlim(left=-0.005)
-    plt.tight_layout()
-    plt.savefig(path, dpi=130, bbox_inches="tight")
+
+    ps = result["ps"]
+    fp_point = result["fp_point"]
+    fp_ci = result["fp_ci"]
+    values = [fp_point[p][0] for p in ps]
+    lower = [fp_ci[p][0] for p in ps]
+    upper = [fp_ci[p][1] for p in ps]
+    figure, axes = plt.subplots(figsize=(8, 5.2))
+    axes.errorbar(
+        ps,
+        values,
+        yerr=[np.array(values) - lower, np.array(upper) - values],
+        fmt="o",
+        capsize=3,
+        label="extrapolated f(p) (95% CI)",
+    )
+    x_values = np.linspace(0, max(ps) * 1.05, 200)
+    axes.plot(
+        x_values,
+        result["f0"] + result["C"] * x_values ** result["alpha"],
+        label=f"fit f0 + C p^alpha (alpha={result['alpha']:.2f})",
+    )
+    axes.axhline(result["f0"], linestyle=":", linewidth=1)
+    axes.fill_between(
+        [0, max(ps) * 1.05],
+        result["f0_ci"][0],
+        result["f0_ci"][1],
+        alpha=0.12,
+        label=f"f(0+)={result['f0']:.3f} {_fmt(result['f0_ci'])}",
+    )
+    if result["conditional_f0_diagnostic"] is not None:
+        axes.axhline(
+            result["conditional_f0_diagnostic"],
+            linestyle="--",
+            linewidth=1,
+            label="conditional HK diagnostic (not a floor on f(0+))",
+        )
+    axes.scatter([0], [result["f0"]], marker="*", s=160, edgecolor="k", zorder=6)
+    axes.set_xlabel("p")
+    axes.set_ylabel("f(p)")
+    axes.set_title("Aldous subset-TSP: f(p) -> f(0+) and exponent alpha")
+    axes.legend(fontsize=8)
+    axes.grid(alpha=0.3)
+    axes.set_xlim(left=-0.005)
+    figure.tight_layout()
+    figure.savefig(path, dpi=130, bbox_inches="tight")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("files", nargs="*", help="campaign JSON files")
-    ap.add_argument("--pmax", type=float, default=0.3,
-                    help="only use p <= pmax for the small-p fit (default 0.3)")
-    ap.add_argument("--boot", type=int, default=2000, help="bootstrap resamples")
-    ap.add_argument("--plot", metavar="PNG", default=None)
-    ap.add_argument("--self-test", action="store_true")
-    args = ap.parse_args()
+def _json_report(
+    result: dict[str, object],
+    ladders: dict[float, dict[int, list[float]]],
+    variance: list[dict[str, object]],
+    multifidelity: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "selection": dict(_load_info),
+        "bootstrap": {
+            "mode": result["bootstrap_mode"],
+            "resamples": result["bootstrap_replicates"],
+            "complete_replicate_blocks": result["complete_replicate_blocks"],
+            "required_cells": result["required_cells"],
+        },
+        "small_p_fit": {
+            "f0": result["f0"],
+            "f0_ci": result["f0_ci"],
+            "C": result["C"],
+            "C_ci": result["C_ci"],
+            "alpha": result["alpha"],
+            "alpha_ci": result["alpha_ci"],
+            "conditional_f0_diagnostic": result["conditional_f0_diagnostic"],
+        },
+        "p_estimates": [
+            {
+                "p": p,
+                "k_values": sorted(ladders[p]),
+                "f_p": result["fp_point"][p][0],
+                "f_p_ci": result["fp_ci"][p],
+                "conditional_gap": result["conditional_gaps"].get(p),
+            }
+            for p in result["ps"]
+        ],
+        "variance_decomposition": variance,
+        "multifidelity": multifidelity,
+    }
+
+
+def run_self_test() -> int:
+    true_f0, true_coefficient, true_alpha = 0.625, 0.35, 0.75
+    ps = [0.01, 0.02, 0.05, 0.1, 0.2]
+    ks = [500, 1000, 2000]
+    slope = 1.2
+    rng = random.Random(7)
+    ladders: dict[float, dict[int, list[float]]] = {}
+    _conditional_bound_of.clear()
+    for p in ps:
+        ladders[p] = {}
+        true_fp = true_f0 + true_coefficient * p**true_alpha
+        for k in ks:
+            values = [true_fp + slope / k + rng.gauss(0, 0.004) for _ in range(40)]
+            ladders[p][k] = values
+            _conditional_bound_of[(p, k)] = true_fp + slope / k - 0.09
+    alpha_grid = [0.02 + 0.01 * index for index in range(300)]
+    fit = analyze(
+        ladders,
+        pmax=1.0,
+        boot=300,
+        alpha_grid=alpha_grid,
+        bootstrap_mode="independent",
+        identities_complete=False,
+    )
+    fit_ok = (
+        fit["f0_ci"][0] <= true_f0 <= fit["f0_ci"][1]
+        and fit["alpha_ci"][0] <= true_alpha <= fit["alpha_ci"][1]
+    )
+
+    # Correlated replicate vectors: a large common offset should mostly affect
+    # f0, not alpha. Independent cell resampling destroys that cancellation.
+    correlated_ladders: dict[float, dict[int, list[float]]] = {
+        p: {1000: []} for p in [0.02, 0.05, 0.1, 0.2]
+    }
+    blocks: dict[BlockKey, dict[Cell, float]] = {}
+    corr_rng = random.Random(91)
+    for replicate in range(80):
+        common = corr_rng.gauss(0.0, 0.025)
+        block = ("correlated", replicate)
+        blocks[block] = {}
+        for p in correlated_ladders:
+            value = 0.61 + 0.30 * p**0.8 + common + corr_rng.gauss(0.0, 0.0005)
+            correlated_ladders[p][1000].append(value)
+            blocks[block][(p, 1000)] = value
+    block_fit = analyze(
+        correlated_ladders, 1.0, 300, alpha_grid, seed=12,
+        bootstrap_mode="block", replicate_blocks=blocks, identities_complete=True,
+    )
+    independent_fit = analyze(
+        correlated_ladders, 1.0, 300, alpha_grid, seed=12,
+        bootstrap_mode="independent", replicate_blocks=blocks,
+        identities_complete=True,
+    )
+    block_width = block_fit["alpha_ci"][1] - block_fit["alpha_ci"][0]
+    independent_width = (
+        independent_fit["alpha_ci"][1] - independent_fit["alpha_ci"][0]
+    )
+    correlation_ok = (
+        block_fit["bootstrap_mode"] == "replicate-block"
+        and independent_width > 2.0 * max(block_width, 1e-12)
+    )
+
+    # Nested point/search variance should recover the dominant point component.
+    nested_groups: dict[Cell, dict[BlockKey, list[float]]] = {(0.1, 100): {}}
+    nested_rng = random.Random(17)
+    for replicate in range(40):
+        point_effect = nested_rng.gauss(0.0, 0.02)
+        nested_groups[(0.1, 100)][("nested", replicate)] = [
+            0.7 + point_effect + nested_rng.gauss(0.0, 0.004) for _ in range(4)
+        ]
+    variance = nested_variance_decomposition(nested_groups)
+    nested_ok = (
+        len(variance) == 1
+        and variance[0]["point_variance"] > variance[0]["search_variance"] > 0.0
+    )
+
+    # Multifidelity estimator on a random strong subsample.
+    observations: list[Observation] = []
+    mf_rng = random.Random(33)
+    strong_full: list[float] = []
+    for replicate in range(60):
+        strong = 0.65 + mf_rng.gauss(0.0, 0.015)
+        cheap = strong + 0.08 + mf_rng.gauss(0.0, 0.002)
+        strong_full.append(strong)
+        common = dict(
+            campaign_id="mf", campaign_shard=0, replicate_id=replicate,
+            point_stream_id=f"{replicate:016x}", solver_policy_id="default",
+            p=0.1, k=100, source="synthetic",
+        )
+        observations.append(Observation(
+            search_stream_id=f"{1000 + replicate:016x}",
+            fidelity_level="cheap", value=cheap, **common,
+        ))
+        if replicate < 20:
+            observations.append(Observation(
+                search_stream_id=f"{2000 + replicate:016x}",
+                fidelity_level="strong", value=strong, **common,
+            ))
+    multifidelity = multifidelity_estimates(
+        "cheap", "strong", "default", 300, observations=observations
+    )
+    mf_ok = (
+        len(multifidelity) == 1
+        and abs(multifidelity[0]["estimate"] - _mean(strong_full)) < 0.004
+        and multifidelity[0]["paired_strong_replicates"] == 20
+    )
+
+    # Loader regression: weighted conditional bounds and stable identified rows.
+    import tempfile
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        base = {
+            "N": 100,
+            "config": {"periodic": True},
+            "campaign_metadata": {
+                "campaign_id": "loader", "campaign_shard": 0,
+                "replicate_offset": 0, "point_seed": 11, "search_seed": 12,
+                "solver_policy_id": "default", "fidelity_level": "strong",
+            },
+        }
+        docs = []
+        for shard, values, bound in ((0, [0.8, 1.0], 0.5),
+                                     (1, [0.7, 0.8, 0.9, 1.0], 0.7)):
+            offset = 0 if shard == 0 else 2
+            rows = []
+            for index, value in enumerate(values):
+                replicate = offset + index
+                rows.append({
+                    "index": index,
+                    "replicate_id": replicate,
+                    "point_stream_id": f"{replicate + 100:016x}",
+                    "search_stream_id": f"{replicate + 200:016x}",
+                    "p_results": [{"p": 0.2, "k": 20, "value": value}],
+                })
+            doc = dict(base)
+            doc["campaign_metadata"] = dict(base["campaign_metadata"],
+                                             campaign_shard=shard,
+                                             replicate_offset=offset)
+            doc["summary_rows"] = [{
+                "p": 0.2, "k": 20, "n": len(values), "values": values,
+                "mean": _mean(values),
+                "conditional_held_karp_bound_mean": bound,
+            }]
+            doc["instance_rows"] = rows
+            path = root / f"shard-{shard}.json"
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            docs.append(str(path))
+        merged = load_campaign(docs)
+        expected_bound = (0.5 * 2 + 0.7 * 4) / 6
+        loader_ok = (
+            len(merged[0.2][20]) == 6
+            and math.isclose(_conditional_bound_of[(0.2, 20)], expected_bound)
+            and _load_info["identities_complete"] is True
+            and len(_replicate_blocks) == 6
+        )
+
+    semantics_ok = 10.0 > 9.0 and 10.0 <= 11.0
+    checks = {
+        "two-stage fit": fit_ok,
+        "replicate-block correlation": correlation_ok,
+        "nested variance": nested_ok,
+        "multifidelity correction": mf_ok,
+        "identified shard merge": loader_ok,
+        "conditional-bound semantics": semantics_ok,
+    }
+    for name, passed in checks.items():
+        print(f"self-test: {name:<31} {'PASS' if passed else 'FAIL'}")
+    return 0 if all(checks.values()) else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("files", nargs="*", help="campaign JSON files")
+    parser.add_argument("--pmax", type=float, default=0.3,
+                        help="use p <= pmax for the small-p fit (default: 0.3)")
+    parser.add_argument("--boot", type=int, default=2000,
+                        help="master-bootstrap resamples (default: 2000)")
+    parser.add_argument("--bootstrap-mode", choices=("auto", "block", "independent"),
+                        default="auto", help="correlation policy (default: auto)")
+    parser.add_argument("--bootstrap-seed", type=int, default=12345)
+    parser.add_argument("--solver-policy-id", default="default")
+    parser.add_argument("--fidelity-level", default="strong")
+    parser.add_argument("--cheap-fidelity", default="cheap")
+    parser.add_argument("--strong-fidelity", default="strong")
+    parser.add_argument("--plot", metavar="PNG", default=None)
+    parser.add_argument("--analysis-json", metavar="JSON", default=None)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
 
     if args.self_test:
         return run_self_test()
     if not args.files:
-        ap.error("no input files (or use --self-test)")
+        parser.error("no input files (or use --self-test)")
+    if args.boot < 0:
+        parser.error("--boot must be nonnegative")
 
-    ladders = load_campaign(args.files)
-    grid = [0.02 + 0.01 * i for i in range(300)]  # alpha in [0.02, 3.01]
-    res = analyze(ladders, args.pmax, args.boot, grid)
+    ladders = load_campaign(
+        args.files,
+        fidelity_level=args.fidelity_level,
+        solver_policy_id=args.solver_policy_id,
+    )
+    alpha_grid = [0.02 + 0.01 * index for index in range(300)]
+    result = analyze(
+        ladders,
+        args.pmax,
+        args.boot,
+        alpha_grid,
+        seed=args.bootstrap_seed,
+        bootstrap_mode=args.bootstrap_mode,
+    )
+    variance = nested_variance_decomposition()
+    multifidelity = multifidelity_estimates(
+        args.cheap_fidelity,
+        args.strong_fidelity,
+        args.solver_policy_id,
+        args.boot,
+        seed=args.bootstrap_seed ^ 0x5A17,
+    )
 
+    print(
+        f"bootstrap: {result['bootstrap_mode']} "
+        f"({result['complete_replicate_blocks']} complete replicate vectors; "
+        f"{args.boot} resamples)"
+    )
+    if _load_info.get("legacy_observations"):
+        print(
+            "warning: legacy summary-only observations are present; their "
+            "cross-cell correlation is unavailable"
+        )
     print(f"{'p':>7} {'k-range':>13} {'f(p)':>9} {'95% CI':>20} {'conditional gap':>16}")
-    for p in res["ps"]:
+    for p in result["ps"]:
         ks = sorted(ladders[p])
-        fp, _ = res["fp_point"][p]
-        ci = res["fp_ci"][p]
-        gap = res["conditional_gaps"].get(p)
-        gaps = f"{gap:.4f}" if gap is not None else "  --"
-        print(f"{p:>7g} {f'{ks[0]}-{ks[-1]}':>13} {fp:>9.4f} {_fmt(ci):>20} {gaps:>15}")
+        fp_value = result["fp_point"][p][0]
+        interval = result["fp_ci"][p]
+        gap = result["conditional_gaps"].get(p)
+        gap_text = f"{gap:.4f}" if gap is not None else "--"
+        print(
+            f"{p:>7g} {f'{ks[0]}-{ks[-1]}':>13} {fp_value:>9.4f} "
+            f"{_fmt(interval):>20} {gap_text:>15}"
+        )
 
-    print("\n=== small-p law  f(p) = f(0+) + C p^alpha ===")
-    print(f"  f(0+)  = {res['f0']:.4f}   95% CI {_fmt(res['f0_ci'])}")
-    if res["conditional_f0_diagnostic"] is not None:
-        diagnostic = res["conditional_f0_diagnostic"]
-        print(f"           (Conditional Held-Karp diagnostic on the CHOSEN subsets: {diagnostic:.4f}.")
-        print(f"            This is NOT a lower bound on f(0+): f(0+) is a minimum over subsets,")
-        print(f"            and a better subset lowers the tour and this bound together. It brackets")
-        print(f"            tour-solving error only -- run scripts/convergence_study.py for the")
-        print(f"            subset-selection error, which is the one that biases f(0+) upward.)")
-    print(f"  alpha  = {res['alpha']:.3f}    95% CI {_fmt(res['alpha_ci'])}")
-    print(f"  C      = {res['C']:.4f}   95% CI {_fmt(res['C_ci'])}")
-    print(f"  (fit over {len(res['ps'])} p-values with p <= {args.pmax}; "
-          f"{args.boot} bootstrap resamples)")
-    if res["f0_ci"][0] > 0:
-        print(f"  => f(0+) > 0 at 95% confidence.")
+    print("\n=== small-p law f(p) = f(0+) + C p^alpha ===")
+    print(f"  f(0+) = {result['f0']:.4f}   95% CI {_fmt(result['f0_ci'])}")
+    if result["conditional_f0_diagnostic"] is not None:
+        diagnostic = result["conditional_f0_diagnostic"]
+        print(
+            f"  conditional fixed-subset tour diagnostic = {diagnostic:.4f} "
+            "(not a lower bound on f(0+))"
+        )
+    print(f"  alpha = {result['alpha']:.3f}    95% CI {_fmt(result['alpha_ci'])}")
+    print(f"  C     = {result['C']:.4f}   95% CI {_fmt(result['C_ci'])}")
+
+    if variance:
+        print("\n=== nested point/search variance ===")
+        print(f"{'p':>7} {'k':>7} {'points':>8} {'searches':>9} {'point sd':>11} {'search sd':>11}")
+        for row in variance:
+            print(
+                f"{row['p']:>7g} {row['k']:>7} {row['point_replicates']:>8} "
+                f"{row['search_observations']:>9} {row['point_sd']:>11.5g} "
+                f"{row['search_sd']:>11.5g}"
+            )
+
+    if multifidelity:
+        print("\n=== paired multifidelity estimates ===")
+        print(f"{'p':>7} {'k':>7} {'cheap M':>8} {'strong m':>9} {'estimate':>11} {'95% CI':>20}")
+        for row in multifidelity:
+            print(
+                f"{row['p']:>7g} {row['k']:>7} {row['cheap_replicates']:>8} "
+                f"{row['paired_strong_replicates']:>9} {row['estimate']:>11.6f} "
+                f"{_fmt(row['ci']):>20}"
+            )
 
     if args.plot:
-        make_plot(res, ladders, args.plot)
+        make_plot(result, args.plot)
         print(f"\nwrote {args.plot}")
+    if args.analysis_json:
+        report = _json_report(result, ladders, variance, multifidelity)
+        Path(args.analysis_json).write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(f"wrote {args.analysis_json}")
     return 0
 
 

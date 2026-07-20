@@ -37,6 +37,10 @@ def main() -> int:
         "--pair-exchange-max-k",
         "--racing-candidates",
         "--exact-subset-max-n",
+        "--tsp-candidate-starts",
+        "--staged-search",
+        "--path-relink-max-pairs",
+        "--campaign-id",
         "Boolean flags accept plain presence as true",
     ):
         assert marker in help_run.stdout, marker
@@ -140,7 +144,7 @@ def main() -> int:
         restart_arrays = {
             "restart_values", "restart_kinds", "restart_sweeps", "restart_roles",
             "restart_variants", "restart_promotion_stages", "restart_sa_iterations",
-            "restart_centroids_x", "restart_centroids_y", "restart_radii",
+            "restart_strong_polished", "restart_centroids_x", "restart_centroids_y", "restart_radii",
         }
         assert all(restart_arrays.isdisjoint(row) for row in exact_p_rows), exact_p_rows
         assert all(row["exact_optimal_instances"] == 1 for row in exact_doc["summary_rows"]), exact_doc["summary_rows"]
@@ -179,6 +183,56 @@ def main() -> int:
         assert racing_row["restart_promotion_stages"].count(1) == 2, racing_row
         assert racing_row["restart_promotion_stages"].count(2) == 2, racing_row
         assert sorted(racing_row["restart_sa_iterations"][-4:]) == [5, 5, 25, 25], racing_row
+
+        identity_doc = run_case(
+            exe,
+            [
+                "--N", "16",
+                "--instances", "2",
+                "--threads", "1",
+                "--p-values", "0.5,1.0",
+                "--sa-iters", "0",
+                "--restarts", "2",
+                "--strong-polish-finalists", "1",
+                "--tsp-restarts", "2",
+                "--tsp-candidate-starts", "4",
+                "--tsp-farthest-starts", "0",
+                "--tsp-ils", "0",
+                "--path-relink-top", "3",
+                "--path-relink-diverse-reserve", "1",
+                "--path-relink-max-pairs", "1",
+                "--path-relink-max-removed", "8",
+                "--path-relink-max-removed-sum", "8",
+                "--path-relink-max-candidate-scans", "1000",
+                "--campaign-id", "cli-regression",
+                "--campaign-shard", "4",
+                "--replicate-offset", "20",
+                "--point-seed", "111",
+                "--search-seed", "222",
+                "--solver-policy-id", "staged-v1",
+                "--fidelity-level", "cheap",
+                "--include-instance-rows",
+            ],
+            tmp / "campaign-identities.json",
+        )
+        assert identity_doc["campaign_metadata"] == {
+            "campaign_id": "cli-regression",
+            "campaign_shard": 4,
+            "replicate_offset": 20,
+            "point_seed": 111,
+            "search_seed": 222,
+            "solver_policy_id": "staged-v1",
+            "fidelity_level": "cheap",
+        }, identity_doc["campaign_metadata"]
+        assert [row["replicate_id"] for row in identity_doc["instance_rows"]] == [20, 21]
+        assert all(len(row["point_stream_id"]) == 16 for row in identity_doc["instance_rows"])
+        assert all(len(row["search_stream_id"]) == 16 for row in identity_doc["instance_rows"])
+        assert identity_doc["config"]["tsp_candidate_starts"] == 4
+        assert identity_doc["config"]["staged_search"] is True
+        assert identity_doc["config"]["strong_polish_finalists"] == 1
+        assert identity_doc["config"]["path_relink_max_pairs"] == 1
+        assert identity_doc["search_stats"]["tsp_candidate_starts"] == 8
+        assert identity_doc["search_stats"]["tsp_promoted_restarts"] == 4
 
         tiny_p_doc = run_case(
             exe,
@@ -246,6 +300,27 @@ def main() -> int:
         )
         assert bad_threads.returncode != 0, (bad_threads.stdout, bad_threads.stderr)
         assert "--threads must be >= 0" in bad_threads.stderr, bad_threads.stderr
+
+        bad_tsp_candidates = subprocess.run(
+            [str(exe), "--tsp-candidate-starts", "0", "--dry-run"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert bad_tsp_candidates.returncode != 0
+        assert "--tsp-candidate-starts must be >= 1" in bad_tsp_candidates.stderr
+
+        bad_relink_reserve = subprocess.run(
+            [str(exe), "--path-relink-top", "2", "--path-relink-diverse-reserve", "3", "--dry-run"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert bad_relink_reserve.returncode != 0
+        assert "--path-relink-diverse-reserve must not exceed" in bad_relink_reserve.stderr
+
+        bad_campaign_shard = subprocess.run(
+            [str(exe), "--campaign-shard", "-1", "--dry-run"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        assert bad_campaign_shard.returncode != 0
+        assert "--campaign-shard must be >= 0" in bad_campaign_shard.stderr
 
         bad_pair_gate = subprocess.run(
             [str(exe), "--pair-exchange-max-k", "-1", "--dry-run"],

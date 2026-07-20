@@ -20,7 +20,15 @@ Use explicit seeds and p-grids for reproducible experiments:
   --instances 20 \
   --threads 1 \
   --seed 2024 \
+  --campaign-id aldous-main \
+  --campaign-shard 0 \
+  --replicate-offset 0 \
+  --point-seed 2024 \
+  --search-seed 2024 \
+  --solver-policy-id publication \
+  --fidelity-level strong \
   --p-values 0.02,0.03,0.05,0.10,0.20,0.50,1.00 \
+  --include-instance-rows \
   --output results-N1000-seed2024.json
 ```
 
@@ -31,7 +39,15 @@ The output writer uses an atomic temporary file + rename pattern to avoid half-w
 
 ## Per-instance output
 
-Pass `--include-instance-rows` when you want each Monte Carlo instance recorded separately. The top-level `instance_rows` array then includes per-instance normalized values, p/k/value rows, effective KNN build metadata, search counters, and per-instance oracle call records. Without the flag, `instance_rows` is present but empty to keep default result files compact.
+Pass `--include-instance-rows` when you want each Monte Carlo instance recorded separately. The top-level `instance_rows` array then includes per-instance normalized values, p/k/value rows, effective KNN build metadata, search counters, per-instance oracle call records, a stable numeric `replicate_id`, and 64-bit point/search stream fingerprints. Without the flag, `instance_rows` is present but empty to keep default result files compact.
+
+## Campaign and RNG identities
+
+`--point-seed` and `--search-seed` separate point-instance randomness from heuristic-search randomness. Both default to `--seed`, so existing commands retain their historical streams. `--replicate-offset` assigns stable replicate IDs to a shard; shard 0 with 24 instances normally uses offset 0, shard 1 uses offset 24, and so on. The local row index remains file-local, while `replicate_id` is campaign-global.
+
+Use the same `campaign_id`, `replicate_id`, and point seed across every `(p,k)` cell that should share common random numbers. Use a different search seed to repeat the heuristic on exactly the same point sets. `solver_policy_id` distinguishes algorithm/budget policies, and `fidelity_level` pairs cheap and strong runs for multifidelity correction. `scripts/run_torus_campaign.py` and `scripts/run_full_study.py` now pass these fields and enable instance rows automatically for campaign batches.
+
+`scripts/analyze_campaign.py` resamples complete replicate vectors when all selected files carry identities. It averages repeated search streams within a point set before the main fit, reports point-versus-search variance when repeats exist, and computes a paired cheap-plus-correction estimate when cheap and strong fidelities overlap. Legacy summary-only files remain readable, but the script explicitly falls back to independent-cell bootstrap because their cross-cell correlation cannot be reconstructed.
 
 ## Effective KNN/build metadata
 
