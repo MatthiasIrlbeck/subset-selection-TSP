@@ -1,4 +1,5 @@
 #include "solver_internal.hpp"
+#include "aldous_tsp/validation.hpp"
 #include "worker.hpp"
 
 #include "aldous_tsp/exact_subset.hpp"
@@ -229,17 +230,16 @@ SolveResult solve_subset(const Instance& inst,
                          const SolverOptions& options,
                          const std::vector<int>* warm_start,
                          const SubsetSolveRequest& request) {
+    require_valid_subset_request(inst, k, options, warm_start);
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
-    k = std::max(0, std::min(k, inst.N));
     if (options.exact_subset_max_n < 0
         || options.exact_subset_max_n > kExactSubsetHardLimit) {
         throw std::invalid_argument(
             "exact_subset_max_n must be in [0,kExactSubsetHardLimit]");
     }
-    if (k <= 0) { return result; }
-    if (k >= inst.N) { return solve_tsp(inst, rng, options); }
+    if (k == inst.N) { return solve_tsp(inst, rng, options); }
 
     const double p = static_cast<double>(k) / static_cast<double>(std::max(1, inst.N));
     if (options.racing_candidates < 0) {

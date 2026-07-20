@@ -182,8 +182,8 @@ const char* knn_backend_name(KnnBackend backend) noexcept {
 }
 
 bool parse_knn_backend(const std::string& text, KnnBackend& out) noexcept {
-    if (text == "bruteforce" || text == "brute-force") { out = KnnBackend::BruteForce; return true; }
-    if (text == "grid" || text == "grid-exact") { out = KnnBackend::GridExact; return true; }
+    if (text == "bruteforce" || text == "brute-force" || text == "coords_exact_bruteforce_knn") { out = KnnBackend::BruteForce; return true; }
+    if (text == "grid" || text == "grid-exact" || text == "coords_exact_grid_knn") { out = KnnBackend::GridExact; return true; }
     return false;
 }
 
@@ -244,8 +244,20 @@ const char* resolved_oracle_mode_name(ResolvedOracleMode mode) noexcept {
     return "none";
 }
 
-std::vector<double> default_p_values() {
-    return {0.02, 0.03, 0.05, 0.07, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60, 0.80, 1.00};
+const char* output_durability_name(OutputDurability durability) noexcept {
+    switch (durability) {
+        case OutputDurability::None: return "none";
+        case OutputDurability::File: return "file";
+        case OutputDurability::Full: return "full";
+    }
+    return "none";
+}
+
+bool parse_output_durability(const std::string& text, OutputDurability& out) noexcept {
+    if (text == "none") { out = OutputDurability::None; return true; }
+    if (text == "file") { out = OutputDurability::File; return true; }
+    if (text == "full") { out = OutputDurability::Full; return true; }
+    return false;
 }
 
 std::uint64_t subset_hash_nodes(const std::vector<int>& nodes) noexcept {

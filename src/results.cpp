@@ -10,6 +10,7 @@
 #include "aldous_tsp/version.hpp"
 
 #include "json_writer.hpp"
+#include "generated_options.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -646,145 +647,9 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "  \"oracle_status\": \"" << json_escape(doc.options.solver.oracle.status) << "\",\n"
         << "  \"p_values\": ";
     write_double_array(out, doc.p_values);
-    out << ",\n"
-        << "  \"config\": {\n"
-        << "    \"N\": " << doc.options.N << ",\n"
-        << "    \"instances\": " << doc.options.instances << ",\n"
-        << "    \"threads\": " << doc.options.threads << ",\n"
-        << "    \"include_instance_rows\": " << (doc.options.include_instance_rows ? "true" : "false") << ",\n"
-        << "    \"seed\": " << doc.options.solver.seed << ",\n"
-        << "    \"knn_k\": " << doc.options.solver.knn_k << ",\n"
-        << "    \"knn_backend\": \"" << knn_backend_name(doc.options.solver.knn_backend) << "\",\n"
-        << "    \"grid_cell\": ";
-    write_json_double(out, doc.options.solver.grid_cell);
-    out << ",\n"
-        << "    \"exact_subset_max_n\": " << doc.options.solver.exact_subset_max_n << ",\n"
-        << "    \"tsp_candidate_starts\": " << doc.options.solver.tsp_candidate_starts << ",\n"
-        << "    \"tsp_farthest_starts\": " << doc.options.solver.tsp_farthest_starts << ",\n"
-        << "    \"tsp_min_edge_jaccard\": ";
-    write_json_double(out, doc.options.solver.tsp_min_edge_jaccard);
-    out << ",\n"
-        << "    \"tsp_restarts\": " << doc.options.solver.tsp_restarts << ",\n"
-        << "    \"tsp_ils\": " << doc.options.solver.tsp_ils << ",\n"
-        << "    \"tsp_patience\": " << doc.options.solver.tsp_patience << ",\n"
-        << "    \"subset_restarts\": " << doc.options.solver.subset_restarts << ",\n"
-        << "    \"continuation_restarts\": " << doc.options.solver.continuation_restarts << ",\n"
-        << "    \"continuation_policy\": \""
-        << continuation_policy_name(doc.options.solver.continuation_policy) << "\",\n"
-        << "    \"racing_candidates\": " << doc.options.solver.racing_candidates << ",\n"
-        << "    \"racing_survivors\": " << doc.options.solver.racing_survivors << ",\n"
-        << "    \"racing_pilot_iters\": " << doc.options.solver.racing_pilot_iters << ",\n"
-        << "    \"racing_min_jaccard\": ";
-    write_json_double(out, doc.options.solver.racing_min_jaccard);
-    out << ",\n"
-        << "    \"staged_search\": " << (doc.options.solver.staged_search ? "true" : "false") << ",\n"
-        << "    \"strong_polish_finalists\": " << doc.options.solver.strong_polish_finalists << ",\n"
-        << "    \"strong_polish_min_jaccard\": ";
-    write_json_double(out, doc.options.solver.strong_polish_min_jaccard);
-    out << ",\n"
-        << "    \"sa_iters\": " << doc.options.solver.sa_iters << ",\n"
-        << "    \"sa_iters_per_k\": " << doc.options.solver.sa_iters_per_k << ",\n"
-        << "    \"sa_iters_per_n\": " << doc.options.solver.sa_iters_per_n << ",\n"
-        << "    \"sa_exact_insertion\": " << (doc.options.solver.sa_exact_insertion ? "true" : "false") << ",\n"
-        << "    \"sa_insertion_window\": " << doc.options.solver.sa_insertion_window << ",\n"
-        << "    \"dense_exact_insertion\": " << (doc.options.solver.dense_exact_insertion ? "true" : "false") << ",\n"
-        << "    \"sa_spatial_insertion\": " << (doc.options.solver.sa_spatial_insertion ? "true" : "false") << ",\n"
-        << "    \"sa_spatial_neighbors\": " << doc.options.solver.sa_spatial_neighbors << ",\n"
-        << "    \"exploration_exact_insertion\": " << (doc.options.solver.exploration_exact_insertion ? "true" : "false") << ",\n"
-        << "    \"small_p_dense_fill\": " << (doc.options.solver.small_p_dense_fill ? "true" : "false") << ",\n"
-        << "    \"region_seeds\": " << (doc.options.solver.region_seeds ? "true" : "false") << ",\n"
-        << "    \"region_dilation\": ";
-    write_json_double(out, doc.options.solver.region_dilation);
-    out << ",\n"
-        << "    \"kick_restarts\": " << doc.options.solver.subset_kick_restarts << ",\n"
-        << "    \"kick_fraction\": ";
-    write_json_double(out, doc.options.solver.kick_fraction);
-    out << ",\n"
-        << "    \"kick_t0\": ";
-    write_json_double(out, doc.options.solver.kick_t0);
-    out << ",\n"
-        << "    \"sa_t0\": ";
-    write_json_double(out, doc.options.solver.sa_t0);
-    out << ",\n    \"sa_t1\": ";
-    write_json_double(out, doc.options.solver.sa_t1);
-    out << ",\n"
-        << "    \"time_budget_per_p\": ";
-    write_json_double(out, doc.options.solver.time_budget_per_p);
-    out << ",\n"
-        << "    \"restart_threads\": " << doc.options.solver.restart_threads << ",\n"
-        << "    \"second_sweep\": " << (doc.options.second_sweep ? "true" : "false") << ",\n"
-        << "    \"periodic\": " << (doc.options.periodic ? "true" : "false") << ",\n"
-        << "    \"control_variate\": " << (doc.options.control_variate ? "true" : "false") << ",\n"
-        << "    \"cv_mc_samples\": " << doc.options.cv_mc_samples << ",\n"
-        << "    \"held_karp\": " << (doc.options.held_karp ? "true" : "false") << ",\n"
-        << "    \"hk_iterations\": " << doc.options.hk_iterations << ",\n"
-        << "    \"final_exhaustive_k\": " << doc.options.solver.final_exhaustive_k << ",\n"
-        << "    \"exhaustive_two_opt_policy\": \"" << exhaustive_two_opt_policy_name(doc.options.solver.exhaustive_two_opt_policy) << "\",\n"
-        << "    \"subset_swap_descent_passes\": " << doc.options.solver.subset_swap_descent_passes << ",\n"
-        << "    \"pair_exchange_passes\": " << doc.options.solver.pair_exchange_passes << ",\n"
-        << "    \"pair_exchange_max_k\": " << doc.options.solver.pair_exchange_max_k << ",\n"
-        << "    \"ruin_recreate_rounds\": " << doc.options.solver.ruin_recreate_rounds << ",\n"
-        << "    \"adaptive_ruin_recreate\": " << (doc.options.solver.adaptive_ruin_recreate ? "true" : "false") << ",\n"
-        << "    \"ruin_recreate_max_fraction\": ";
-    write_json_double(out, doc.options.solver.ruin_recreate_max_fraction);
-    out << ",\n"
-        << "    \"ruin_recreate_max_nodes\": " << doc.options.solver.ruin_recreate_max_nodes << ",\n"
-        << "    \"ruin_recreate_pool_cap\": " << doc.options.solver.ruin_recreate_pool_cap << ",\n"
-        << "    \"ejection_chain_starts\": " << doc.options.solver.ejection_chain_starts << ",\n"
-        << "    \"ejection_chain_depth\": " << doc.options.solver.ejection_chain_depth << ",\n"
-        << "    \"ejection_chain_candidates\": " << doc.options.solver.ejection_chain_candidates << ",\n"
-        << "    \"ejection_chain_remove_cap\": " << doc.options.solver.ejection_chain_remove_cap << ",\n"
-        << "    \"ejection_chain_max_uphill\": ";
-    write_json_double(out, doc.options.solver.ejection_chain_max_uphill);
-    out << ",\n"
-        << "    \"elite_diversity_slots\": " << doc.options.solver.elite_diversity_slots << ",\n"
-        << "    \"elite_min_jaccard\": ";
-    write_json_double(out, doc.options.solver.elite_min_jaccard);
-    out << ",\n    \"elite_quality_slack\": ";
-    write_json_double(out, doc.options.solver.elite_quality_slack);
-    out << ",\n"
-        << "    \"path_relink_top\": " << doc.options.solver.path_relink_top << ",\n"
-        << "    \"path_relink_diverse_reserve\": " << doc.options.solver.path_relink_diverse_reserve << ",\n"
-        << "    \"path_relink_max_pairs\": " << doc.options.solver.path_relink_max_pairs << ",\n"
-        << "    \"path_relink_max_removed\": " << doc.options.solver.path_relink_max_removed << ",\n"
-        << "    \"path_relink_max_removed_sum\": " << doc.options.solver.path_relink_max_removed_sum << ",\n"
-        << "    \"path_relink_max_candidate_scans\": " << doc.options.solver.path_relink_max_candidate_scans << ",\n"
-        << "    \"verify_knn_checks\": " << doc.options.solver.verify_knn_checks << ",\n"
-        << "    \"oracle_mode\": \"" << external_oracle_mode_name(doc.options.solver.oracle.cfg.mode) << "\",\n"
-        << "    \"oracle_resolved\": \"" << resolved_oracle_mode_name(doc.options.solver.oracle.resolved) << "\",\n"
-        << "    \"oracle_exec_path\": \"" << json_escape(doc.options.solver.oracle.exec_path) << "\",\n"
-        << "    \"oracle_version\": \"" << json_escape(doc.options.solver.oracle.version) << "\",\n"
-        << "    \"oracle_format\": \"" << oracle_problem_format_name(doc.options.solver.oracle.cfg.problem_format) << "\",\n"
-        << "    \"oracle_time_limit_sec\": " << doc.options.solver.oracle.cfg.time_limit_sec << ",\n"
-        << "    \"oracle_scale\": " << doc.options.solver.oracle.cfg.scale << ",\n"
-        << "    \"oracle_min_k\": " << doc.options.solver.oracle.cfg.min_k << ",\n"
-        << "    \"oracle_max_k\": " << doc.options.solver.oracle.cfg.max_k << ",\n"
-        << "    \"oracle_lkh_runs\": " << doc.options.solver.oracle.cfg.lkh_runs << ",\n"
-        << "    \"oracle_lkh_max_trials\": " << doc.options.solver.oracle.cfg.lkh_max_trials << ",\n"
-        << "    \"oracle_tsp_top\": " << doc.options.solver.oracle.cfg.tsp_top << ",\n"
-        << "    \"oracle_subset_top\": " << doc.options.solver.oracle.cfg.subset_top << ",\n"
-        << "    \"disable_two_opt\": " << (doc.options.solver.disable_two_opt ? "true" : "false") << ",\n"
-        << "    \"disable_or_opt\": " << (doc.options.solver.disable_or_opt ? "true" : "false") << ",\n"
-        << "    \"disable_subset_swap\": " << (doc.options.solver.disable_subset_swap ? "true" : "false") << ",\n"
-        << "    \"disable_pair_exchange\": " << (doc.options.solver.disable_pair_exchange ? "true" : "false") << ",\n"
-        << "    \"disable_ruin_recreate\": " << (doc.options.solver.disable_ruin_recreate ? "true" : "false") << ",\n"
-        << "    \"disable_ejection_chain\": " << (doc.options.solver.disable_ejection_chain ? "true" : "false") << ",\n"
-        << "    \"disable_path_relink\": " << (doc.options.solver.disable_path_relink ? "true" : "false") << ",\n"
-        << "    \"disable_smallp_seeds\": " << (doc.options.solver.disable_smallp_seeds ? "true" : "false") << ",\n"
-        << "    \"disable_highp_delete\": " << (doc.options.solver.disable_highp_delete ? "true" : "false") << ",\n"
-        << "    \"oracle_use_for_tsp\": " << (doc.options.solver.oracle.cfg.use_for_tsp ? "true" : "false") << ",\n"
-        << "    \"oracle_use_for_subset\": " << (doc.options.solver.oracle.cfg.use_for_subset ? "true" : "false") << ",\n"
-        << "    \"oracle_inline_feedback\": " << (doc.options.solver.oracle.cfg.inline_feedback ? "true" : "false") << ",\n"
-        << "    \"oracle_verbose\": " << (doc.options.solver.oracle.cfg.verbose ? "true" : "false") << ",\n"
-        << "    \"campaign_id\": \"" << json_escape(doc.options.campaign_id) << "\",\n"
-        << "    \"campaign_shard\": " << doc.options.campaign_shard << ",\n"
-        << "    \"replicate_offset\": " << doc.options.replicate_offset << ",\n"
-        << "    \"point_seed\": " << effective_point_seed(doc.options) << ",\n"
-        << "    \"search_seed\": " << effective_search_seed(doc.options) << ",\n"
-        << "    \"solver_policy_id\": \"" << json_escape(doc.options.solver_policy_id) << "\",\n"
-        << "    \"fidelity_level\": \"" << json_escape(doc.options.fidelity_level) << "\"\n"
-        << "  },\n"
-        << "  \"search_stats\": ";
+    out << ",\n  \"config\": ";
+    write_generated_config(out, doc.options, "  ");
+    out << ",\n  \"search_stats\": ";
     write_stats(out, doc.stats, "  ");
     out << ",\n  \"oracle_call_records\": ";
     write_oracle_call_records(out, doc.stats.oracle_call_records, "  ");
@@ -883,38 +748,6 @@ std::string results_to_json(const ResultsDocument& doc) {
     write_instance_rows(out, doc.instance_rows);
     out << "\n}\n";
     return out.str();
-}
-
-bool write_text_file_atomic(const std::string& path, const std::string& text, std::string* error) {
-    namespace fs = std::filesystem;
-    const fs::path target(path);
-    const fs::path tmp = target.string() + ".tmp";
-    {
-        std::ofstream file(tmp, std::ios::binary);
-        if (!file) {
-            if (error != nullptr) {
-                *error = "failed to open temporary file: " + tmp.string();
-            }
-            return false;
-        }
-        file << text;
-        if (!file.good()) {
-            if (error != nullptr) {
-                *error = "failed to write temporary file: " + tmp.string();
-            }
-            return false;
-        }
-    }
-    std::error_code ec;
-    fs::rename(tmp, target, ec);
-    if (ec) {
-        fs::remove(tmp);
-        if (error != nullptr) {
-            *error = "failed to rename temporary file to output: " + ec.message();
-        }
-        return false;
-    }
-    return true;
 }
 
 } // namespace aldous_tsp

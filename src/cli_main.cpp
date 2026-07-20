@@ -1,17 +1,22 @@
 #include "cli_internal.hpp"
 
 #include "aldous_tsp/experiment.hpp"
+#include "generated_options.hpp"
 
 namespace aldous_tsp {
 
 int cli_main(int argc, char** argv) {
     RunOptions opt;
-    // CLI default: auto-derive restart parallelism from the leftover thread
-    // budget (library default stays sequential). Results are invariant to
-    // restart_threads outside time-budget mode.
-    opt.solver.restart_threads = 0;
+    apply_generated_cli_defaults(opt);
     bool self_test = false;
-    if (!parse_args(argc, argv, opt, self_test)) {
+    std::string parse_error;
+    const CliParseOutcome parse_outcome =
+        parse_args(argc, argv, opt, self_test, parse_error);
+    if (parse_outcome == CliParseOutcome::ExitSuccess) {
+        return 0;
+    }
+    if (parse_outcome == CliParseOutcome::Error) {
+        std::fprintf(stderr, "%s\n", parse_error.c_str());
         return 1;
     }
     if (self_test) {
@@ -70,7 +75,7 @@ int cli_main(int argc, char** argv) {
     }
 
     std::string write_err;
-    if (!write_text_file_atomic(opt.output_path, results_to_json(doc), &write_err)) {
+    if (!write_text_file_atomic(opt.output_path, results_to_json(doc), opt.output_durability, &write_err)) {
         std::fprintf(stderr, "%s\n", write_err.c_str());
         return 2;
     }

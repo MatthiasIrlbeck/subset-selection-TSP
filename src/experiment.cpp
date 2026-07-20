@@ -1,4 +1,5 @@
 #include "aldous_tsp/experiment.hpp"
+#include "aldous_tsp/validation.hpp"
 
 #include "aldous_tsp/lower_bound.hpp"
 
@@ -324,25 +325,7 @@ int resolve_thread_count(int requested, int instances) {
 } // namespace
 
 ExperimentRunner::ExperimentRunner(RunOptions options) : options_(std::move(options)) {
-    if (options_.p_values.empty()) {
-        options_.p_values = default_p_values();
-    }
-    // The public API accepts RunOptions directly, bypassing the CLI validator.
-    // Canonicalize here as well so sweep direction and per-p seed identities do
-    // not depend on caller ordering or duplicate entries.
-    std::sort(options_.p_values.begin(), options_.p_values.end());
-    options_.p_values.erase(
-        std::unique(options_.p_values.begin(), options_.p_values.end()),
-        options_.p_values.end());
-    const int requested_threads = options_.threads;
-    options_.threads = resolve_thread_count(requested_threads, options_.instances);
-    if (options_.solver.restart_threads <= 0) {
-        // Auto: split the requested (or hardware) thread budget across the
-        // instance workers; leftover parallelism goes to restart waves.
-        const unsigned hw = std::thread::hardware_concurrency();
-        const int budget = requested_threads <= 0 ? (hw == 0U ? 1 : static_cast<int>(hw)) : requested_threads;
-        options_.solver.restart_threads = std::max(1, budget / std::max(1, options_.threads));
-    }
+    require_valid_run_options(options_);
 }
 
 ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress) const {

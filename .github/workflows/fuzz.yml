@@ -1,0 +1,93 @@
+name: Scheduled fuzzing
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      seconds_per_target:
+        description: Seconds to fuzz each target
+        required: false
+        default: "300"
+
+permissions:
+  contents: read
+
+jobs:
+  libfuzzer:
+    name: clang-libfuzzer-asan-ubsan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CC: clang
+      CXX: clang++
+      FUZZ_SECONDS: ${{ inputs.seconds_per_target || '300' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build python3
+      - name: Check generated option surfaces
+        run: python3 scripts/generate_options.py --check
+      - name: Configure fuzz build
+        run: >-
+          cmake -S . -B build-fuzz -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DBUILD_TESTING=ON
+          -DALDOUS_TSP_BUILD_FUZZERS=ON
+          -DALDOUS_TSP_ENABLE_WARNINGS=ON
+          -DALDOUS_TSP_ENABLE_WERROR=ON
+          -DALDOUS_TSP_ENABLE_PYTHON_TESTS=OFF
+      - name: Build fuzzers
+        run: cmake --build build-fuzz --target aldous_tsp_fuzzers --parallel
+      - name: Prepare writable corpora
+        run: |
+          mkdir -p build-fuzz/corpus
+          cp -a fuzz/corpus/. build-fuzz/corpus/
+      - name: Fuzz CLI parser
+        run: >-
+          ./build-fuzz/fuzz_cli
+          -dict=fuzz/dictionaries/cli.dict
+          -max_total_time=${FUZZ_SECONDS}
+          -print_funcs=0
+          -timeout=15
+          -rss_limit_mb=3072
+          -artifact_prefix=build-fuzz/fuzz-artifacts/
+          build-fuzz/corpus/cli
+      - name: Fuzz instance and KNN construction
+        run: >-
+          ./build-fuzz/fuzz_instance
+          -max_total_time=${FUZZ_SECONDS}
+          -print_funcs=0
+          -timeout=15
+          -rss_limit_mb=3072
+          -artifact_prefix=build-fuzz/fuzz-artifacts/
+          build-fuzz/corpus/instance
+      - name: Fuzz mutable tours
+        run: >-
+          ./build-fuzz/fuzz_tour
+          -max_total_time=${FUZZ_SECONDS}
+          -print_funcs=0
+          -timeout=15
+          -rss_limit_mb=3072
+          -artifact_prefix=build-fuzz/fuzz-artifacts/
+          build-fuzz/corpus/tour
+      - name: Fuzz bounded solver paths
+        run: >-
+          ./build-fuzz/fuzz_solver
+          -max_total_time=${FUZZ_SECONDS}
+          -print_funcs=0
+          -timeout=20
+          -rss_limit_mb=3072
+          -artifact_prefix=build-fuzz/fuzz-artifacts/
+          build-fuzz/corpus/solver
+      - name: Upload corpora and crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libfuzzer-corpora-and-artifacts
+          if-no-files-found: ignore
+          path: |
+            build-fuzz/corpus
+            build-fuzz/fuzz-artifacts

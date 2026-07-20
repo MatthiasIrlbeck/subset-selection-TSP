@@ -47,24 +47,53 @@ Current tests cover:
 - CLI self-test and quick smoke via CTest,
 - Python-driven backend parity, CLI regression, and schema-validation tests when `ALDOUS_TSP_ENABLE_PYTHON_TESTS=ON`.
 
-Next testing improvements should add larger scenario benchmarks and per-oracle-call golden fixtures.
+Dedicated libFuzzer targets and a scheduled ASan/UBSan campaign cover the CLI parser, instance/KNN construction, mutable tours, and bounded solver execution. Larger scenario benchmarks and per-oracle-call golden fixtures remain useful additions.
 
 
-## P3 modular source layout
+## Generated option surfaces
 
-The core implementation is deliberately modularized:
+`config/options.json` is the authoritative source for option fields, defaults,
+CLI spellings and aliases, scalar constraints, generated help, JSON
+configuration keys, the strict current result-schema `config` object, and the
+generated option reference. After changing it, run:
 
-- `src/solver_common.cpp` contains shared scoring/stat helpers.
-- `src/exact_subset.cpp` contains the bounded global subset-and-tour dynamic
-  program exposed through `include/aldous_tsp/exact_subset.hpp`.
-- `src/solver_construction.cpp` contains tour construction and exact-small routines.
-- `src/solver_local_search.cpp` contains 2-opt and Or-opt logic.
-- `src/solver_neighborhoods.cpp` contains subset exchange, LNS, and path-relink neighborhoods.
-- `src/solver_seeds.cpp` contains small-p and high-p seed generation.
-- `src/solver_subset.cpp` and `src/solver_tsp.cpp` coordinate subset and full-TSP solves.
-- `src/cli_parse.cpp`, `src/cli_self_test.cpp`, and `src/cli_main.cpp` split CLI parsing, self-tests, and orchestration; reusable experiment execution lives in `aldous_tsp::ExperimentRunner`.
+```bash
+python3 scripts/generate_options.py
+python3 scripts/generate_options.py --check
+```
 
-JSON output still has no third-party runtime dependency. `src/json_writer.hpp` centralizes escaping and numeric/array emission so future schema changes do not duplicate formatting logic.
+Do not edit files under `include/aldous_tsp/generated/`,
+`src/generated_options_*.cpp`, or `docs/generated/options.md` by hand.
+Cross-field and instance-dependent rules remain in `src/validation.cpp`; their
+field-local ranges are generated from the same metadata.
+
+## Modular source layout
+
+The core implementation is deliberately split at algorithmic boundaries:
+
+- `src/solver_moves.cpp` and `src/solver_spatial.cpp`: shared move scoring,
+  insertion, candidate-table, and spatial-index kernels.
+- `src/exact_subset.cpp`: bounded global subset-and-tour dynamic program.
+- `src/solver_construction.cpp`: tour construction and exact-small routines.
+- `src/solver_local_search.cpp`: 2-opt, Or-opt, and polishing.
+- `src/solver_exchange.cpp`: one-for-one and high-p membership exchange.
+- `src/solver_pair_exchange.cpp`: two-for-two exchange.
+- `src/solver_lns.cpp`: adaptive ruin/recreate.
+- `src/solver_ejection_chain.cpp`: variable-depth membership chains.
+- `src/solver_path_relink.cpp`: exact relinking steps.
+- `src/solver_seeds.cpp`: small-p, high-p, dense, and continuation seeds.
+- `src/solver_subset.cpp` and `src/solver_tsp.cpp`: search controllers.
+- `src/results.cpp` and `src/results_io.cpp`: JSON construction and durable
+  atomic output, respectively.
+- `src/cli_parse.cpp`, `src/cli_values.cpp`, `src/cli_summary.cpp`,
+  `src/cli_self_test.cpp`, and `src/cli_main.cpp`: thin CLI layers.
+
+The former `tests/test_core.cpp` is registered through `tests/test_main.cpp`
+and split into six source-oriented suites. CTest registers each suite
+separately, giving failures and reviews a bounded ownership surface.
+
+JSON output still has no third-party runtime dependency. `src/json_writer.hpp`
+centralizes escaping and numeric/array emission.
 
 
 See `docs/known_good_benchmarks.md` for the compact release-validation checklist and known-good smoke commands.

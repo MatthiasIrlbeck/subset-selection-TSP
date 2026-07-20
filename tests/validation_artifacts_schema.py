@@ -38,9 +38,17 @@ def main() -> int:
         print(f"validation directory not found: {validation_dir}", file=sys.stderr)
         return 1
 
-    schema = json.loads((root / "schema" / "results.schema.json").read_text())
-    validator = jsonschema.Draft202012Validator(schema)
-    expected_schema = schema_version(schema)
+    current_schema = json.loads((root / "schema" / "results.schema.json").read_text())
+    current_version = schema_version(current_schema)
+    schemas = {current_version: current_schema}
+    legacy_path = root / "schema" / "results-v13.schema.json"
+    if legacy_path.exists():
+        legacy_schema = json.loads(legacy_path.read_text())
+        schemas[schema_version(legacy_schema)] = legacy_schema
+    validators = {
+        version: jsonschema.Draft202012Validator(document)
+        for version, document in schemas.items()
+    }
     # Artifacts declare their vintage in ARTIFACT_VERSION, and every artifact
     # must match it (catches accidentally mixed vintages, which is the guard's
     # real purpose). The pin is deliberately NOT required to equal the current
@@ -71,11 +79,17 @@ def main() -> int:
         if not all(key in doc for key in ("run_metadata", "build_metadata", "summary_rows", "search_stats")):
             continue
         result_files.append(path)
+        document_version = doc.get("schema_version")
+        validator = validators.get(document_version)
+        if validator is None:
+            errors.append(
+                f"{path.relative_to(root)}: unsupported schema_version {document_version}; "
+                f"available versions are {sorted(validators)}"
+            )
+            continue
         for error in sorted(validator.iter_errors(doc), key=lambda e: list(e.path)):
             location = "/".join(str(part) for part in error.path) or "<root>"
             errors.append(f"{path.relative_to(root)} at {location}: {error.message}")
-        if doc.get("schema_version") != expected_schema:
-            errors.append(f"{path.relative_to(root)}: schema_version {doc.get('schema_version')} != {expected_schema}")
         project = doc.get("run_metadata", {}).get("project_version")
         if project != expected_project:
             errors.append(f"{path.relative_to(root)}: project_version {project!r} != {expected_project!r}")
@@ -106,7 +120,11 @@ def main() -> int:
         if len(errors) > 200:
             print(f"... {len(errors) - 200} more errors", file=sys.stderr)
         return 1
-    print(f"validated {len(result_files)} bundled validation result JSON files against schema {expected_schema} / project {expected_project}")
+    versions = sorted({json.loads(path.read_text()).get("schema_version") for path in result_files})
+    print(
+        f"validated {len(result_files)} bundled validation result JSON files "
+        f"against archived/current schemas {versions} / project {expected_project}"
+    )
     return 0
 
 

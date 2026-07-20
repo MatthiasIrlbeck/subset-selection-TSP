@@ -1,4 +1,5 @@
 #include "solver_internal.hpp"
+#include "aldous_tsp/validation.hpp"
 #include "worker.hpp"
 
 #include "aldous_tsp/exact_subset.hpp"
@@ -126,6 +127,7 @@ std::vector<int> select_tsp_candidates(const std::vector<TspCandidate>& candidat
 } // namespace
 
 SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& options) {
+    require_valid_tsp_request(inst, options);
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
@@ -146,7 +148,6 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         throw std::invalid_argument(
             "tsp_min_edge_jaccard must be finite and in [0,1]");
     }
-    if (inst.N <= 0) { return result; }
     if (options.exact_subset_max_n > 0
         && inst.N <= options.exact_subset_max_n) {
         ExactSubsetSolution exact;

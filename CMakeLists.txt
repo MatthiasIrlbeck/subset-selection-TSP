@@ -21,6 +21,8 @@ option(ALDOUS_TSP_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehavi
 option(ALDOUS_TSP_ENABLE_CLANG_TIDY "Run clang-tidy when available" OFF)
 option(ALDOUS_TSP_ENABLE_PYTHON_TESTS "Enable optional Python-driven benchmark/parity CTest smoke tests" OFF)
 option(ALDOUS_TSP_LOW_MEMORY_BUILD "Compile dense translation units with low optimization to reduce compiler memory" OFF)
+option(ALDOUS_TSP_BUILD_FUZZERS "Build dedicated libFuzzer targets (Clang only)" OFF)
+option(ALDOUS_TSP_FUZZ_ENABLE_ASAN "Combine AddressSanitizer with libFuzzer (disable only for incompatible local runtimes)" ON)
 
 if(ALDOUS_TSP_LOW_MEMORY_BUILD)
   set(ALDOUS_TSP_OPTIMIZATION_PROFILE "low-memory")
@@ -45,6 +47,20 @@ else()
 endif()
 
 find_package(Threads REQUIRED)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+if(Python3_Interpreter_FOUND)
+  add_custom_target(aldous_tsp_generate_options
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_options.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Regenerating option-derived C++/schema/documentation surfaces"
+    VERBATIM)
+  add_custom_target(aldous_tsp_check_generated_options
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_options.py --check
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Checking generated option surfaces are up to date"
+    VERBATIM)
+endif()
 
 # A native posix_spawn working-directory action avoids even the short, safe
 # shell trampoline on platforms that provide the non-portable extension. Keep a
@@ -126,19 +142,27 @@ configure_file(
 
 add_library(aldous_tsp_core
   src/geometry.cpp
+  src/generated_options_core.cpp
+  src/validation.cpp
   src/exact_subset.cpp
   src/instance.cpp
   src/tour.cpp
-  src/solver_common.cpp
+  src/solver_moves.cpp
+  src/solver_spatial.cpp
   src/solver_construction.cpp
   src/solver_local_search.cpp
-  src/solver_neighborhoods.cpp
+  src/solver_exchange.cpp
+  src/solver_lns.cpp
+  src/solver_ejection_chain.cpp
+  src/solver_pair_exchange.cpp
+  src/solver_path_relink.cpp
   src/solver_seeds.cpp
   src/solver_subset.cpp
   src/solver_tsp.cpp
   src/oracle.cpp
   src/lower_bound.cpp
   src/results.cpp
+  src/results_io.cpp
   src/solver_facade.cpp
   src/experiment.cpp
 )
@@ -163,17 +187,30 @@ target_link_libraries(aldous_tsp_core PUBLIC Threads::Threads)
 # but normal Release builds keep production optimization enabled.
 if(ALDOUS_TSP_LOW_MEMORY_BUILD AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   set_source_files_properties(
-    src/solver_common.cpp
+    src/solver_moves.cpp
+  src/solver_spatial.cpp
     src/solver_construction.cpp
     src/solver_local_search.cpp
-    src/solver_neighborhoods.cpp
+    src/solver_exchange.cpp
+  src/solver_lns.cpp
+  src/solver_ejection_chain.cpp
+  src/solver_pair_exchange.cpp
+  src/solver_path_relink.cpp
     src/solver_seeds.cpp
     src/solver_subset.cpp
     src/solver_tsp.cpp
+    src/generated_options_cli.cpp
     src/cli_parse.cpp
+    src/cli_values.cpp
+    src/cli_summary.cpp
     src/cli_self_test.cpp
     src/cli_main.cpp
-    tests/test_core.cpp
+    tests/test_01_metadata_geometry.cpp
+    tests/test_02_tour_exact.cpp
+    tests/test_03_solver.cpp
+    tests/test_04_restarts.cpp
+    tests/test_05_neighborhoods_oracle.cpp
+    tests/test_06_tsp_results.cpp
     PROPERTIES COMPILE_OPTIONS "-O0;-g0"
   )
 endif()
@@ -252,7 +289,10 @@ endif()
 
 if(ALDOUS_TSP_BUILD_CLI)
   add_library(aldous_tsp_cli_lib
+    src/generated_options_cli.cpp
     src/cli_parse.cpp
+    src/cli_values.cpp
+    src/cli_summary.cpp
     src/cli_self_test.cpp
     src/cli_main.cpp
   )
@@ -277,6 +317,74 @@ if(ALDOUS_TSP_BUILD_CLI)
   target_link_libraries(aldous_tsp PRIVATE aldous_tsp::cli)
 endif()
 
+if(ALDOUS_TSP_BUILD_FUZZERS)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    message(FATAL_ERROR "ALDOUS_TSP_BUILD_FUZZERS requires Clang/libFuzzer")
+  endif()
+  if(NOT ALDOUS_TSP_BUILD_CLI)
+    message(FATAL_ERROR "ALDOUS_TSP_BUILD_FUZZERS requires ALDOUS_TSP_BUILD_CLI=ON for fuzz_cli")
+  endif()
+
+  if(ALDOUS_TSP_FUZZ_ENABLE_ASAN)
+    set(ALDOUS_TSP_FUZZ_SANITIZERS "address,undefined")
+  else()
+    set(ALDOUS_TSP_FUZZ_SANITIZERS "undefined")
+  endif()
+  set(ALDOUS_TSP_FUZZ_INSTRUMENTATION
+    -fsanitize=fuzzer-no-link,${ALDOUS_TSP_FUZZ_SANITIZERS}
+    -fno-omit-frame-pointer
+    -gline-tables-only)
+  target_compile_options(aldous_tsp_core PRIVATE ${ALDOUS_TSP_FUZZ_INSTRUMENTATION})
+  target_compile_options(aldous_tsp_cli_lib PRIVATE ${ALDOUS_TSP_FUZZ_INSTRUMENTATION})
+  target_link_options(aldous_tsp_core PUBLIC -fsanitize=${ALDOUS_TSP_FUZZ_SANITIZERS})
+
+  function(aldous_tsp_add_fuzzer target source)
+    add_executable(${target} ${source})
+    target_compile_features(${target} PRIVATE cxx_std_17)
+    target_include_directories(${target} PRIVATE
+      ${CMAKE_CURRENT_SOURCE_DIR}/fuzz
+      ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_options(${target} PRIVATE
+      -fsanitize=fuzzer,${ALDOUS_TSP_FUZZ_SANITIZERS}
+        -fno-omit-frame-pointer
+      -gline-tables-only)
+    target_link_options(${target} PRIVATE -fsanitize=fuzzer,${ALDOUS_TSP_FUZZ_SANITIZERS})
+    target_link_libraries(${target} PRIVATE ${ARGN})
+  endfunction()
+
+  aldous_tsp_add_fuzzer(fuzz_cli fuzz/fuzz_cli.cpp aldous_tsp::cli)
+  aldous_tsp_add_fuzzer(fuzz_instance fuzz/fuzz_instance.cpp aldous_tsp::core)
+  aldous_tsp_add_fuzzer(fuzz_tour fuzz/fuzz_tour.cpp aldous_tsp::core)
+  aldous_tsp_add_fuzzer(fuzz_solver fuzz/fuzz_solver.cpp aldous_tsp::core)
+  add_custom_target(aldous_tsp_fuzzers DEPENDS
+    fuzz_cli fuzz_instance fuzz_tour fuzz_solver)
+
+  if(BUILD_TESTING)
+    file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fuzz-artifacts)
+    set(_aldous_fuzz_smoke_corpus_root
+      ${CMAKE_CURRENT_BINARY_DIR}/fuzz-smoke-corpus)
+    file(REMOVE_RECURSE ${_aldous_fuzz_smoke_corpus_root})
+    foreach(_fuzzer IN ITEMS cli instance tour solver)
+      file(MAKE_DIRECTORY
+        ${_aldous_fuzz_smoke_corpus_root}/${_fuzzer})
+      file(COPY
+        ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/corpus/${_fuzzer}/
+        DESTINATION ${_aldous_fuzz_smoke_corpus_root}/${_fuzzer})
+      add_test(NAME fuzz_${_fuzzer}_smoke
+        COMMAND fuzz_${_fuzzer}
+          -runs=250
+          -print_funcs=0
+          -timeout=15
+          -rss_limit_mb=2048
+          -artifact_prefix=${CMAKE_CURRENT_BINARY_DIR}/fuzz-artifacts/
+          ${_aldous_fuzz_smoke_corpus_root}/${_fuzzer})
+      set_tests_properties(fuzz_${_fuzzer}_smoke PROPERTIES
+        LABELS fuzz-smoke
+        TIMEOUT 90)
+    endforeach()
+  endif()
+endif()
+
 
 # Some constrained CI/container images use Ninja rules that do not create nested
 # object-file directories before emitting compiler depfiles. Creating the known
@@ -296,8 +404,25 @@ if(ALDOUS_TSP_BUILD_EXAMPLES)
   target_link_libraries(aldous_tsp_library_usage PRIVATE aldous_tsp::core)
 endif()
 
+if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+  add_test(NAME generated_options_check
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_options.py --check)
+  set_tests_properties(generated_options_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 30)
+endif()
+
 if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
-  add_executable(aldous_tsp_test_core tests/test_core.cpp)
+  add_executable(aldous_tsp_test_core
+    tests/test_main.cpp
+    tests/test_support.cpp
+    tests/test_01_metadata_geometry.cpp
+    tests/test_02_tour_exact.cpp
+    tests/test_03_solver.cpp
+    tests/test_04_restarts.cpp
+    tests/test_05_neighborhoods_oracle.cpp
+    tests/test_06_tsp_results.cpp
+  )
   target_link_libraries(aldous_tsp_test_core PRIVATE aldous_tsp::core)
   # Absolute path to the tests directory so the oracle round-trip test can find
   # the reference LKH stand-in regardless of the working directory.
@@ -311,7 +436,15 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
   if(ALDOUS_TSP_ENABLE_WARNINGS)
     target_compile_options(aldous_tsp_test_core PRIVATE ${ALDOUS_TSP_WARNING_FLAGS})
   endif()
-  add_test(NAME core_unit_tests COMMAND aldous_tsp_test_core)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(aldous_tsp_test_core PRIVATE $<$<CONFIG:Release>:-O1>)
+  elseif(MSVC)
+    target_compile_options(aldous_tsp_test_core PRIVATE $<$<CONFIG:Release>:/O1>)
+  endif()
+  foreach(_core_group IN ITEMS 01_metadata_geometry 02_tour_exact 03_solver 04_restarts 05_neighborhoods_oracle 06_tsp_results)
+    add_test(NAME core_${_core_group} COMMAND aldous_tsp_test_core test_${_core_group}.cpp)
+    set_tests_properties(core_${_core_group} PROPERTIES TIMEOUT 180)
+  endforeach()
 
   if(ALDOUS_TSP_BUILD_CLI)
     add_test(NAME cli_self_test COMMAND aldous_tsp --self-test)
@@ -335,6 +468,8 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(cli_regressions PROPERTIES TIMEOUT 240)
       add_test(NAME schema_validation COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/schema_validation.py $<TARGET_FILE:aldous_tsp> ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/schema-validation)
       set_tests_properties(schema_validation PROPERTIES TIMEOUT 180)
+      add_test(NAME option_metadata_parity COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/options_metadata_test.py ${CMAKE_CURRENT_SOURCE_DIR} $<TARGET_FILE:aldous_tsp>)
+      set_tests_properties(option_metadata_parity PROPERTIES TIMEOUT 90)
       add_test(NAME hotpath_benchmark_smoke COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/benchmark_hotpaths.py --baseline-exe $<TARGET_FILE:aldous_tsp> --candidate-exe $<TARGET_FILE:aldous_tsp> --suite smoke --repetitions 1 --out-dir ${CMAKE_CURRENT_BINARY_DIR}/hotpath-benchmark-smoke --check --max-wall-ratio 5.0 --max-quality-regression 0.0)
       set_tests_properties(hotpath_benchmark_smoke PROPERTIES TIMEOUT 240)
       add_test(NAME exhaustive_policy_benchmark_smoke COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/benchmark_exhaustive_policy.py --exe $<TARGET_FILE:aldous_tsp> --out-dir ${CMAKE_CURRENT_BINARY_DIR}/exhaustive-policy-smoke --N 72 --instances 1 --p-values 0.25,1.0 --sa-iters 20 --restarts 1 --tsp-restarts 1 --tsp-ils 4 --final-exhaustive-k 96 --check)

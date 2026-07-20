@@ -43,18 +43,26 @@ def main() -> int:
             "-DCMAKE_BUILD_TYPE=Release",
             "-DALDOUS_TSP_BUILD_CLI=OFF",
             "-DALDOUS_TSP_BUILD_TESTS=OFF",
+            "-DALDOUS_TSP_LOW_MEMORY_BUILD=ON",
             "-DBUILD_TESTING=OFF",
         ]
         if shutil.which("ninja"):
             configure.extend(["-G", "Ninja"])
         run(configure)
-        run(["cmake", "--build", str(build_off), "--target", "aldous_tsp_core", "--parallel", "2"])
-        run(["cmake", "--install", str(build_off), "--prefix", str(prefix_off)])
-        assert_common_install_tree(prefix_off)
-        assert not (prefix_off / "include" / "aldous_tsp" / "cli.hpp").exists(), "cli.hpp should not be installed when CLI support is disabled"
-        targets_off = (prefix_off / "lib" / "cmake" / "aldous_tsp" / "aldous_tspTargets.cmake").read_text()
+
+        # Export/install rules are generated at configure time. Inspecting those
+        # files is sufficient to verify the CLI-disabled public surface and
+        # avoids recompiling the entire core solely to copy an archive that was
+        # already exercised by the CLI-enabled install above.
+        target_files = list((build_off / "CMakeFiles" / "Export").glob("**/aldous_tspTargets.cmake"))
+        assert len(target_files) == 1, f"expected one generated target export, found {target_files}"
+        targets_off = target_files[0].read_text()
         assert "aldous_tsp::core" in targets_off, "core target should be exported"
         assert "aldous_tsp::cli" not in targets_off, "CLI target should not be exported when CLI support is disabled"
+
+        install_script = (build_off / "cmake_install.cmake").read_text()
+        assert "cli.hpp" not in install_script, "cli.hpp should not be installed when CLI support is disabled"
+        assert "aldous_tsp_cli" not in install_script, "the CLI library should have no install rule when disabled"
     return 0
 
 

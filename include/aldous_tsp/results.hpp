@@ -146,6 +146,12 @@ std::string json_escape(const std::string& input);
 std::string p_value_key(double p);
 PValueSummary summarize_p_values(int N, double p, const std::vector<double>& values);
 std::string results_to_json(const ResultsDocument& doc);
-bool write_text_file_atomic(const std::string& path, const std::string& text, std::string* error = nullptr);
+bool write_text_file_atomic(const std::string& path,
+                            const std::string& text,
+                            OutputDurability durability,
+                            std::string* error = nullptr);
+bool write_text_file_atomic(const std::string& path,
+                            const std::string& text,
+                            std::string* error = nullptr);
 
 } // namespace aldous_tsp

@@ -7,6 +7,7 @@
 #include "aldous_tsp/oracle.hpp"
 #include "aldous_tsp/results.hpp"
 #include "aldous_tsp/solver.hpp"
+#include "aldous_tsp/validation.hpp"
 #include "aldous_tsp/version.hpp"
 
 #include <algorithm>
@@ -30,6 +31,12 @@ namespace aldous_tsp {
 
 using Clock = std::chrono::steady_clock;
 
+enum class CliParseOutcome {
+    Run,
+    ExitSuccess,
+    Error,
+};
+
 bool parse_int(const std::string& text, int& out);
 bool parse_double(const std::string& text, double& out);
 std::vector<std::string> split(const std::string& text, char delim);
@@ -37,10 +44,15 @@ bool parse_p_values(const std::string& text, std::vector<double>& out);
 bool parse_p_range(const std::string& text, std::vector<double>& out);
 bool read_p_file(const std::string& path, std::vector<double>& out, std::string& err);
 void canonicalize_p_values(std::vector<double>& values);
+void apply_quick_preset(RunOptions& opt);
 void print_help(const char* argv0);
 std::string config_summary(const RunOptions& opt);
 bool validate_options(RunOptions& opt, std::string& err);
-bool parse_args(int argc, char** argv, RunOptions& opt, bool& self_test);
+CliParseOutcome parse_args(int argc,
+                           char** argv,
+                           RunOptions& opt,
+                           bool& self_test,
+                           std::string& error);
 
 int run_self_test();
 

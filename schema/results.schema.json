@@ -25,7 +25,7 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 13
+      "const": 14
     },
     "run_metadata": {
       "$ref": "#/$defs/run_metadata"
@@ -278,281 +278,737 @@
         "N",
         "instances",
         "threads",
+        "periodic",
+        "control_variate",
+        "cv_mc_samples",
+        "held_karp",
+        "hk_iterations",
+        "verbose",
         "include_instance_rows",
-        "seed",
+        "campaign_id",
+        "campaign_shard",
+        "replicate_offset",
+        "point_seed",
+        "search_seed",
+        "solver_policy_id",
+        "fidelity_level",
+        "second_sweep",
+        "force_output",
+        "dry_run",
+        "dump_config",
+        "output_path",
+        "output_durability",
+        "p_values",
         "knn_k",
         "knn_backend",
+        "verify_knn_checks",
         "grid_cell",
+        "exact_subset_max_n",
+        "tsp_candidate_starts",
+        "tsp_farthest_starts",
+        "tsp_min_edge_jaccard",
         "tsp_restarts",
         "tsp_ils",
         "tsp_patience",
         "subset_restarts",
+        "continuation_restarts",
+        "continuation_policy",
+        "racing_candidates",
+        "racing_survivors",
+        "racing_pilot_iters",
+        "racing_min_jaccard",
+        "staged_search",
+        "strong_polish_finalists",
+        "strong_polish_min_jaccard",
         "sa_iters",
+        "sa_iters_per_k",
+        "sa_iters_per_n",
+        "sa_exact_insertion",
+        "sa_insertion_window",
+        "small_p_dense_fill",
+        "exploration_exact_insertion",
+        "sa_spatial_insertion",
+        "dense_exact_insertion",
+        "sa_spatial_neighbors",
+        "region_seeds",
+        "region_dilation",
+        "kick_restarts",
+        "kick_fraction",
+        "kick_t0",
+        "sa_t0",
+        "sa_t1",
+        "restart_threads",
+        "time_budget_per_p",
         "final_exhaustive_k",
         "exhaustive_two_opt_policy",
         "subset_swap_descent_passes",
         "pair_exchange_passes",
+        "pair_exchange_max_k",
         "ruin_recreate_rounds",
+        "adaptive_ruin_recreate",
+        "ruin_recreate_max_fraction",
+        "ruin_recreate_max_nodes",
+        "ruin_recreate_pool_cap",
+        "ejection_chain_starts",
+        "ejection_chain_depth",
+        "ejection_chain_candidates",
+        "ejection_chain_remove_cap",
+        "ejection_chain_max_uphill",
+        "elite_diversity_slots",
+        "elite_min_jaccard",
+        "elite_quality_slack",
         "path_relink_top",
-        "verify_knn_checks",
-        "oracle_mode",
-        "oracle_resolved",
-        "oracle_exec_path",
-        "oracle_version",
-        "oracle_format",
-        "oracle_time_limit_sec",
-        "oracle_scale",
-        "oracle_min_k",
-        "oracle_max_k",
-        "oracle_lkh_runs",
-        "oracle_lkh_max_trials",
-        "oracle_tsp_top",
-        "oracle_subset_top",
+        "path_relink_diverse_reserve",
+        "path_relink_max_pairs",
+        "path_relink_max_removed",
+        "path_relink_max_removed_sum",
+        "path_relink_max_candidate_scans",
+        "seed",
+        "mode",
         "disable_two_opt",
         "disable_or_opt",
         "disable_subset_swap",
         "disable_pair_exchange",
+        "disable_elite_restarts",
         "disable_ruin_recreate",
+        "disable_ejection_chain",
         "disable_path_relink",
         "disable_smallp_seeds",
         "disable_highp_delete",
+        "oracle_mode",
+        "oracle_format",
+        "lkh_path",
+        "concorde_path",
+        "oracle_time_limit_sec",
+        "oracle_scale",
+        "oracle_tsp_top",
+        "oracle_subset_top",
+        "oracle_min_k",
+        "oracle_max_k",
+        "oracle_lkh_runs",
+        "oracle_lkh_max_trials",
         "oracle_use_for_tsp",
         "oracle_use_for_subset",
         "oracle_inline_feedback",
-        "oracle_verbose"
+        "oracle_verbose",
+        "oracle_resolved",
+        "oracle_exec_path",
+        "oracle_version"
       ],
       "properties": {
         "N": {
           "type": "integer",
-          "minimum": 3
+          "minimum": 3,
+          "description": "Number of random points.",
+          "default": 500
         },
         "instances": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Monte Carlo point-set instances.",
+          "default": 15
         },
         "threads": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0,
+          "description": "Instance worker threads; zero selects an automatic bounded value.",
+          "default": 0
+        },
+        "periodic": {
+          "type": "boolean",
+          "description": "Use flat-torus periodic boundary conditions.",
+          "default": false
+        },
+        "control_variate": {
+          "type": "boolean",
+          "description": "Compute the two-nearest-neighbor control variate and fixed-subset bound; the bound measures tour quality conditional on that subset.",
+          "default": false
+        },
+        "cv_mc_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Cheap KNN-only samples used to estimate the full-set control-variate expectation.",
+          "default": 2000
+        },
+        "held_karp": {
+          "type": "boolean",
+          "description": "Compute the Held-Karp lower bound for each selected subset; this certifies tour quality conditional on that subset, not global subset optimality.",
+          "default": false
+        },
+        "hk_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Held-Karp subgradient iterations.",
+          "default": 400
+        },
+        "verbose": {
+          "type": "boolean",
+          "description": "Print per-instance and per-p progress.",
+          "default": false
         },
         "include_instance_rows": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Include per-instance rows and restart diagnostics in JSON.",
+          "default": false
         },
-        "seed": {
-          "type": "integer"
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable campaign identity.",
+          "default": "default"
+        },
+        "campaign_shard": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Nonnegative campaign shard identity.",
+          "default": 0
+        },
+        "replicate_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Campaign-global first replicate identifier.",
+          "default": 0
+        },
+        "point_seed": {
+          "type": "integer",
+          "description": "Point-instance seed; defaults to --seed."
+        },
+        "search_seed": {
+          "type": "integer",
+          "description": "Heuristic-search seed; defaults to --seed."
+        },
+        "solver_policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable solver-policy identity.",
+          "default": "default"
+        },
+        "fidelity_level": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Fidelity identity such as cheap or strong.",
+          "default": "strong"
+        },
+        "second_sweep": {
+          "type": "boolean",
+          "description": "Run an ascending continuation sweep after the descending sweep.",
+          "default": false
+        },
+        "force_output": {
+          "type": "boolean",
+          "description": "Replace an existing output path.",
+          "default": false
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "Validate and print the resolved configuration without solving.",
+          "default": false
+        },
+        "dump_config": {
+          "type": "boolean",
+          "description": "Print the resolved configuration before solving.",
+          "default": false
+        },
+        "output_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Output JSON path.",
+          "default": "results.json"
+        },
+        "output_durability": {
+          "enum": [
+            "none",
+            "file",
+            "full"
+          ],
+          "description": "Output durability: none, file, or full (file plus parent directory).",
+          "default": "full"
+        },
+        "p_values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "description": "Resolved probability grid.",
+          "default": [
+            0.02,
+            0.03,
+            0.05,
+            0.07,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.8,
+            1.0
+          ]
         },
         "knn_k": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 0,
+          "description": "Exact KNN candidate count; values are capped to N-1.",
+          "default": 40
         },
         "knn_backend": {
           "enum": [
             "coords_exact_grid_knn",
             "coords_exact_bruteforce_knn"
-          ]
+          ],
+          "description": "Exact KNN backend: grid or bruteforce.",
+          "default": "grid"
+        },
+        "verify_knn_checks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sampled exact-KNN verification checks.",
+          "default": 0
         },
         "grid_cell": {
           "type": "number",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Force a grid cell size; zero selects an automatic safe value.",
+          "default": 0.0
+        },
+        "exact_subset_max_n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18,
+          "description": "Globally solve subset choice and tour when N is at most this threshold; zero disables it.",
+          "default": 0
         },
         "tsp_candidate_starts": {
           "type": "integer",
           "minimum": 1,
-          "description": "Cheap deterministic full-TSP starts screened before full ILS; values below tsp_restarts are raised to tsp_restarts."
+          "description": "Cheap deterministic TSP starts screened before ILS promotion.",
+          "default": 12
         },
         "tsp_farthest_starts": {
           "type": "integer",
           "minimum": 0,
           "maximum": 1,
-          "description": "Opt into at most one cubic farthest-insertion pilot; zero keeps the scalable nearest-neighbor default."
+          "description": "Opt into at most one cubic farthest-insertion pilot.",
+          "default": 0
         },
         "tsp_min_edge_jaccard": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "Preferred undirected-cycle-edge Jaccard distance between promoted TSP starts."
+          "description": "Preferred edge-Jaccard distance among promoted TSP starts.",
+          "default": 0.02
         },
         "tsp_restarts": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Full TSP restarts promoted into ILS.",
+          "default": 5
         },
         "tsp_ils": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Full-TSP ILS perturbation iterations.",
+          "default": 300
         },
         "tsp_patience": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Full-TSP ILS stagnation patience.",
+          "default": 80
         },
         "subset_restarts": {
           "type": "integer",
           "minimum": -1,
-          "description": "-1 = auto (staged search: 12 when p <= 0.08, else 5; staged search disabled: 8/3); values >= 1 configure the base restart population"
+          "description": "Subset restarts; -1 selects the p-aware automatic policy.",
+          "default": -1
         },
         "continuation_restarts": {
           "type": "integer",
           "minimum": 0,
-          "description": "Warm/continuation restart quota when a parent subset is available."
+          "description": "Warm restarts when a neighboring-p parent exists.",
+          "default": 1
         },
         "continuation_policy": {
           "enum": [
             "supplemental",
             "fixed-budget"
-          ]
+          ],
+          "description": "Continuation policy: supplemental or fixed-budget.",
+          "default": "supplemental"
         },
         "racing_candidates": {
           "type": "integer",
           "minimum": 0,
-          "description": "Supplemental restart candidates screened by deterministic racing; 0 disables racing."
+          "description": "Supplemental candidates screened by deterministic restart racing; zero disables it.",
+          "default": 0
         },
         "racing_survivors": {
           "type": "integer",
           "minimum": 1,
-          "description": "Number of pilot candidates promoted to a full-depth rerun."
+          "description": "Pilot candidates promoted to a full-depth rerun.",
+          "default": 2
         },
         "racing_pilot_iters": {
           "type": "integer",
           "minimum": 0,
-          "description": "SA iterations per race pilot, capped by the effective full restart budget."
+          "description": "SA iterations used to screen each race candidate.",
+          "default": 2000
         },
         "racing_min_jaccard": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "Preferred minimum selected-set Jaccard distance between promoted candidates."
+          "description": "Preferred selected-set Jaccard distance between promoted race candidates.",
+          "default": 0.05
         },
         "staged_search": {
           "type": "boolean",
-          "description": "Run cheap exploration for every subset restart and reserve expensive deterministic neighborhoods for promoted finalists."
+          "description": "Reserve expensive post-SA neighborhoods for promoted finalists.",
+          "default": true
         },
         "strong_polish_finalists": {
           "type": "integer",
           "minimum": 1,
-          "description": "Quality-and-diversity selected core restart finalists receiving strong post-SA neighborhoods."
+          "description": "Finalists receiving the strong search stage.",
+          "default": 3
         },
         "strong_polish_min_jaccard": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "Preferred minimum selected-set Jaccard distance between strong-polish finalists."
+          "description": "Preferred selected-set distance among strong-polish finalists.",
+          "default": 0.02
         },
         "sa_iters": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Base subset-SA iteration budget.",
+          "default": 60000
+        },
+        "sa_iters_per_k": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Additional SA iterations per selected node k.",
+          "default": 0
+        },
+        "sa_iters_per_n": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Additional SA iterations per candidate point N.",
+          "default": 0
+        },
+        "sa_exact_insertion": {
+          "type": "boolean",
+          "description": "Use the historical exact O(k) insertion scan for every SA move.",
+          "default": false
+        },
+        "sa_insertion_window": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Tour-position radius for windowed SA insertion.",
+          "default": 12
+        },
+        "small_p_dense_fill": {
+          "type": "boolean",
+          "description": "At small p, fill the restart pool with dense-seed variants instead of uncontracted random subsets.",
+          "default": true
+        },
+        "exploration_exact_insertion": {
+          "type": "boolean",
+          "description": "Use exact insertion for spread-out exploration seeds.",
+          "default": true
+        },
+        "sa_spatial_insertion": {
+          "type": "boolean",
+          "description": "Use insertion slots from a live spatial index (default: false).",
+          "default": false
+        },
+        "dense_exact_insertion": {
+          "type": "boolean",
+          "description": "Force exact insertion on dense seeds; this reproduces the old bit-identical path at k=2000 but costs about +58% wall.",
+          "default": false
+        },
+        "sa_spatial_neighbors": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nearest current members allowed to offer insertion slots.",
+          "default": 16
+        },
+        "region_seeds": {
+          "type": "boolean",
+          "description": "Use localized region seeds in the explorer pool.",
+          "default": false
+        },
+        "region_dilation": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Region-seed candidate dilation.",
+          "default": 3.0
+        },
+        "kick_restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Scheduled elite-kick restarts.",
+          "default": 0
+        },
+        "kick_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Fraction of members swapped by an elite kick.",
+          "default": 0.1
+        },
+        "kick_t0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "SA start temperature for elite-kick restarts.",
+          "default": 0.35
+        },
+        "sa_t0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Fixed SA start temperature.",
+          "default": 1.4
+        },
+        "sa_t1": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Fixed SA end temperature.",
+          "default": 5e-05
+        },
+        "restart_threads": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Parallel subset-restart workers; zero requests automatic allocation.",
+          "default": 1
+        },
+        "time_budget_per_p": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Wall-clock target per instance/p solve; zero disables anytime mode.",
+          "default": 0.0
         },
         "final_exhaustive_k": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Exhaustive final 2-opt cardinality threshold.",
+          "default": 300
         },
         "exhaustive_two_opt_policy": {
           "enum": [
             "never",
             "final-only",
             "all-polish"
-          ]
+          ],
+          "description": "Exhaustive 2-opt policy: never, final-only, or all-polish.",
+          "default": "final-only"
         },
         "subset_swap_descent_passes": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Deterministic one-for-one subset-swap passes.",
+          "default": 1
         },
         "pair_exchange_passes": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Two-for-two subset-exchange passes.",
+          "default": 1
         },
         "pair_exchange_max_k": {
-          "description": "Maximum subset cardinality for pair exchange; 0 removes the safety gate.",
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Skip pair exchange above k; zero removes the gate.",
+          "default": 5000
         },
         "ruin_recreate_rounds": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Ruin/recreate LNS rounds.",
+          "default": 4
         },
         "adaptive_ruin_recreate": {
           "type": "boolean",
-          "description": "Use the multi-scale ruin/recreate operator portfolio instead of the legacy tiny alternating operators."
+          "description": "Use the adaptive multi-scale ruin/recreate operator portfolio.",
+          "default": true
         },
         "ruin_recreate_max_fraction": {
           "type": "number",
           "minimum": 0,
-          "maximum": 1
+          "maximum": 1,
+          "description": "Maximum ruined fraction of k.",
+          "default": 0.05
         },
         "ruin_recreate_max_nodes": {
           "type": "integer",
           "minimum": 0,
-          "description": "Absolute adaptive ruin-size cap; 0 removes the absolute cap."
+          "description": "Absolute ruin-size cap; zero removes it.",
+          "default": 96
         },
         "ruin_recreate_pool_cap": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "description": "Candidate repair-pool cap.",
+          "default": 640
         },
         "ejection_chain_starts": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Variable-depth membership-chain starts per restart.",
+          "default": 3
         },
         "ejection_chain_depth": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Maximum membership swaps per ejection chain.",
+          "default": 6
         },
         "ejection_chain_candidates": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Incoming-node candidates per chain step.",
+          "default": 24
         },
         "ejection_chain_remove_cap": {
           "type": "integer",
           "minimum": 0,
-          "description": "Maximum removable selected nodes considered per chain step; 0 means all eligible members."
+          "description": "Removable selected-node cap per chain step; zero means all.",
+          "default": 96
         },
         "ejection_chain_max_uphill": {
           "type": "number",
           "minimum": 0,
-          "description": "Maximum cumulative chain excursion above the incumbent in mean-tour-edge units."
+          "description": "Maximum cumulative uphill excursion in mean-edge units.",
+          "default": 0.75
         },
         "elite_diversity_slots": {
           "type": "integer",
           "minimum": 0,
-          "description": "Supplemental set-diverse archive slots beyond the protected length-ranked archive."
+          "description": "Supplemental set-diverse elite slots.",
+          "default": 4
         },
         "elite_min_jaccard": {
           "type": "number",
           "minimum": 0,
-          "maximum": 1
+          "maximum": 1,
+          "description": "Minimum selected-set Jaccard distance for supplemental elite entries.",
+          "default": 0.02
         },
         "elite_quality_slack": {
           "type": "number",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Quality slack allowed for supplemental diverse entries.",
+          "default": 0.03
         },
         "path_relink_top": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Literal maximum archive population exposed to relinking.",
+          "default": 3
         },
         "path_relink_diverse_reserve": {
           "type": "integer",
           "minimum": 0,
-          "description": "Diversity-preferred archive slots inside the literal path_relink_top node cap."
+          "description": "Diversity-preferred entries inside the relinking node cap.",
+          "default": 1
         },
         "path_relink_max_pairs": {
           "type": "integer",
           "minimum": 0,
-          "description": "Maximum ranked relinking pair attempts; 0 is unlimited."
+          "description": "Maximum ranked relinking pair attempts; zero is unlimited.",
+          "default": 3
         },
         "path_relink_max_removed": {
           "type": "integer",
           "minimum": 0,
-          "description": "Maximum one-way selected-set difference per pair; 0 is unlimited."
+          "description": "Maximum one-way selected-set difference per pair; zero is unlimited.",
+          "default": 64
         },
         "path_relink_max_removed_sum": {
           "type": "integer",
           "minimum": 0,
-          "description": "Cumulative one-way selected-set difference across attempted pairs; 0 is unlimited."
+          "description": "Cumulative selected-set-difference budget; zero is unlimited.",
+          "default": 128
         },
         "path_relink_max_candidate_scans": {
           "type": "integer",
           "minimum": 0,
-          "description": "Deterministic candidate-swap scan budget across relinking pairs; 0 is unlimited."
+          "description": "Exact relinking candidate-scan budget; zero is unlimited.",
+          "default": 250000
         },
-        "verify_knn_checks": {
+        "seed": {
           "type": "integer",
-          "minimum": 0
+          "description": "Base random seed.",
+          "default": 2024
+        },
+        "mode": {
+          "enum": [
+            "balanced",
+            "smallp-region",
+            "highp-delete",
+            "hybrid"
+          ],
+          "description": "Solver mode: balanced, smallp-region, highp-delete, or hybrid.",
+          "default": "balanced"
+        },
+        "disable_two_opt": {
+          "type": "boolean",
+          "description": "Disable 2-opt.",
+          "default": false
+        },
+        "disable_or_opt": {
+          "type": "boolean",
+          "description": "Disable Or-opt.",
+          "default": false
+        },
+        "disable_subset_swap": {
+          "type": "boolean",
+          "description": "Disable one-for-one subset swaps.",
+          "default": false
+        },
+        "disable_pair_exchange": {
+          "type": "boolean",
+          "description": "Disable two-for-two subset exchange.",
+          "default": false
+        },
+        "disable_elite_restarts": {
+          "type": "boolean",
+          "description": "Disable elite-seeded anytime restarts.",
+          "default": false
+        },
+        "disable_ruin_recreate": {
+          "type": "boolean",
+          "description": "Disable ruin/recreate.",
+          "default": false
+        },
+        "disable_ejection_chain": {
+          "type": "boolean",
+          "description": "Disable membership ejection chains.",
+          "default": false
+        },
+        "disable_path_relink": {
+          "type": "boolean",
+          "description": "Disable path relinking.",
+          "default": false
+        },
+        "disable_smallp_seeds": {
+          "type": "boolean",
+          "description": "Disable specialized small-p seeds.",
+          "default": false
+        },
+        "disable_highp_delete": {
+          "type": "boolean",
+          "description": "Disable high-p deletion seeds and exchange.",
+          "default": false
         },
         "oracle_mode": {
           "enum": [
@@ -560,217 +1016,115 @@
             "auto",
             "lkh",
             "concorde"
-          ]
+          ],
+          "description": "External oracle: none, auto, lkh, or concorde.",
+          "default": "none"
+        },
+        "oracle_format": {
+          "enum": [
+            "matrix",
+            "euc2d"
+          ],
+          "description": "Oracle problem format: matrix or euc2d.",
+          "default": "matrix"
+        },
+        "lkh_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "LKH executable path.",
+          "default": "LKH"
+        },
+        "concorde_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Concorde executable path.",
+          "default": "concorde"
+        },
+        "oracle_time_limit_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Per-call oracle time limit; zero disables it.",
+          "default": 0
+        },
+        "oracle_scale": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Distance scaling factor for integer oracle matrices.",
+          "default": 1000000
+        },
+        "oracle_tsp_top": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Top full-TSP solutions sent to the oracle.",
+          "default": 1
+        },
+        "oracle_subset_top": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Top subset solutions sent to the oracle.",
+          "default": 1
+        },
+        "oracle_min_k": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Minimum cardinality eligible for an external oracle.",
+          "default": 17
+        },
+        "oracle_max_k": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Maximum cardinality eligible for an external oracle.",
+          "default": 2500
+        },
+        "oracle_lkh_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "LKH RUNS parameter.",
+          "default": 6
+        },
+        "oracle_lkh_max_trials": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "LKH MAX_TRIALS; zero uses the solver default.",
+          "default": 0
+        },
+        "oracle_use_for_tsp": {
+          "type": "boolean",
+          "description": "Disable external-oracle use for full TSP.",
+          "default": true
+        },
+        "oracle_use_for_subset": {
+          "type": "boolean",
+          "description": "Disable external-oracle use for subset tours.",
+          "default": true
+        },
+        "oracle_inline_feedback": {
+          "type": "boolean",
+          "description": "Feed oracle-improved cycles back into the in-process elite search.",
+          "default": false
+        },
+        "oracle_verbose": {
+          "type": "boolean",
+          "description": "Print external-oracle diagnostics.",
+          "default": false
         },
         "oracle_resolved": {
           "enum": [
             "none",
             "lkh",
             "concorde"
-          ]
+          ],
+          "description": "Resolved external oracle."
         },
         "oracle_exec_path": {
-          "type": "string"
+          "type": "string",
+          "description": "Resolved oracle executable path."
         },
         "oracle_version": {
-          "type": "string"
-        },
-        "oracle_format": {
-          "enum": [
-            "matrix",
-            "euc2d"
-          ]
-        },
-        "oracle_time_limit_sec": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "oracle_scale": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "oracle_min_k": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "oracle_max_k": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "oracle_lkh_runs": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "oracle_lkh_max_trials": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "oracle_tsp_top": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "oracle_subset_top": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "disable_two_opt": {
-          "type": "boolean"
-        },
-        "disable_or_opt": {
-          "type": "boolean"
-        },
-        "disable_subset_swap": {
-          "type": "boolean"
-        },
-        "disable_pair_exchange": {
-          "type": "boolean"
-        },
-        "disable_ruin_recreate": {
-          "type": "boolean"
-        },
-        "disable_ejection_chain": {
-          "type": "boolean"
-        },
-        "disable_path_relink": {
-          "type": "boolean"
-        },
-        "disable_smallp_seeds": {
-          "type": "boolean"
-        },
-        "disable_highp_delete": {
-          "type": "boolean"
-        },
-        "oracle_use_for_tsp": {
-          "type": "boolean"
-        },
-        "oracle_use_for_subset": {
-          "type": "boolean"
-        },
-        "oracle_inline_feedback": {
-          "type": "boolean"
-        },
-        "oracle_verbose": {
-          "type": "boolean"
-        },
-        "sa_iters_per_k": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "sa_iters_per_n": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "time_budget_per_p": {
-          "type": "number",
-          "minimum": 0
-        },
-        "restart_threads": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "second_sweep": {
-          "type": "boolean"
-        },
-        "periodic": {
-          "type": "boolean"
-        },
-        "control_variate": {
-          "type": "boolean"
-        },
-        "cv_mc_samples": {
-          "type": "integer"
-        },
-        "held_karp": {
-          "type": "boolean"
-        },
-        "hk_iterations": {
-          "type": "integer"
-        },
-        "sa_t0": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "sa_t1": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "sa_exact_insertion": {
-          "type": "boolean"
-        },
-        "sa_insertion_window": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "kick_restarts": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "kick_fraction": {
-          "type": "number",
-          "exclusiveMinimum": 0,
-          "exclusiveMaximum": 1
-        },
-        "kick_t0": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "region_seeds": {
-          "type": "boolean"
-        },
-        "region_dilation": {
-          "type": "number",
-          "minimum": 1
-        },
-        "small_p_dense_fill": {
-          "type": "boolean"
-        },
-        "exploration_exact_insertion": {
-          "type": "boolean"
-        },
-        "sa_spatial_insertion": {
-          "type": "boolean"
-        },
-        "sa_spatial_neighbors": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "dense_exact_insertion": {
-          "type": "boolean"
-        },
-        "exact_subset_max_n": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 18,
-          "description": "Run the global exact cardinality-k subset-tour oracle when N is at most this threshold; 0 disables it."
-        },
-        "campaign_id": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "campaign_shard": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "replicate_offset": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "point_seed": {
-          "type": "integer"
-        },
-        "search_seed": {
-          "type": "integer"
-        },
-        "solver_policy_id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "fidelity_level": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
+          "description": "Resolved oracle version."
         }
       },
       "additionalProperties": false
