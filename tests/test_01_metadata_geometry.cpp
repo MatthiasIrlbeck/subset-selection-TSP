@@ -111,6 +111,7 @@ ALDOUS_TEST(test_search_phase_timing_add) {
     part.exact_subset_solved = 1;
     part.exact_subset_states = 11;
     part.exact_subset_transitions = 23;
+    part.exact_subset_peak_memory_bytes = 12345;
     aggregate.add(part);
     aggregate.add(part);
     require(aggregate.pair_exchange_skipped_large_k == 6,
@@ -133,8 +134,9 @@ ALDOUS_TEST(test_search_phase_timing_add) {
     require(aggregate.exact_subset_calls == 2
                 && aggregate.exact_subset_solved == 2
                 && aggregate.exact_subset_states == 22
-                && aggregate.exact_subset_transitions == 46,
-            "exact-subset telemetry accumulates across workers");
+                && aggregate.exact_subset_transitions == 46
+                && aggregate.exact_subset_peak_memory_bytes == 12345,
+            "exact-subset telemetry sums work and keeps the maximum memory estimate");
 }
 
 ALDOUS_TEST(test_rng) {

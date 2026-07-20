@@ -37,6 +37,8 @@ void SearchStats::add(const SearchStats& other) {
     exact_subset_solved += other.exact_subset_solved;
     exact_subset_states += other.exact_subset_states;
     exact_subset_transitions += other.exact_subset_transitions;
+    exact_subset_peak_memory_bytes = std::max(
+        exact_subset_peak_memory_bytes, other.exact_subset_peak_memory_bytes);
     tsp_candidate_starts += other.tsp_candidate_starts;
     tsp_promoted_restarts += other.tsp_promoted_restarts;
     tsp_restarts += other.tsp_restarts;

@@ -164,6 +164,9 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         ++result.stats.exact_subset_solved;
         result.stats.exact_subset_states += exact.states;
         result.stats.exact_subset_transitions += exact.transitions;
+        result.stats.exact_subset_peak_memory_bytes = std::max(
+            result.stats.exact_subset_peak_memory_bytes,
+            exact.estimated_peak_memory_bytes);
         result.tour.set_tour(exact.cycle, inst);
         result.exact_optimal = true;
         result.stats.tsp_seconds =

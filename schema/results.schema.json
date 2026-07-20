@@ -1577,6 +1577,10 @@
         "exact_subset_transitions": {
           "type": "integer",
           "minimum": 0
+        },
+        "exact_subset_peak_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
         }
       },
       "additionalProperties": false

@@ -19,9 +19,9 @@ inline constexpr double kDistanceEps = 1e-12;
 inline constexpr double kGeomBoundEps = 1e-15;
 inline constexpr double kBhhReference = 0.7124;
 inline constexpr int kExactSmallTourLimit = 16;
-// Exponential exact cardinality-k subset-tour oracle. N=18 requires about
-// 43 MiB for its DP and parent tables; raising this limit should be accompanied
-// by explicit memory/time benchmarks and a wider mask/parent representation.
+// Exponential exact cardinality-k subset-tour oracle. The implementation uses
+// cardinality layers and reports a pre-allocation memory estimate; raising this
+// limit still requires explicit time/memory benchmarks and wider mask storage.
 inline constexpr int kExactSubsetHardLimit = 18;
 #include "aldous_tsp/generated/options_schema_version.inc"
 inline constexpr std::int64_t kMaxGridCells = 262144;
@@ -81,6 +81,8 @@ struct SearchStats {
     std::uint64_t exact_subset_solved = 0;
     std::uint64_t exact_subset_states = 0;
     std::uint64_t exact_subset_transitions = 0;
+    // Maximum cardinality-sensitive working-storage estimate among exact calls.
+    std::uint64_t exact_subset_peak_memory_bytes = 0;
     // Full-TSP construction/racing telemetry. Candidate starts receive the
     // cheap construction + initial-polish pilot; promoted starts receive the
     // configured ILS budget and produce restart records.

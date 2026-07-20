@@ -333,6 +333,8 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"exact_subset_solved\": " << stats.exact_subset_solved << ",\n"
         << indent << "  \"exact_subset_states\": " << stats.exact_subset_states << ",\n"
         << indent << "  \"exact_subset_transitions\": " << stats.exact_subset_transitions << ",\n"
+        << indent << "  \"exact_subset_peak_memory_bytes\": "
+        << stats.exact_subset_peak_memory_bytes << ",\n"
         << indent << "  \"tsp_candidate_starts\": " << stats.tsp_candidate_starts << ",\n"
         << indent << "  \"tsp_promoted_restarts\": " << stats.tsp_promoted_restarts << ",\n"
         << indent << "  \"tsp_restarts\": " << stats.tsp_restarts << ",\n"

@@ -4,6 +4,7 @@
 #include "aldous_tsp/instance.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -36,25 +37,33 @@ int resolve_thread_count(const int requested, const int instances) noexcept {
     return std::max(1, std::min(threads, std::max(1, instances)));
 }
 
-std::uint64_t dense_exact_memory_bytes(const RunOptions& options) noexcept {
+std::uint64_t exact_memory_bytes(const RunOptions& options) noexcept {
     if (options.solver.exact_subset_max_n <= 0
         || options.N > options.solver.exact_subset_max_n
         || options.N > kExactSubsetHardLimit
         || options.N < 0) {
         return 0U;
     }
-    const auto n = static_cast<std::uint64_t>(options.N);
-    const auto masks = std::uint64_t{1} << static_cast<unsigned>(options.N);
-    std::uint64_t bytes = saturating_multiply(
-        saturating_multiply(masks, n),
-        static_cast<std::uint64_t>(sizeof(double) + sizeof(std::int8_t)));
-    bytes = saturating_add(bytes, masks); // cardinality table
-    bytes = saturating_add(
-        bytes,
-        saturating_multiply(
-            saturating_multiply(n, n),
-            static_cast<std::uint64_t>(sizeof(double))));
-    return bytes;
+    std::uint64_t maximum = 0U;
+    if (options.p_values.empty()) {
+        return estimate_exact_subset_memory(options.N, options.N)
+            .estimated_peak_bytes;
+    }
+    for (const double p : options.p_values) {
+        if (!std::isfinite(p)) {
+            continue;
+        }
+        const int k = std::max(
+            0,
+            std::min(
+                options.N,
+                std::max(3, static_cast<int>(std::llround(
+                    p * static_cast<double>(options.N))))));
+        maximum = std::max(
+            maximum,
+            estimate_exact_subset_memory(options.N, k).estimated_peak_bytes);
+    }
+    return maximum;
 }
 
 } // namespace
@@ -102,7 +111,7 @@ std::uint64_t estimate_instance_memory_bytes(const RunOptions& options) noexcept
 
     // Quality and supplemental elite archives can retain several full cycles.
     bytes = saturating_add(bytes, saturating_multiply(n, 32U * sizeof(int)));
-    bytes = saturating_add(bytes, dense_exact_memory_bytes(options));
+    bytes = saturating_add(bytes, exact_memory_bytes(options));
     return bytes;
 }
 

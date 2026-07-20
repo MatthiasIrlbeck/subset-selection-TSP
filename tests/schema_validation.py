@@ -140,6 +140,7 @@ def main() -> int:
     assert doc["search_stats"]["exact_subset_solved"] == 0, doc["search_stats"]
     assert "exact_subset_states" in doc["search_stats"], doc["search_stats"]
     assert "exact_subset_transitions" in doc["search_stats"], doc["search_stats"]
+    assert "exact_subset_peak_memory_bytes" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["racing_pilot_restarts"] == 0, doc["search_stats"]
     assert doc["search_stats"]["racing_promoted_restarts"] == 0, doc["search_stats"]
     assert doc["search_stats"]["tsp_candidate_starts"] == 12, doc["search_stats"]

@@ -2,6 +2,7 @@
 
 #include "aldous_tsp/config.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,43 @@ int least_set_bit(std::uint32_t value) noexcept {
         ++bit;
     }
     return bit;
+}
+
+int popcount(std::uint32_t value) noexcept {
+    int count = 0;
+    while (value != 0U) {
+        value &= value - 1U;
+        ++count;
+    }
+    return count;
+}
+
+std::uint64_t saturating_add(const std::uint64_t lhs,
+                             const std::uint64_t rhs) noexcept {
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    return lhs > maximum - rhs ? maximum : lhs + rhs;
+}
+
+std::uint64_t saturating_multiply(const std::uint64_t lhs,
+                                  const std::uint64_t rhs) noexcept {
+    if (lhs == 0U || rhs == 0U) {
+        return 0U;
+    }
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    return lhs > maximum / rhs ? maximum : lhs * rhs;
+}
+
+std::uint64_t binomial(const int n, const int k) noexcept {
+    if (k < 0 || k > n) {
+        return 0U;
+    }
+    const int smaller = std::min(k, n - k);
+    std::uint64_t value = 1U;
+    for (int i = 1; i <= smaller; ++i) {
+        value = value * static_cast<std::uint64_t>(n - smaller + i)
+            / static_cast<std::uint64_t>(i);
+    }
+    return value;
 }
 
 bool better_path(double candidate,
@@ -46,7 +84,87 @@ bool better_cycle(double candidate,
     return incumbent_endpoint < 0 || candidate_endpoint < incumbent_endpoint;
 }
 
+std::size_t state_index(const std::size_t row,
+                        const int endpoint,
+                        const std::size_t stride) noexcept {
+    return row * stride + static_cast<std::size_t>(endpoint);
+}
+
 } // namespace
+
+ExactSubsetMemoryEstimate estimate_exact_subset_memory(const int n,
+                                                        const int k) noexcept {
+    ExactSubsetMemoryEstimate estimate;
+    estimate.n = n;
+    estimate.k = k;
+    if (n < 0 || k < 0 || k > n || n > kExactSubsetHardLimit) {
+        return estimate;
+    }
+    estimate.supported = true;
+    if (k <= 2) {
+        return estimate;
+    }
+
+    const auto nodes = static_cast<std::uint64_t>(n);
+    const auto total_masks = std::uint64_t{1} << static_cast<unsigned>(n);
+    estimate.distance_bytes = saturating_multiply(
+        saturating_multiply(nodes, nodes), sizeof(double));
+    estimate.mask_index_bytes = saturating_multiply(total_masks, sizeof(std::int32_t));
+
+    std::uint64_t mask_count = 0U;
+    std::uint64_t cumulative_parent_bytes = 0U;
+    std::uint64_t maximum_dynamic_bytes = 0U;
+    for (int count = 1; count <= k; ++count) {
+        const std::uint64_t current_masks = binomial(n, count);
+        mask_count = saturating_add(mask_count, current_masks);
+        if (count >= 2) {
+            cumulative_parent_bytes = saturating_add(
+                cumulative_parent_bytes,
+                saturating_multiply(
+                    saturating_multiply(current_masks, nodes),
+                    sizeof(std::int8_t)));
+        }
+        const std::uint64_t previous_masks = count == 1
+            ? 0U
+            : binomial(n, count - 1);
+        const std::uint64_t rolling_values = saturating_multiply(
+            saturating_multiply(
+                saturating_add(previous_masks, current_masks),
+                nodes),
+            sizeof(double));
+        maximum_dynamic_bytes = std::max(
+            maximum_dynamic_bytes,
+            saturating_add(rolling_values, cumulative_parent_bytes));
+    }
+
+    estimate.mask_storage_bytes = saturating_add(
+        saturating_multiply(mask_count, sizeof(std::uint32_t)),
+        saturating_multiply(
+            static_cast<std::uint64_t>(k + 1),
+            sizeof(std::vector<std::uint32_t>)
+                + sizeof(std::vector<std::int8_t>)));
+    estimate.parent_bytes = cumulative_parent_bytes;
+
+    std::uint64_t maximum_rolling = 0U;
+    for (int count = 1; count <= k; ++count) {
+        const std::uint64_t current_masks = binomial(n, count);
+        const std::uint64_t previous_masks = count == 1
+            ? 0U
+            : binomial(n, count - 1);
+        maximum_rolling = std::max(
+            maximum_rolling,
+            saturating_multiply(
+                saturating_multiply(
+                    saturating_add(previous_masks, current_masks),
+                    nodes),
+                sizeof(double)));
+    }
+    estimate.rolling_value_bytes = maximum_rolling;
+    estimate.estimated_peak_bytes = saturating_add(
+        saturating_add(estimate.distance_bytes, estimate.mask_index_bytes),
+        saturating_add(estimate.mask_storage_bytes, maximum_dynamic_bytes));
+    return estimate;
+}
 
 ExactSubsetSolution exact_subset_cycle(const Instance& inst, const int k) {
     ExactSubsetSolution result;
@@ -59,7 +177,10 @@ ExactSubsetSolution exact_subset_cycle(const Instance& inst, const int k) {
     if (k < 0 || k > inst.N) {
         throw std::invalid_argument("exact subset cardinality must be in [0,N]");
     }
-    if (inst.N > kExactSubsetHardLimit) {
+    const ExactSubsetMemoryEstimate memory =
+        estimate_exact_subset_memory(inst.N, k);
+    result.estimated_peak_memory_bytes = memory.estimated_peak_bytes;
+    if (!memory.supported) {
         return result;
     }
 
@@ -140,92 +261,125 @@ ExactSubsetSolution exact_subset_cycle(const Instance& inst, const int k) {
         }
     }
 
-    std::vector<std::uint8_t> cardinality(static_cast<std::size_t>(total_masks), 0U);
+    std::vector<std::vector<std::uint32_t>> masks_by_count(
+        static_cast<std::size_t>(k + 1));
+    for (int count = 1; count <= k; ++count) {
+        masks_by_count[static_cast<std::size_t>(count)].reserve(
+            static_cast<std::size_t>(binomial(n, count)));
+    }
     for (std::uint32_t mask = 1U; mask < total_masks; ++mask) {
-        cardinality[static_cast<std::size_t>(mask)] = static_cast<std::uint8_t>(
-            cardinality[static_cast<std::size_t>(mask >> 1U)]
-            + static_cast<std::uint8_t>(mask & 1U));
+        const int count = popcount(mask);
+        if (count <= k) {
+            masks_by_count[static_cast<std::size_t>(count)].push_back(mask);
+        }
     }
 
-    const std::size_t state_count = static_cast<std::size_t>(total_masks) * stride;
-    std::vector<double> dp(state_count, infinity);
-    std::vector<std::int8_t> parent(state_count, static_cast<std::int8_t>(-1));
-    const auto state_index = [stride](const std::uint32_t mask, const int endpoint) {
-        return static_cast<std::size_t>(mask) * stride
-            + static_cast<std::size_t>(endpoint);
-    };
+    std::vector<std::vector<std::int8_t>> parent_by_count(
+        static_cast<std::size_t>(k + 1));
+    std::vector<std::int32_t> previous_rows(
+        static_cast<std::size_t>(total_masks), -1);
+    std::vector<double> previous_values;
 
     double best_length = infinity;
     std::uint32_t best_mask = 0U;
     int best_endpoint = -1;
 
-    for (std::uint32_t mask = 1U; mask < total_masks; ++mask) {
-        const int count = static_cast<int>(cardinality[static_cast<std::size_t>(mask)]);
-        if (count > k) {
-            continue;
-        }
-        const int anchor = least_set_bit(mask);
-        if (count == 1) {
-            dp[state_index(mask, anchor)] = 0.0;
-            ++result.states;
-            if (k == 1
-                && better_cycle(0.0, mask, anchor,
-                                best_length, best_mask, best_endpoint)) {
-                best_length = 0.0;
-                best_mask = mask;
-                best_endpoint = anchor;
+    for (int count = 1; count <= k; ++count) {
+        const auto& current_masks = masks_by_count[static_cast<std::size_t>(count)];
+        std::vector<double> current_values(current_masks.size() * stride, infinity);
+        std::vector<std::int8_t> current_parents;
+        if (count >= 2) {
+            current_parents.assign(
+                current_masks.size() * stride,
+                static_cast<std::int8_t>(-1));
+            const auto& previous_masks =
+                masks_by_count[static_cast<std::size_t>(count - 1)];
+            for (std::size_t row = 0; row < previous_masks.size(); ++row) {
+                previous_rows[static_cast<std::size_t>(previous_masks[row])] =
+                    static_cast<std::int32_t>(row);
             }
-            continue;
         }
 
-        std::uint32_t endpoints = mask & ~(1U << static_cast<unsigned>(anchor));
-        while (endpoints != 0U) {
-            const int endpoint = least_set_bit(endpoints);
-            endpoints &= endpoints - 1U;
-            const std::uint32_t previous_mask =
-                mask ^ (1U << static_cast<unsigned>(endpoint));
-
-            double best_path = infinity;
-            int best_predecessor = -1;
-            std::uint32_t predecessors = previous_mask;
-            while (predecessors != 0U) {
-                const int predecessor = least_set_bit(predecessors);
-                predecessors &= predecessors - 1U;
-                const double prefix = dp[state_index(previous_mask, predecessor)];
-                if (!std::isfinite(prefix)) {
-                    continue;
-                }
-                ++result.transitions;
-                const double candidate = prefix
-                    + distances[static_cast<std::size_t>(predecessor) * stride
-                                + static_cast<std::size_t>(endpoint)];
-                if (better_path(candidate, predecessor,
-                                best_path, best_predecessor)) {
-                    best_path = candidate;
-                    best_predecessor = predecessor;
-                }
-            }
-
-            if (best_predecessor < 0) {
+        for (std::size_t row = 0; row < current_masks.size(); ++row) {
+            const std::uint32_t mask = current_masks[row];
+            const int anchor = least_set_bit(mask);
+            if (count == 1) {
+                current_values[state_index(row, anchor, stride)] = 0.0;
+                ++result.states;
                 continue;
             }
-            const std::size_t index = state_index(mask, endpoint);
-            dp[index] = best_path;
-            parent[index] = static_cast<std::int8_t>(best_predecessor);
-            ++result.states;
 
-            if (count == k) {
-                const double cycle_length = best_path
-                    + distances[static_cast<std::size_t>(endpoint) * stride
-                                + static_cast<std::size_t>(anchor)];
-                if (better_cycle(cycle_length, mask, endpoint,
-                                 best_length, best_mask, best_endpoint)) {
-                    best_length = cycle_length;
-                    best_mask = mask;
-                    best_endpoint = endpoint;
+            std::uint32_t endpoints =
+                mask & ~(1U << static_cast<unsigned>(anchor));
+            while (endpoints != 0U) {
+                const int endpoint = least_set_bit(endpoints);
+                endpoints &= endpoints - 1U;
+                const std::uint32_t previous_mask =
+                    mask ^ (1U << static_cast<unsigned>(endpoint));
+                const std::int32_t previous_row =
+                    previous_rows[static_cast<std::size_t>(previous_mask)];
+                if (previous_row < 0) {
+                    throw std::logic_error(
+                        "exact subset oracle cardinality index is inconsistent");
+                }
+
+                double best_path = infinity;
+                int best_predecessor = -1;
+                std::uint32_t predecessors = previous_mask;
+                while (predecessors != 0U) {
+                    const int predecessor = least_set_bit(predecessors);
+                    predecessors &= predecessors - 1U;
+                    const double prefix = previous_values[state_index(
+                        static_cast<std::size_t>(previous_row),
+                        predecessor,
+                        stride)];
+                    if (!std::isfinite(prefix)) {
+                        continue;
+                    }
+                    ++result.transitions;
+                    const double candidate = prefix
+                        + distances[static_cast<std::size_t>(predecessor) * stride
+                                    + static_cast<std::size_t>(endpoint)];
+                    if (better_path(candidate, predecessor,
+                                    best_path, best_predecessor)) {
+                        best_path = candidate;
+                        best_predecessor = predecessor;
+                    }
+                }
+
+                if (best_predecessor < 0) {
+                    continue;
+                }
+                const std::size_t index = state_index(row, endpoint, stride);
+                current_values[index] = best_path;
+                current_parents[index] =
+                    static_cast<std::int8_t>(best_predecessor);
+                ++result.states;
+
+                if (count == k) {
+                    const double cycle_length = best_path
+                        + distances[static_cast<std::size_t>(endpoint) * stride
+                                    + static_cast<std::size_t>(anchor)];
+                    if (better_cycle(cycle_length, mask, endpoint,
+                                     best_length, best_mask, best_endpoint)) {
+                        best_length = cycle_length;
+                        best_mask = mask;
+                        best_endpoint = endpoint;
+                    }
                 }
             }
         }
+
+        if (count >= 2) {
+            const auto& previous_masks =
+                masks_by_count[static_cast<std::size_t>(count - 1)];
+            for (const std::uint32_t mask : previous_masks) {
+                previous_rows[static_cast<std::size_t>(mask)] = -1;
+            }
+            parent_by_count[static_cast<std::size_t>(count)] =
+                std::move(current_parents);
+        }
+        previous_values = std::move(current_values);
     }
 
     if (best_endpoint < 0 || best_mask == 0U || !std::isfinite(best_length)) {
@@ -235,18 +389,30 @@ ExactSubsetSolution exact_subset_cycle(const Instance& inst, const int k) {
     result.cycle.assign(static_cast<std::size_t>(k), -1);
     const int anchor = least_set_bit(best_mask);
     result.cycle[0] = anchor;
-    if (k > 1) {
-        std::uint32_t mask = best_mask;
-        int current = best_endpoint;
-        for (int position = k - 1; position >= 1; --position) {
-            result.cycle[static_cast<std::size_t>(position)] = current;
-            const int predecessor = static_cast<int>(parent[state_index(mask, current)]);
-            mask ^= 1U << static_cast<unsigned>(current);
-            current = predecessor;
+    std::uint32_t mask = best_mask;
+    int current = best_endpoint;
+    for (int position = k - 1; position >= 1; --position) {
+        result.cycle[static_cast<std::size_t>(position)] = current;
+        const int count = position + 1;
+        const auto& masks = masks_by_count[static_cast<std::size_t>(count)];
+        const auto found = std::lower_bound(masks.begin(), masks.end(), mask);
+        if (found == masks.end() || *found != mask) {
+            throw std::logic_error(
+                "exact subset oracle parent mask reconstruction failed");
         }
-        if (current != anchor) {
-            throw std::logic_error("exact subset oracle parent reconstruction failed");
+        const std::size_t row = static_cast<std::size_t>(found - masks.begin());
+        const std::int8_t predecessor =
+            parent_by_count[static_cast<std::size_t>(count)]
+                           [state_index(row, current, stride)];
+        if (predecessor < 0) {
+            throw std::logic_error(
+                "exact subset oracle parent reconstruction failed");
         }
+        mask ^= 1U << static_cast<unsigned>(current);
+        current = static_cast<int>(predecessor);
+    }
+    if (current != anchor) {
+        throw std::logic_error("exact subset oracle parent reconstruction failed");
     }
 
     result.length = best_length;

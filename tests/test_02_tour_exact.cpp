@@ -142,6 +142,32 @@ ExactSubsetSolution brute_force_exact_subset(const Instance& inst, const int k) 
     return best;
 }
 
+
+ALDOUS_TEST(test_exact_subset_memory_estimate) {
+    const ExactSubsetMemoryEstimate small = estimate_exact_subset_memory(18, 3);
+    const ExactSubsetMemoryEstimate middle = estimate_exact_subset_memory(18, 9);
+    const ExactSubsetMemoryEstimate full = estimate_exact_subset_memory(18, 18);
+    require(small.supported && middle.supported && full.supported,
+            "exact memory estimates support every legal cardinality");
+    require(small.estimated_peak_bytes > 0
+                && small.estimated_peak_bytes < middle.estimated_peak_bytes,
+            "cardinality layering uses substantially less storage at small k");
+    require(middle.rolling_value_bytes > 0
+                && middle.parent_bytes > 0
+                && middle.mask_index_bytes > 0,
+            "exact memory estimates expose each major storage component");
+    const std::uint64_t dense_bytes =
+        (std::uint64_t{1} << 18U) * 18U
+        * static_cast<std::uint64_t>(sizeof(double) + sizeof(std::int8_t));
+    require(middle.estimated_peak_bytes < dense_bytes,
+            "cardinality-layered peak is below the former dense value/parent tables");
+    require(full.estimated_peak_bytes < dense_bytes,
+            "rolling values also reduce full-cardinality exact storage");
+    require(!estimate_exact_subset_memory(19, 4).supported
+                && !estimate_exact_subset_memory(8, 9).supported,
+            "memory estimator refuses unsupported dimensions without allocation");
+}
+
 ALDOUS_TEST(test_exact_subset_oracle) {
     for (int periodic = 0; periodic < 2; ++periodic) {
         for (int n = 3; n <= 9; ++n) {
@@ -154,6 +180,9 @@ ALDOUS_TEST(test_exact_subset_oracle) {
                 const ExactSubsetSolution brute = brute_force_exact_subset(inst, k);
                 require(exact.solved && exact.proven_optimal,
                         "exact subset oracle proves supported instances");
+                require(exact.estimated_peak_memory_bytes
+                            == estimate_exact_subset_memory(n, k).estimated_peak_bytes,
+                        "exact subset result reports its pre-allocation peak estimate");
                 require(static_cast<int>(exact.cycle.size()) == k,
                         "exact subset oracle returns the requested cardinality");
                 require(std::fabs(exact.length - brute.length)
@@ -228,8 +257,10 @@ ALDOUS_TEST(test_exact_subset_solver_integration) {
     require(subset.stats.exact_subset_calls == 1
                 && subset.stats.exact_subset_solved == 1
                 && subset.stats.exact_subset_states == reference.states
-                && subset.stats.exact_subset_transitions == reference.transitions,
-            "subset solver reports exact-oracle work");
+                && subset.stats.exact_subset_transitions == reference.transitions
+                && subset.stats.exact_subset_peak_memory_bytes
+                    == reference.estimated_peak_memory_bytes,
+            "subset solver reports exact-oracle work and peak storage");
     require(subset.stats.phases.exact_subset_seconds >= 0.0,
             "subset solver reports exact-oracle phase time");
     require(solve_rng.next_u64() == untouched_rng.next_u64(),

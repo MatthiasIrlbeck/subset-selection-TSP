@@ -136,6 +136,7 @@ def main() -> int:
         assert exact_doc["search_stats"]["exact_subset_solved"] == 2, exact_doc["search_stats"]
         assert exact_doc["search_stats"]["exact_subset_states"] > 0, exact_doc["search_stats"]
         assert exact_doc["search_stats"]["exact_subset_transitions"] > 0, exact_doc["search_stats"]
+        assert exact_doc["search_stats"]["exact_subset_peak_memory_bytes"] > 0, exact_doc["search_stats"]
         assert exact_doc["search_stats"]["phase_timing"]["exact_subset_seconds"] >= 0.0, exact_doc["search_stats"]
         exact_p_rows = exact_doc["instance_rows"][0]["p_results"]
         assert all(row["exact_optimal"] for row in exact_p_rows), exact_p_rows
