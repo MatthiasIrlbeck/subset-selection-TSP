@@ -159,3 +159,11 @@ When real original parity is run, archive `parity-original/parity_manifest.csv`,
 ## Bundled validation benchmark size
 
 The built-in benchmark scenarios are intentionally validation-sized so CI and source-package checks complete quickly. For publication-scale Monte Carlo evidence, copy or extend `scripts/benchmark.py` scenarios and run with larger `N`, more instances, and higher restart/iteration budgets.
+## Matched-compute search-policy tuning
+
+Use [`scripts/tune_search_policy.py`](../scripts/tune_search_policy.py) to compare
+staged-search and racing policies on identical point/search streams. The harness
+uses accumulated worker seconds, paired per-instance values, and point-block
+bootstrap intervals rather than nominal restart counts. See
+[`docs/policy_tuning.md`](policy_tuning.md) for the policy-file format and
+held-out evaluation requirements.

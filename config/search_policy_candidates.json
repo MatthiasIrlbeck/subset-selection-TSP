@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "reference_policy": "balanced-automatic",
+  "policies": [
+    {
+      "id": "balanced-automatic",
+      "description": "Current p-aware staged-search default.",
+      "args": []
+    },
+    {
+      "id": "broader-8x3",
+      "description": "Eight explored restarts and three strong finalists.",
+      "args": [
+        "--restarts",
+        "8",
+        "--strong-polish-finalists",
+        "3"
+      ]
+    },
+    {
+      "id": "raced-8x2",
+      "description": "Current base population plus eight race pilots and two promotions.",
+      "args": [
+        "--racing-candidates",
+        "8",
+        "--racing-survivors",
+        "2",
+        "--racing-pilot-iters",
+        "500"
+      ]
+    },
+    {
+      "id": "strong-5x4",
+      "description": "Five explored restarts and four strong finalists.",
+      "args": [
+        "--restarts",
+        "5",
+        "--strong-polish-finalists",
+        "4"
+      ]
+    }
+  ]
+}
