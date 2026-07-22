@@ -138,6 +138,7 @@ This file is generated from `config/options.json`. Do not edit it directly.
 |---|---|---:|---|---|
 | `--control-variate` | `control_variate` | `false` | boolean | Compute the two-nearest-neighbor control variate and fixed-subset bound; the bound measures tour quality conditional on that subset. |
 | `--cv-mc-samples` | `cv_mc_samples` | `2000` | minimum=1 | Cheap KNN-only samples used to estimate the full-set control-variate expectation. |
+| `--cv-max-point-ops` | `cv_max_point_ops` | `100000000` | minimum=2 | Maximum N times control-reference samples; bounds the Monte Carlo point-generation work exactly. |
 | `--held-karp` | `held_karp` | `false` | boolean | Compute the Held-Karp lower bound for each selected subset; this certifies tour quality conditional on that subset, not global subset optimality. |
 | `--hk-iterations` | `hk_iterations` | `400` | minimum=1 | Held-Karp subgradient iterations. |
 | `--include-instance-rows` | `include_instance_rows` | `false` | boolean | Include per-instance rows and restart diagnostics in JSON. |

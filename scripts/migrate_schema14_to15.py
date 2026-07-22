@@ -19,7 +19,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_SCHEMA_PATH = ROOT / "schema" / "results-v14.schema.json"
-CURRENT_SCHEMA_PATH = ROOT / "schema" / "results.schema.json"
+CURRENT_SCHEMA_PATH = ROOT / "schema" / "results-v15.schema.json"
 TOOL_NAME = "scripts/migrate_schema14_to15.py"
 
 

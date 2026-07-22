@@ -680,6 +680,14 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
                 out << ",\n          \"held_karp_bound\": ";
                 write_json_double(out, pv.conditional_held_karp_bound);
             }
+            if (pv.control_variate_x >= 0.0 && pv.cv_adjusted_value >= 0.0) {
+                out << ",\n          \"control_variate_x\": ";
+                write_json_double(out, pv.control_variate_x);
+                out << ",\n          \"cv_adjusted_value\": ";
+                write_json_double(out, pv.cv_adjusted_value);
+                out << ",\n          \"cv_lambda\": ";
+                write_json_double(out, pv.cv_lambda);
+            }
             out << "\n        }";
         }
         if (!row.p_results.empty()) {
@@ -751,14 +759,28 @@ std::string results_to_json(const ResultsDocument& doc) {
     if (doc.full_bound_expectation >= 0.0) {
         out << "  \"full_bound_expectation\": ";
         write_json_double(out, doc.full_bound_expectation);
+        out << ",\n  \"full_bound_expectation_stddev\": ";
+        write_json_double(out, doc.full_bound_expectation_stddev);
         out << ",\n  \"full_bound_expectation_stderr\": ";
         write_json_double(out, doc.full_bound_expectation_stderr);
-        out << ",\n  \"full_bound_expectation_samples\": " << doc.full_bound_expectation_samples << ",\n";
+        out << ",\n  \"full_bound_expectation_samples\": "
+            << doc.full_bound_expectation_samples;
+        out << ",\n  \"full_bound_expectation_point_operations\": "
+            << doc.full_bound_expectation_point_operations << ",\n";
     }
     out << "  \"threads\": " << doc.threads << ",\n"
         << "  \"memory_plan\": ";
     write_memory_plan(out, doc.memory_plan, "  ");
-    out << ",\n  \"wall_seconds\": ";
+    out << ",\n  \"timing\": {\n"
+        << "    \"solver_wall_seconds\": ";
+    write_json_double(out, doc.solver_wall_seconds);
+    out << ",\n    \"control_reference_seconds\": ";
+    write_json_double(out, doc.control_reference_seconds);
+    out << ",\n    \"aggregation_seconds\": ";
+    write_json_double(out, doc.aggregation_seconds);
+    out << ",\n    \"experiment_wall_seconds\": ";
+    write_json_double(out, doc.experiment_wall_seconds);
+    out << "\n  },\n  \"wall_seconds\": ";
     write_json_double(out, doc.wall_seconds);
     out << ",\n"
         << "  \"mode\": \"" << solver_mode_name(doc.options.solver.mode) << "\",\n"
@@ -846,6 +868,16 @@ std::string results_to_json(const ResultsDocument& doc) {
             write_json_double(out, s.cv_mean);
             out << ",\n      \"cv_stderr\": ";
             write_json_double(out, s.cv_stderr);
+            out << ",\n      \"cv_sampling_stderr\": ";
+            write_json_double(out, s.cv_sampling_stderr);
+            out << ",\n      \"cv_reference_stderr\": ";
+            write_json_double(out, s.cv_reference_stderr);
+            out << ",\n      \"cv_lambda\": ";
+            write_json_double(out, s.cv_lambda);
+            out << ",\n      \"cv_lambda_fold0\": ";
+            write_json_double(out, s.cv_lambda_fold0);
+            out << ",\n      \"cv_lambda_fold1\": ";
+            write_json_double(out, s.cv_lambda_fold1);
             out << ",\n      \"cv_variance_reduction\": ";
             write_json_double(out, s.cv_variance_reduction);
         }

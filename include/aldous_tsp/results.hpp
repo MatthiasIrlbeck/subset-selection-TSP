@@ -54,7 +54,14 @@ struct PValueSummary {
         double lower_bound_gap_mean;
     };
     double cv_mean = 0.0;
+    // Total standard error, including both finite-instance sampling and the
+    // independently estimated control-reference expectation.
     double cv_stderr = 0.0;
+    double cv_sampling_stderr = 0.0;
+    double cv_reference_stderr = 0.0;
+    double cv_lambda = 0.0;
+    double cv_lambda_fold0 = 0.0;
+    double cv_lambda_fold1 = 0.0;
     double cv_variance_reduction = 0.0;
     // Held-Karp outputs (populated only when --held-karp is set). These are also
     // conditional on S_found. A small gap certifies that the tour ordering for
@@ -102,6 +109,12 @@ struct InstancePValueRow {
         // Deprecated source-compatible alias. JSON also emits this legacy name.
         double held_karp_bound;
     };
+    // Per-observation control-variate provenance. `control_variate_x` is the
+    // full-set two-NN bound divided by k. The adjusted value uses a coefficient
+    // estimated from the opposite replicate fold.
+    double control_variate_x = -1.0;
+    double cv_adjusted_value = -1.0;
+    double cv_lambda = 0.0;
 };
 
 struct InstanceResultRow {
@@ -130,7 +143,13 @@ struct ResultsDocument {
     int instances_done = 0;
     int instances_target = 0;
     int threads = 0;
+    // Backward-compatible alias for experiment_wall_seconds. Unlike historical
+    // versions, this includes control-reference and aggregation work.
     double wall_seconds = 0.0;
+    double solver_wall_seconds = 0.0;
+    double control_reference_seconds = 0.0;
+    double aggregation_seconds = 0.0;
+    double experiment_wall_seconds = 0.0;
     MemoryPlan memory_plan;
     RunOptions options;
     SearchStats stats;
@@ -140,8 +159,10 @@ struct ResultsDocument {
     // Monte-Carlo estimate of E[B_full] (two-NN lower bound over N points on the
     // same domain), the known mean of the control variate. -1 when not computed.
     double full_bound_expectation = -1.0;
+    double full_bound_expectation_stddev = -1.0;
     double full_bound_expectation_stderr = -1.0;
     int full_bound_expectation_samples = 0;
+    std::uint64_t full_bound_expectation_point_operations = 0;
 };
 
 std::string json_escape(const std::string& input);
@@ -164,6 +185,10 @@ enum class OutputCommitState {
 struct AtomicWriteResult {
     OutputCommitState state = OutputCommitState::NotCommitted;
     std::string message;
+    double write_seconds = 0.0;
+    double synchronization_seconds = 0.0;
+    double commit_seconds = 0.0;
+    double total_seconds = 0.0;
 
     bool committed() const noexcept {
         return state != OutputCommitState::NotCommitted;

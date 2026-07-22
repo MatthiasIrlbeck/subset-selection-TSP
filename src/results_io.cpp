@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -25,6 +26,11 @@ namespace aldous_tsp {
 namespace {
 
 std::atomic<std::uint64_t> g_temp_counter{0};
+using IoClock = std::chrono::steady_clock;
+
+double elapsed_seconds(const IoClock::time_point start) {
+    return std::chrono::duration<double>(IoClock::now() - start).count();
+}
 
 AtomicWriteResult failure(const std::string& message) {
     return {OutputCommitState::NotCommitted, message};
@@ -81,6 +87,7 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
                                     const std::string& text,
                                     ReplacePolicy replace_policy,
                                     OutputDurability durability) {
+    const auto total_start = IoClock::now();
     std::filesystem::path temp;
     HANDLE handle = INVALID_HANDLE_VALUE;
     for (std::uint64_t attempt = 0; attempt < 128U; ++attempt) {
@@ -102,6 +109,7 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
 
     std::string error;
     bool ok = true;
+    const auto write_start = IoClock::now();
     std::size_t offset = 0;
     while (offset < text.size()) {
         const std::size_t remaining = text.size() - offset;
@@ -117,6 +125,9 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
         }
         offset += static_cast<std::size_t>(written);
     }
+    AtomicWriteResult result;
+    result.write_seconds = elapsed_seconds(write_start);
+    const auto sync_start = IoClock::now();
     if (ok && durability != OutputDurability::None && FlushFileBuffers(handle) == 0) {
         error = "failed to flush temporary output file: "
             + windows_error_message(GetLastError());
@@ -129,9 +140,14 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
     }
     if (!ok) {
         DeleteFileW(temp.wstring().c_str());
-        return failure(error);
+        result.message = error;
+        result.synchronization_seconds = elapsed_seconds(sync_start);
+        result.total_seconds = elapsed_seconds(total_start);
+        return result;
     }
+    result.synchronization_seconds = elapsed_seconds(sync_start);
 
+    const auto commit_start = IoClock::now();
     DWORD flags = durability == OutputDurability::Full ? MOVEFILE_WRITE_THROUGH : 0U;
     if (replace_policy == ReplacePolicy::ReplaceExisting) {
         flags |= MOVEFILE_REPLACE_EXISTING;
@@ -141,16 +157,26 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
         DeleteFileW(temp.wstring().c_str());
         if (replace_policy == ReplacePolicy::NoReplace
             && (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS)) {
-            return failure("Refusing to overwrite existing output file "
-                           + target.string() + " (use --force or a different --output)");
+            result.message = "Refusing to overwrite existing output file "
+                + target.string() + " (use --force or a different --output)";
+            result.commit_seconds = elapsed_seconds(commit_start);
+            result.total_seconds = elapsed_seconds(total_start);
+            return result;
         }
-        return failure("failed to commit output file atomically: "
-                       + windows_error_message(code));
+        result.message = "failed to commit output file atomically: "
+            + windows_error_message(code);
+        result.commit_seconds = elapsed_seconds(commit_start);
+        result.total_seconds = elapsed_seconds(total_start);
+        return result;
     }
+    result.commit_seconds = elapsed_seconds(commit_start);
     if (durability == OutputDurability::Full) {
-        return {OutputCommitState::FullyDurable, {}};
+        result.state = OutputCommitState::FullyDurable;
+    } else {
+        result.state = committed_state(durability);
     }
-    return {committed_state(durability), {}};
+    result.total_seconds = elapsed_seconds(total_start);
+    return result;
 }
 
 #else
@@ -212,6 +238,7 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
                                     const std::string& text,
                                     ReplacePolicy replace_policy,
                                     OutputDurability durability) {
+    const auto total_start = IoClock::now();
     std::filesystem::path temp;
     int fd = -1;
     for (std::uint64_t attempt = 0; attempt < 128U; ++attempt) {
@@ -234,7 +261,11 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
     }
 
     std::string error;
+    const auto write_start = IoClock::now();
     bool ok = write_all(fd, text, error);
+    AtomicWriteResult result;
+    result.write_seconds = elapsed_seconds(write_start);
+    const auto sync_start = IoClock::now();
     if (ok && durability != OutputDurability::None && ::fsync(fd) != 0) {
         error = std::string("failed to synchronize temporary output file: ")
             + std::strerror(errno);
@@ -247,9 +278,14 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
     }
     if (!ok) {
         (void)::unlink(temp.c_str());
-        return failure(error);
+        result.message = error;
+        result.synchronization_seconds = elapsed_seconds(sync_start);
+        result.total_seconds = elapsed_seconds(total_start);
+        return result;
     }
+    result.synchronization_seconds = elapsed_seconds(sync_start);
 
+    const auto commit_start = IoClock::now();
     bool committed = false;
     if (replace_policy == ReplacePolicy::ReplaceExisting) {
         committed = ::rename(temp.c_str(), target.c_str()) == 0;
@@ -264,11 +300,17 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
         const int code = errno;
         (void)::unlink(temp.c_str());
         if (replace_policy == ReplacePolicy::NoReplace && code == EEXIST) {
-            return failure("Refusing to overwrite existing output file "
-                           + target.string() + " (use --force or a different --output)");
+            result.message = "Refusing to overwrite existing output file "
+                + target.string() + " (use --force or a different --output)";
+            result.commit_seconds = elapsed_seconds(commit_start);
+            result.total_seconds = elapsed_seconds(total_start);
+            return result;
         }
-        return failure(std::string("failed to commit output file atomically: ")
-                       + std::strerror(code));
+        result.message = std::string("failed to commit output file atomically: ")
+            + std::strerror(code);
+        result.commit_seconds = elapsed_seconds(commit_start);
+        result.total_seconds = elapsed_seconds(total_start);
+        return result;
     }
 
     std::string warning;
@@ -277,18 +319,25 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
             + std::strerror(errno);
     }
 
-    AtomicWriteResult result{committed_state(durability), warning};
+    result.state = committed_state(durability);
+    result.message = warning;
+    result.commit_seconds = elapsed_seconds(commit_start);
     if (durability == OutputDurability::Full) {
+        const auto parent_sync_start = IoClock::now();
         std::string sync_error;
         if (!sync_parent(target, sync_error)) {
+            result.synchronization_seconds += elapsed_seconds(parent_sync_start);
             if (!result.message.empty()) {
                 result.message += "; ";
             }
             result.message += sync_error;
+            result.total_seconds = elapsed_seconds(total_start);
             return result;
         }
+        result.synchronization_seconds += elapsed_seconds(parent_sync_start);
         result.state = OutputCommitState::FullyDurable;
     }
+    result.total_seconds = elapsed_seconds(total_start);
     return result;
 }
 

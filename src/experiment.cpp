@@ -87,31 +87,155 @@ double two_nn_bound_subset(const Instance& base, const std::vector<int>& subset)
 // solve, so far cheaper than one expensive instance. Uses an independent RNG
 // stream so it does not overlap the measured instances.
 void estimate_full_bound_expectation(const RunOptions& opt, ResultsDocument& doc) {
-    int samples = opt.cv_mc_samples;
-    // Cap so total cheap-KNN work stays bounded at very large N.
-    const int cap = std::max(500, static_cast<int>(100000000LL / std::max(opt.N, 1)));
-    samples = std::min(samples, cap);
-    samples = std::max(samples, 2);
-    double sum = 0.0;
-    double sum2 = 0.0;
-    for (int s = 0; s < samples; ++s) {
+    const int operation_cap = opt.cv_max_point_ops / std::max(opt.N, 1);
+    if (operation_cap < 2) {
+        throw std::invalid_argument(
+            "control-reference work budget permits fewer than two samples");
+    }
+    const int samples = std::min(opt.cv_mc_samples, operation_cap);
+    double mean = 0.0;
+    double m2 = 0.0;
+    for (int sample = 0; sample < samples; ++sample) {
         Rng rng(make_stream_seed(static_cast<std::uint64_t>(effective_point_seed(opt)),
                                  0xC0DEC0DEC0DEC0DEULL,
-                                 static_cast<std::uint64_t>(s) ^ 0x9E3779B97F4A7C15ULL));
+                                 static_cast<std::uint64_t>(sample)
+                                     ^ 0x9E3779B97F4A7C15ULL));
         PreparedInstance prepared = InstanceBuilder()
             .periodic(opt.periodic)
             .generate(opt.N, rng)
             .build(2, KnnBackend::GridExact);
-        const Instance& inst = prepared.instance();
-        const double b = two_nn_bound_from_knn(inst);
-        sum += b;
-        sum2 += b * b;
+        const double value = two_nn_bound_from_knn(prepared.instance());
+        const double delta = value - mean;
+        mean += delta / static_cast<double>(sample + 1);
+        m2 += delta * (value - mean);
     }
-    const double mean = sum / static_cast<double>(samples);
-    const double var = std::max(0.0, sum2 / static_cast<double>(samples) - mean * mean);
+    const double variance = samples > 1
+        ? std::max(0.0, m2 / static_cast<double>(samples - 1)) : 0.0;
     doc.full_bound_expectation = mean;
-    doc.full_bound_expectation_stderr = std::sqrt(var / static_cast<double>(samples));
+    doc.full_bound_expectation_stddev = std::sqrt(variance);
+    doc.full_bound_expectation_stderr =
+        std::sqrt(variance / static_cast<double>(samples));
     doc.full_bound_expectation_samples = samples;
+    doc.full_bound_expectation_point_operations =
+        static_cast<std::uint64_t>(samples)
+        * static_cast<std::uint64_t>(std::max(opt.N, 0));
+}
+
+struct CrossFittedControlVariate {
+    double mean = 0.0;
+    double total_stderr = 0.0;
+    double sampling_stderr = 0.0;
+    double reference_stderr = 0.0;
+    double lambda = 0.0;
+    double lambda_fold0 = 0.0;
+    double lambda_fold1 = 0.0;
+    double variance_reduction = 0.0;
+    std::vector<double> adjusted;
+    std::vector<double> applied_lambda;
+};
+
+double fitted_control_coefficient(const std::vector<double>& y,
+                                  const std::vector<double>& x,
+                                  const std::vector<std::uint64_t>& ids,
+                                  const int excluded_fold,
+                                  bool& available) {
+    double mean_y = 0.0;
+    double mean_x = 0.0;
+    std::size_t count = 0U;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        if (excluded_fold >= 0
+            && static_cast<int>(ids[i] & 1U) == excluded_fold) {
+            continue;
+        }
+        ++count;
+        mean_y += (y[i] - mean_y) / static_cast<double>(count);
+        mean_x += (x[i] - mean_x) / static_cast<double>(count);
+    }
+    if (count < 2U) {
+        available = false;
+        return 0.0;
+    }
+    double sxx = 0.0;
+    double sxy = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        if (excluded_fold >= 0
+            && static_cast<int>(ids[i] & 1U) == excluded_fold) {
+            continue;
+        }
+        const double dx = x[i] - mean_x;
+        sxx += dx * dx;
+        sxy += dx * (y[i] - mean_y);
+    }
+    available = std::isfinite(sxx) && std::isfinite(sxy) && sxx > 0.0;
+    return available ? sxy / sxx : 0.0;
+}
+
+CrossFittedControlVariate estimate_cross_fitted_control_variate(
+    const std::vector<double>& y,
+    const std::vector<double>& x,
+    const std::vector<std::uint64_t>& ids,
+    const double reference_mean,
+    const double reference_stderr) {
+    CrossFittedControlVariate result;
+    if (y.size() != x.size() || y.size() != ids.size() || y.empty()) {
+        return result;
+    }
+    bool global_available = false;
+    const double global = fitted_control_coefficient(
+        y, x, ids, -1, global_available);
+    bool fold0_available = false;
+    bool fold1_available = false;
+    // The coefficient applied to fold 0 is fitted using fold 1, and vice versa.
+    result.lambda_fold0 = fitted_control_coefficient(
+        y, x, ids, 0, fold0_available);
+    result.lambda_fold1 = fitted_control_coefficient(
+        y, x, ids, 1, fold1_available);
+    if (!fold0_available) {
+        result.lambda_fold0 = global_available ? global : 0.0;
+    }
+    if (!fold1_available) {
+        result.lambda_fold1 = global_available ? global : 0.0;
+    }
+
+    result.adjusted.resize(y.size());
+    result.applied_lambda.resize(y.size());
+    double mean = 0.0;
+    double mean_lambda = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        const double lambda = (ids[i] & 1U) == 0U
+            ? result.lambda_fold0 : result.lambda_fold1;
+        result.applied_lambda[i] = lambda;
+        result.adjusted[i] = y[i] - lambda * (x[i] - reference_mean);
+        mean += (result.adjusted[i] - mean) / static_cast<double>(i + 1U);
+        mean_lambda += (lambda - mean_lambda) / static_cast<double>(i + 1U);
+    }
+    result.mean = mean;
+    result.lambda = mean_lambda;
+
+    double adjusted_m2 = 0.0;
+    double raw_mean = 0.0;
+    double raw_m2 = 0.0;
+    for (std::size_t i = 0; i < y.size(); ++i) {
+        const double adjusted_delta = result.adjusted[i] - result.mean;
+        adjusted_m2 += adjusted_delta * adjusted_delta;
+        const double raw_delta = y[i] - raw_mean;
+        raw_mean += raw_delta / static_cast<double>(i + 1U);
+        raw_m2 += raw_delta * (y[i] - raw_mean);
+    }
+    const double count = static_cast<double>(y.size());
+    const double adjusted_variance = y.size() > 1U
+        ? adjusted_m2 / static_cast<double>(y.size() - 1U) : 0.0;
+    const double raw_variance = y.size() > 1U
+        ? raw_m2 / static_cast<double>(y.size() - 1U) : 0.0;
+    result.sampling_stderr = std::sqrt(
+        std::max(0.0, adjusted_variance) / count);
+    result.reference_stderr = std::fabs(mean_lambda) * reference_stderr;
+    result.total_stderr = std::hypot(
+        result.sampling_stderr, result.reference_stderr);
+    result.variance_reduction = raw_variance > 0.0
+        ? std::clamp(1.0 - adjusted_variance / raw_variance, 0.0, 1.0)
+        : 0.0;
+    return result;
 }
 
 void record_knn_build_stats(SearchStats& stats, const KnnBuildInfo& info) {
@@ -386,8 +510,17 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
                 progress(event);
             });
 
-    doc.wall_seconds = std::chrono::duration<double>(Clock::now() - global_start).count();
+    doc.solver_wall_seconds =
+        std::chrono::duration<double>(Clock::now() - global_start).count();
     doc.instances_done = worker_summary.succeeded;
+
+    if (opt.control_variate) {
+        const auto reference_start = Clock::now();
+        estimate_full_bound_expectation(opt, doc);
+        doc.control_reference_seconds =
+            std::chrono::duration<double>(Clock::now() - reference_start).count();
+    }
+    const auto aggregation_start = Clock::now();
 
     std::vector<std::vector<double>> by_p(opt.p_values.size());
     for (std::vector<double>& values : by_p) {
@@ -400,6 +533,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
     // Control-variate arrays, aligned by instance order per p.
     std::vector<std::vector<double>> cv_sub(opt.p_values.size());
     std::vector<std::vector<double>> cv_full(opt.p_values.size());
+    std::vector<std::vector<std::uint64_t>> cv_ids(opt.p_values.size());
     std::vector<std::vector<double>> cv_hk(opt.p_values.size());
 
     for (const detail::WorkerOutcome<CoreInstanceRunResult>& outcome : outcomes) {
@@ -430,6 +564,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
                 }
                 if (r.full_bound >= 0.0) {
                     cv_full[pi].push_back(r.full_bound / kd);
+                    cv_ids[pi].push_back(r.replicate_id);
                 }
             }
             if (opt.held_karp) {
@@ -478,10 +613,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
         }
     }
 
-    if (opt.control_variate) {
-        estimate_full_bound_expectation(opt, doc);
-    }
-
+    std::vector<CrossFittedControlVariate> cv_estimates(opt.p_values.size());
     for (std::size_t pi = 0; pi < opt.p_values.size(); ++pi) {
         PValueSummary summary = summarize_p_values(opt.N, opt.p_values[pi], by_p[pi]);
         summary.best_restart_max = best_restart_max[pi];
@@ -490,52 +622,44 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
         summary.exact_optimal_instances = exact_optimal_instances[pi];
         if (opt.control_variate) {
             summary.has_control_variate = true;
-            const int k = std::max(3, std::min(opt.N, static_cast<int>(std::llround(opt.p_values[pi] * static_cast<double>(opt.N)))));
+            const int k = std::max(
+                3,
+                std::min(
+                    opt.N,
+                    static_cast<int>(std::llround(
+                        opt.p_values[pi] * static_cast<double>(opt.N)))));
             const std::vector<double>& sub = cv_sub[pi];
             if (!sub.empty()) {
-                double s = 0.0;
-                for (double v : sub) { s += v; }
-                summary.conditional_two_nn_bound_mean = s / static_cast<double>(sub.size());
-                summary.conditional_two_nn_gap_mean =
-                    summary.mean - summary.conditional_two_nn_bound_mean;
+                double bound_mean = 0.0;
+                for (std::size_t i = 0; i < sub.size(); ++i) {
+                    bound_mean += (sub[i] - bound_mean)
+                        / static_cast<double>(i + 1U);
+                }
+                summary.conditional_two_nn_bound_mean = bound_mean;
+                summary.conditional_two_nn_gap_mean = summary.mean - bound_mean;
             }
-            // Full-set control variate with known mean E[B_full]/k.
-            const std::vector<double>& y = by_p[pi];
-            const std::vector<double>& x = cv_full[pi];
+
             summary.cv_mean = summary.mean;
             summary.cv_stderr = summary.stderr_value;
-            if (doc.full_bound_expectation >= 0.0 && x.size() == y.size() && y.size() >= 2U) {
-                const double mu_x = doc.full_bound_expectation / static_cast<double>(k);
-                const auto M = static_cast<double>(y.size());
-                double my = 0.0;
-                double mx = 0.0;
-                for (double v : y) { my += v; }
-                for (double v : x) { mx += v; }
-                my /= M;
-                mx /= M;
-                double sxx = 0.0;
-                double sxy = 0.0;
-                double syy = 0.0;
-                for (std::size_t i = 0; i < y.size(); ++i) {
-                    const double dx = x[i] - mx;
-                    const double dy = y[i] - my;
-                    sxx += dx * dx;
-                    sxy += dx * dy;
-                    syy += dy * dy;
-                }
-                if (sxx > 0.0) {
-                    const double lambda = sxy / sxx;
-                    summary.cv_mean = my - lambda * (mx - mu_x);
-                    double rss = 0.0;
-                    for (std::size_t i = 0; i < y.size(); ++i) {
-                        const double resid = (y[i] - lambda * x[i]) - (my - lambda * mx);
-                        rss += resid * resid;
-                    }
-                    const double resid_var = rss / (M - 1.0);
-                    summary.cv_stderr = std::sqrt(std::max(0.0, resid_var) / M);
-                    const double rho2 = (syy > 0.0) ? (sxy * sxy) / (sxx * syy) : 0.0;
-                    summary.cv_variance_reduction = std::min(std::max(rho2, 0.0), 1.0);
-                }
+            summary.cv_sampling_stderr = summary.stderr_value;
+            if (doc.full_bound_expectation >= 0.0
+                && cv_full[pi].size() == by_p[pi].size()
+                && cv_ids[pi].size() == by_p[pi].size()
+                && by_p[pi].size() >= 2U) {
+                const double kd = static_cast<double>(k);
+                cv_estimates[pi] = estimate_cross_fitted_control_variate(
+                    by_p[pi], cv_full[pi], cv_ids[pi],
+                    doc.full_bound_expectation / kd,
+                    doc.full_bound_expectation_stderr / kd);
+                const CrossFittedControlVariate& estimate = cv_estimates[pi];
+                summary.cv_mean = estimate.mean;
+                summary.cv_stderr = estimate.total_stderr;
+                summary.cv_sampling_stderr = estimate.sampling_stderr;
+                summary.cv_reference_stderr = estimate.reference_stderr;
+                summary.cv_lambda = estimate.lambda;
+                summary.cv_lambda_fold0 = estimate.lambda_fold0;
+                summary.cv_lambda_fold1 = estimate.lambda_fold1;
+                summary.cv_variance_reduction = estimate.variance_reduction;
             }
         }
         if (opt.held_karp) {
@@ -553,6 +677,30 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
         doc.summary[p_value_key(opt.p_values[pi])] = std::move(summary);
     }
 
+    if (opt.control_variate && opt.include_instance_rows) {
+        for (std::size_t row_index = 0; row_index < doc.instance_rows.size(); ++row_index) {
+            InstanceResultRow& row = doc.instance_rows[row_index];
+            for (std::size_t pi = 0; pi < row.p_results.size(); ++pi) {
+                CrossFittedControlVariate& estimate = cv_estimates[pi];
+                if (row_index >= estimate.adjusted.size()) {
+                    continue;
+                }
+                InstancePValueRow& p_row = row.p_results[pi];
+                if (p_row.k > 0 && row.full_bound >= 0.0) {
+                    p_row.control_variate_x =
+                        row.full_bound / static_cast<double>(p_row.k);
+                    p_row.cv_adjusted_value = estimate.adjusted[row_index];
+                    p_row.cv_lambda = estimate.applied_lambda[row_index];
+                }
+            }
+        }
+    }
+
+    doc.aggregation_seconds =
+        std::chrono::duration<double>(Clock::now() - aggregation_start).count();
+    doc.experiment_wall_seconds =
+        std::chrono::duration<double>(Clock::now() - global_start).count();
+    doc.wall_seconds = doc.experiment_wall_seconds;
     return doc;
 }
 

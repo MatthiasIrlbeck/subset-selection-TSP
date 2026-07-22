@@ -39,7 +39,7 @@ def main() -> int:
         return 2
     root = Path(sys.argv[1]).resolve()
     migrator = load_migrator(root)
-    current_schema = json.loads((root / "schema" / "results.schema.json").read_text())
+    current_schema = json.loads((root / "schema" / "results-v15.schema.json").read_text())
     validator = jsonschema.Draft202012Validator(current_schema)
 
     count = 0

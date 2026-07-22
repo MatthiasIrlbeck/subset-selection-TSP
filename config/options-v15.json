@@ -1,6 +1,6 @@
 {
   "metadata_version": 1,
-  "schema_version": 16,
+  "schema_version": 15,
   "sections": [
     {
       "id": "general",
@@ -175,22 +175,6 @@
       "constraints": {
         "type": "integer",
         "minimum": 1
-      }
-    },
-    {
-      "id": "cv_max_point_ops",
-      "section": "statistics",
-      "struct": "run",
-      "member": "cv_max_point_ops",
-      "cpp_type": "int",
-      "default": 100000000,
-      "cli": "--cv-max-point-ops",
-      "json_key": "cv_max_point_ops",
-      "metavar": "<int>",
-      "help": "Maximum N times control-reference samples; bounds the Monte Carlo point-generation work exactly.",
-      "constraints": {
-        "type": "integer",
-        "minimum": 2
       }
     },
     {

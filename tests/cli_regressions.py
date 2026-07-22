@@ -11,7 +11,13 @@ from pathlib import Path
 def run_case(exe: Path, args: list[str], out_path: Path) -> dict:
     cmd = [str(exe), *args, "--output", str(out_path), "--force"]
     subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    return json.loads(out_path.read_text())
+    document = json.loads(out_path.read_text())
+    receipt_path = Path(str(out_path) + ".receipt")
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["receipt_schema_version"] == 1
+    assert receipt["result_sha256"] == hashlib.sha256(out_path.read_bytes()).hexdigest()
+    assert receipt["timing"]["process_end_to_end_seconds"] >= document["wall_seconds"]
+    return document
 
 
 def main() -> int:
@@ -98,7 +104,7 @@ def main() -> int:
             ],
             tmp / "heldout-balanced.json",
         )
-        assert preset_doc["schema_version"] == 15, preset_doc["schema_version"]
+        assert preset_doc["schema_version"] == 16, preset_doc["schema_version"]
         assert preset_doc["config"]["search_policy_preset"] == "heldout-balanced"
         preset_row = preset_doc["instance_rows"][0]["p_results"][0]
         assert preset_row["executed_restarts"] == 1, preset_row

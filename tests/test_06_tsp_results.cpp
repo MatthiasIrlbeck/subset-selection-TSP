@@ -460,7 +460,13 @@ ALDOUS_TEST(test_json_atomic) {
     s.max = 0.7;
     doc.summary["1.0"] = s;
     const std::string text = results_to_json(doc);
-    require(text.find("\"schema_version\": 15") != std::string::npos, "JSON schema version present");
+    require(text.find("\"schema_version\": 16") != std::string::npos, "JSON schema version present");
+    require(text.find("\"timing\"") != std::string::npos
+                && text.find("\"solver_wall_seconds\"") != std::string::npos
+                && text.find("\"control_reference_seconds\"") != std::string::npos
+                && text.find("\"aggregation_seconds\"") != std::string::npos
+                && text.find("\"experiment_wall_seconds\"") != std::string::npos,
+            "JSON includes explicit experiment-phase timing");
     require(text.find("\"build_metadata\"") != std::string::npos, "JSON includes build metadata");
     require(text.find("\"memory_plan\"") != std::string::npos
                 && text.find("\"estimated_instance_bytes\"") != std::string::npos
@@ -487,7 +493,13 @@ ALDOUS_TEST(test_json_atomic) {
     require(text.find("0.0000000000") == std::string::npos, "JSON does not fixed-format tiny values to zero");
     const std::filesystem::path out = std::filesystem::temp_directory_path() / "aldous_tsp_test_results.json";
     std::string err;
-    require(write_text_file_atomic(out.string(), text, &err), "atomic write succeeds");
+    const AtomicWriteResult write_result = write_text_file_atomic(
+        out.string(), text, ReplacePolicy::ReplaceExisting, OutputDurability::Full);
+    require(write_result.satisfies(OutputDurability::Full), "atomic write succeeds");
+    require(write_result.total_seconds >= write_result.write_seconds
+                && write_result.total_seconds >= write_result.commit_seconds
+                && write_result.total_seconds >= write_result.synchronization_seconds,
+            "atomic write reports internally consistent phase timing");
     std::ifstream in(out, std::ios::binary);
     std::string roundtrip((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     require(roundtrip == text, "atomic write roundtrip");

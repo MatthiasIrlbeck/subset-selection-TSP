@@ -623,6 +623,12 @@ bool validate_run_options(RunOptions& options, std::string& error) {
         error = "--fidelity-level must contain 1..256 printable characters";
         return false;
     }
+    if (options.control_variate
+        && static_cast<long long>(options.cv_max_point_ops)
+            < 2LL * static_cast<long long>(options.N)) {
+        error = "--cv-max-point-ops must permit at least two N-point reference samples";
+        return false;
+    }
     if (options.periodic
         && options.solver.oracle.cfg.mode != ExternalOracleMode::None
         && options.solver.oracle.cfg.problem_format == OracleProblemFormat::Euc2d) {

@@ -66,7 +66,7 @@ def main() -> int:
             path = "/".join(str(part) for part in error.path) or "<root>"
             print(f"schema validation error at {path}: {error.message}", file=sys.stderr)
         return 1
-    assert doc["schema_version"] == 15, doc["schema_version"]
+    assert doc["schema_version"] == 16, doc["schema_version"]
     assert doc["mode"] == "hybrid", doc["mode"]
     assert doc["distance_backend"] == "coords_exact_grid_knn", doc["distance_backend"]
     assert doc["config"]["oracle_mode"] == "none", doc["config"]

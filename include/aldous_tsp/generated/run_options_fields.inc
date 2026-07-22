@@ -16,6 +16,9 @@
     bool control_variate = false;
     // Cheap KNN-only samples used to estimate the full-set control-variate expectation.
     int cv_mc_samples = 2000;
+    // Maximum N times control-reference samples; bounds the Monte Carlo point-generation
+    // work exactly.
+    int cv_max_point_ops = 100000000;
     // Compute the Held-Karp lower bound for each selected subset; this certifies tour
     // quality conditional on that subset, not global subset optimality.
     bool held_karp = false;

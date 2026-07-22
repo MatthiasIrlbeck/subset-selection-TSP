@@ -182,6 +182,7 @@ ALDOUS_TEST(test_control_variate_bounds) {
     opt.periodic = true;
     opt.control_variate = true;
     opt.cv_mc_samples = 800;
+    opt.cv_max_point_ops = opt.N * opt.cv_mc_samples;
     opt.include_instance_rows = true;
     opt.solver.seed = 4242;
     opt.solver.subset_restarts = 2;
@@ -207,6 +208,16 @@ ALDOUS_TEST(test_control_variate_bounds) {
     require(json.find("\"subset_bound_mean\"") != std::string::npos,
             "JSON retains the schema-13 two-NN alias");
     require(doc.full_bound_expectation > 0.0, "control variate estimates E[B_full]");
+    require(doc.full_bound_expectation_stddev >= 0.0
+                && doc.full_bound_expectation_stderr >= 0.0,
+            "control-reference sampling variation is recorded");
+    require(doc.full_bound_expectation_point_operations
+                == static_cast<std::uint64_t>(opt.N * opt.cv_mc_samples),
+            "control-reference point work obeys the exact configured cap");
+    require(doc.control_reference_seconds > 0.0
+                && doc.experiment_wall_seconds >= doc.solver_wall_seconds
+                && doc.wall_seconds == doc.experiment_wall_seconds,
+            "experiment timing includes the control-reference phase");
     const double per_point = doc.full_bound_expectation / static_cast<double>(opt.N);
     require(std::fabs(per_point - 0.625) < 0.02,
             "E[B_full]/N matches the Poisson-torus prediction 0.625");
@@ -220,6 +231,10 @@ ALDOUS_TEST(test_control_variate_bounds) {
             // Subset two-NN bound is a valid lower bound on the found tour.
             require(pv.subset_bound <= pv.value + 1e-6,
                     "subset two-NN bound lower-bounds the found tour length");
+            require(pv.control_variate_x >= 0.0
+                        && pv.cv_adjusted_value >= 0.0
+                        && std::isfinite(pv.cv_lambda),
+                    "instance row carries cross-fitted control-variate provenance");
             if (pv.k >= opt.N) {
                 // p = 1: subset is the full set, so the per-point bounds match.
                 require(std::fabs(pv.subset_bound - row.full_bound / static_cast<double>(opt.N)) < 1e-6,
@@ -236,6 +251,15 @@ ALDOUS_TEST(test_control_variate_bounds) {
                 "legacy and canonical two-NN summary names share one value");
         require(s.cv_variance_reduction >= 0.0 && s.cv_variance_reduction <= 1.0,
                 "variance reduction fraction is in [0,1]");
+        require(std::fabs(
+                    s.cv_stderr * s.cv_stderr
+                    - s.cv_sampling_stderr * s.cv_sampling_stderr
+                    - s.cv_reference_stderr * s.cv_reference_stderr) < 1e-10,
+                "control-variate standard error propagates reference uncertainty");
+        require(std::isfinite(s.cv_lambda)
+                    && std::isfinite(s.cv_lambda_fold0)
+                    && std::isfinite(s.cv_lambda_fold1),
+                "cross-fitted control coefficients are recorded");
     }
 }
 

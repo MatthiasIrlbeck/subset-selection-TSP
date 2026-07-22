@@ -38,6 +38,7 @@ bool validate_generated_option_ranges(const RunOptions& opt, std::string& error)
     if (opt.threads < 0) { error = "--threads must be >= 0"; return false; }
     if (opt.memory_budget_mb < 0) { error = "--memory-budget-mb must be >= 0"; return false; }
     if (opt.cv_mc_samples < 1) { error = "--cv-mc-samples must be >= 1"; return false; }
+    if (opt.cv_max_point_ops < 2) { error = "--cv-max-point-ops must be >= 2"; return false; }
     if (opt.hk_iterations < 1) { error = "--hk-iterations must be >= 1"; return false; }
     if (opt.campaign_id.size() < 1U) { error = "--campaign-id is too short"; return false; }
     if (opt.campaign_id.size() > 256U) { error = "--campaign-id is too long"; return false; }
@@ -221,6 +222,8 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     out << (opt.control_variate ? "true" : "false");
     out << ",\n" << indent << "  \"cv_mc_samples\": ";
     out << opt.cv_mc_samples;
+    out << ",\n" << indent << "  \"cv_max_point_ops\": ";
+    out << opt.cv_max_point_ops;
     out << ",\n" << indent << "  \"held_karp\": ";
     out << (opt.held_karp ? "true" : "false");
     out << ",\n" << indent << "  \"hk_iterations\": ";

@@ -60,6 +60,7 @@ class Observation:
     p: float
     k: int
     value: float
+    control_variate_adjusted: bool
     source: str
 
 
@@ -68,6 +69,10 @@ class Observation:
 _conditional_bound_of: dict[Cell, float] = {}
 _conditional_gaps: dict[float, float] = {}
 _replicate_blocks: dict[BlockKey, dict[Cell, float]] = {}
+_replicate_reference_weights: dict[
+    BlockKey, dict[Cell, dict[str, float]]
+] = {}
+_ladder_reference_weights: dict[Cell, list[dict[str, float]]] = {}
 _nested_search_groups: dict[Cell, dict[BlockKey, list[float]]] = {}
 _all_observations: list[Observation] = []
 _load_info: dict[str, object] = {}
@@ -522,6 +527,7 @@ def analyze(
     identities_complete: bool | None = None,
     finite_size_models: list[str] | None = None,
     primary_finite_size_model: str = "inv-k",
+    propagate_reference_uncertainty: bool = True,
 ) -> dict[str, object]:
     """Run finite-size fits, model sensitivity, and a correlated bootstrap."""
     ps = [p for p in sorted(ladders) if p <= pmax]
@@ -581,7 +587,25 @@ def analyze(
         for model in point_models
     }
 
+    reference_sources = {
+        source
+        for cell_weights in _ladder_reference_weights.values()
+        for weights in cell_weights
+        for source in weights
+    }
+
     for _ in range(boot):
+        reference_draws = (
+            {source: rng.gauss(0.0, 1.0) for source in sorted(reference_sources)}
+            if propagate_reference_uncertainty else {}
+        )
+
+        def reference_shift(weights: dict[str, float]) -> float:
+            return sum(
+                coefficient * reference_draws.get(source, 0.0)
+                for source, coefficient in weights.items()
+            )
+
         sampled: dict[float, dict[int, list[float]]] = {
             p: {k: [] for k in ladders[p]} for p in ps
         }
@@ -593,13 +617,24 @@ def analyze(
             for block in drawn:
                 block_values = blocks[block]
                 for p, k in required_cells:
-                    sampled[p][k].append(block_values[(p, k)])
+                    weights = _replicate_reference_weights.get(block, {}).get(
+                        (p, k), {}
+                    )
+                    sampled[p][k].append(
+                        block_values[(p, k)] + reference_shift(weights)
+                    )
         else:
             for p in ps:
                 for k, values in ladders[p].items():
-                    sampled[p][k] = [
-                        values[rng.randrange(len(values))] for _ in values
-                    ]
+                    weights = _ladder_reference_weights.get((p, k), [])
+                    resampled: list[float] = []
+                    for _ in values:
+                        index = rng.randrange(len(values))
+                        selected_weights = weights[index] if index < len(weights) else {}
+                        resampled.append(
+                            values[index] + reference_shift(selected_weights)
+                        )
+                    sampled[p][k] = resampled
 
         for model in point_models:
             fitted = _power_fit_for_model(sampled, ps, model, alpha_grid)
@@ -715,6 +750,17 @@ def analyze(
         "required_cells": len(required_cells),
         "conditional_f0_diagnostic": conditional_f0_diagnostic,
         "conditional_gaps": dict(_conditional_gaps),
+        "control_variate_mode": _load_info.get("control_variate_mode", "never"),
+        "control_variate_adjusted_observations": int(
+            _load_info.get("control_variate_adjusted_observations", 0)
+        ),
+        "control_variate_raw_observations": int(
+            _load_info.get("control_variate_raw_observations", 0)
+        ),
+        "reference_uncertainty_propagated": bool(
+            propagate_reference_uncertainty and reference_sources
+        ),
+        "reference_uncertainty_groups": len(reference_sources),
         # Deprecated aliases retained for callers of earlier script versions.
         "f0_lb": conditional_f0_diagnostic,
         "gaps": dict(_conditional_gaps),
@@ -768,6 +814,7 @@ def load_campaign(
     paths: Iterable[str],
     fidelity_level: str = "strong",
     solver_policy_id: str = "default",
+    control_variate_mode: str = "auto",
 ) -> dict[float, dict[int, list[float]]]:
     """Load selected-policy observations and preserve campaign identities.
 
@@ -780,14 +827,21 @@ def load_campaign(
     _conditional_bound_of.clear()
     _conditional_gaps.clear()
     _replicate_blocks.clear()
+    _replicate_reference_weights.clear()
+    _ladder_reference_weights.clear()
     _nested_search_groups.clear()
     _all_observations.clear()
     _load_info.clear()
+    if control_variate_mode not in {"auto", "never", "required"}:
+        raise ValueError("control_variate_mode must be auto, never, or required")
 
     legacy_values: dict[Cell, list[float]] = defaultdict(list)
     selected_raw: dict[Cell, dict[BlockKey, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
+    selected_reference: dict[
+        Cell, dict[BlockKey, list[tuple[str, float]]]
+    ] = defaultdict(lambda: defaultdict(list))
     point_streams: dict[BlockKey, str] = {}
     seen_observations: set[tuple[object, ...]] = set()
     bound_sum: dict[Cell, float] = defaultdict(float)
@@ -797,6 +851,8 @@ def load_campaign(
     cell_metadata: dict[Cell, tuple[object, object]] = {}
     identified_selected = 0
     legacy_selected = 0
+    adjusted_selected = 0
+    raw_selected = 0
     files_loaded = 0
 
     for filename in paths:
@@ -813,6 +869,11 @@ def load_campaign(
         config = doc.get("config") or {}
         doc_n = doc.get("N")
         periodic = config.get("periodic")
+        reference_stderr = float(
+            doc.get("full_bound_expectation_stderr", 0.0) or 0.0
+        )
+        if not math.isfinite(reference_stderr) or reference_stderr < 0.0:
+            raise ValueError(f"{path}: invalid full_bound_expectation_stderr")
 
         summary_by_cell: dict[Cell, dict[str, object]] = {}
         for row in doc.get("summary_rows", []):
@@ -898,7 +959,30 @@ def load_campaign(
                 for p_row in row.get("p_results", []):
                     p = _finite(p_row["p"], f"{path}: instance p")
                     k = int(p_row["k"])
-                    value = _finite(p_row["value"], f"{path}: instance value")
+                    raw_value = _finite(
+                        p_row["value"], f"{path}: instance value"
+                    )
+                    adjusted_value: float | None = None
+                    if "cv_adjusted_value" in p_row:
+                        adjusted_value = _finite(
+                            p_row["cv_adjusted_value"],
+                            f"{path}: cv_adjusted_value",
+                        )
+                    if control_variate_mode == "required" and adjusted_value is None:
+                        raise ValueError(
+                            f"{path}: control-variate-adjusted observation required for "
+                            f"p={p}, k={k}, replicate={replicate_id}"
+                        )
+                    use_adjusted = (
+                        control_variate_mode != "never" and adjusted_value is not None
+                    )
+                    value = adjusted_value if use_adjusted else raw_value
+                    sensitivity = 0.0
+                    if use_adjusted and reference_stderr > 0.0:
+                        coefficient = _finite(
+                            p_row.get("cv_lambda", 0.0), f"{path}: cv_lambda"
+                        )
+                        sensitivity = coefficient * reference_stderr / float(k)
                     observation = Observation(
                         campaign_id=campaign_id,
                         campaign_shard=campaign_shard,
@@ -910,6 +994,7 @@ def load_campaign(
                         p=p,
                         k=k,
                         value=value,
+                        control_variate_adjusted=use_adjusted,
                         source=path,
                     )
                     duplicate_key = (
@@ -928,7 +1013,12 @@ def load_campaign(
                     if selected_document:
                         cell = (p, k)
                         selected_raw[cell][block].append(value)
-                        instance_values[cell].append(value)
+                        selected_reference[cell][block].append((path, sensitivity))
+                        instance_values[cell].append(raw_value)
+                        if use_adjusted:
+                            adjusted_selected += 1
+                        else:
+                            raw_selected += 1
                         identified_selected += 1
 
             if selected_document:
@@ -946,8 +1036,14 @@ def load_campaign(
                 values = [_finite(value, f"{path}: legacy summary value")
                           for value in (row.get("values") or [])]
                 if values:
+                    if control_variate_mode == "required":
+                        raise ValueError(
+                            f"{path}: summary-only legacy observations cannot satisfy "
+                            "control_variate_mode=required"
+                        )
                     legacy_values[cell].extend(values)
                     legacy_selected += len(values)
+                    raw_selected += len(values)
 
     ladders: dict[float, dict[int, list[float]]] = defaultdict(
         lambda: defaultdict(list)
@@ -959,8 +1055,18 @@ def load_campaign(
             ladders[p][k].append(point_mean)
             _replicate_blocks.setdefault(block, {})[cell] = point_mean
             _nested_search_groups.setdefault(cell, {})[block] = list(values)
+            contributions = selected_reference[cell][block]
+            source_weights: dict[str, float] = defaultdict(float)
+            for source, sensitivity in contributions:
+                source_weights[source] += sensitivity / len(contributions)
+            weights = dict(source_weights)
+            _replicate_reference_weights.setdefault(block, {})[cell] = weights
+            _ladder_reference_weights.setdefault(cell, []).append(weights)
     for (p, k), values in legacy_values.items():
         ladders[p][k].extend(values)
+        _ladder_reference_weights.setdefault((p, k), []).extend(
+            {} for _ in values
+        )
 
     for cell, total in bound_sum.items():
         _conditional_bound_of[cell] = total / bound_count[cell]
@@ -981,6 +1087,15 @@ def load_campaign(
         "legacy_observations": legacy_selected,
         "replicate_blocks": len(_replicate_blocks),
         "identities_complete": identities_complete,
+        "control_variate_mode": control_variate_mode,
+        "control_variate_adjusted_observations": adjusted_selected,
+        "control_variate_raw_observations": raw_selected,
+        "reference_uncertainty_groups": len({
+            source
+            for cell_weights in _ladder_reference_weights.values()
+            for weights in cell_weights
+            for source in weights
+        }),
     })
     return {p: dict(k_values) for p, k_values in ladders.items()}
 
@@ -1185,6 +1300,19 @@ def _json_report(
             "complete_replicate_blocks": result["complete_replicate_blocks"],
             "required_cells": result["required_cells"],
         },
+        "control_variate": {
+            "mode": result["control_variate_mode"],
+            "adjusted_observations": result[
+                "control_variate_adjusted_observations"
+            ],
+            "raw_observations": result["control_variate_raw_observations"],
+            "reference_uncertainty_propagated": result[
+                "reference_uncertainty_propagated"
+            ],
+            "reference_uncertainty_groups": result[
+                "reference_uncertainty_groups"
+            ],
+        },
         "small_p_fit": {
             "primary_finite_size_model": result["primary_finite_size_model"],
             "f0": result["f0"],
@@ -1279,6 +1407,42 @@ def run_self_test() -> int:
         and independent_width > 2.0 * max(block_width, 1e-12)
     )
 
+    # The reference expectation is shared across all observations produced by
+    # one result document. Bootstrap it as a common document-level draw rather
+    # than pretending that the Monte-Carlo estimate is exact.
+    _replicate_reference_weights.clear()
+    _ladder_reference_weights.clear()
+    for p in correlated_ladders:
+        cell = (p, 1000)
+        _ladder_reference_weights[cell] = []
+        for replicate in range(80):
+            block = ("correlated", replicate)
+            weights = {"synthetic-reference": 0.01}
+            _replicate_reference_weights.setdefault(block, {})[cell] = weights
+            _ladder_reference_weights[cell].append(weights)
+    without_reference = analyze(
+        correlated_ladders, 1.0, 300, alpha_grid, seed=29,
+        bootstrap_mode="block", replicate_blocks=blocks,
+        identities_complete=True, propagate_reference_uncertainty=False,
+    )
+    with_reference = analyze(
+        correlated_ladders, 1.0, 300, alpha_grid, seed=29,
+        bootstrap_mode="block", replicate_blocks=blocks,
+        identities_complete=True, propagate_reference_uncertainty=True,
+    )
+    no_reference_width = (
+        without_reference["f0_ci"][1] - without_reference["f0_ci"][0]
+    )
+    with_reference_width = (
+        with_reference["f0_ci"][1] - with_reference["f0_ci"][0]
+    )
+    reference_uncertainty_ok = (
+        with_reference["reference_uncertainty_propagated"] is True
+        and with_reference_width > no_reference_width
+    )
+    _replicate_reference_weights.clear()
+    _ladder_reference_weights.clear()
+
     # Nested point/search variance should recover the dominant point component.
     nested_groups: dict[Cell, dict[BlockKey, list[float]]] = {(0.1, 100): {}}
     nested_rng = random.Random(17)
@@ -1308,12 +1472,12 @@ def run_self_test() -> int:
         )
         observations.append(Observation(
             search_stream_id=f"{1000 + replicate:016x}",
-            fidelity_level="cheap", value=cheap, **common,
+            fidelity_level="cheap", value=cheap, control_variate_adjusted=False, **common,
         ))
         if replicate < 20:
             observations.append(Observation(
                 search_stream_id=f"{2000 + replicate:016x}",
-                fidelity_level="strong", value=strong, **common,
+                fidelity_level="strong", value=strong, control_variate_adjusted=False, **common,
             ))
     multifidelity = multifidelity_estimates(
         "cheap", "strong", "default", 300, observations=observations
@@ -1425,6 +1589,7 @@ def run_self_test() -> int:
     checks = {
         "two-stage fit": fit_ok,
         "replicate-block correlation": correlation_ok,
+        "reference-MC propagation": reference_uncertainty_ok,
         "nested variance": nested_ok,
         "multifidelity correction": mf_ok,
         "identified shard merge": loader_ok,
@@ -1464,6 +1629,20 @@ def main() -> int:
     )
     parser.add_argument("--solver-policy-id", default="default")
     parser.add_argument("--fidelity-level", default="strong")
+    parser.add_argument(
+        "--control-variate-mode",
+        choices=("auto", "never", "required"),
+        default="auto",
+        help=(
+            "use per-instance cross-fitted adjusted observations when available; "
+            "required fails on any missing adjusted value (default: auto)"
+        ),
+    )
+    parser.add_argument(
+        "--ignore-control-reference-uncertainty",
+        action="store_true",
+        help="do not propagate independent control-reference Monte-Carlo error",
+    )
     parser.add_argument("--cheap-fidelity", default="cheap")
     parser.add_argument("--strong-fidelity", default="strong")
     parser.add_argument("--plot", metavar="PNG", default=None)
@@ -1496,6 +1675,7 @@ def main() -> int:
         args.files,
         fidelity_level=args.fidelity_level,
         solver_policy_id=args.solver_policy_id,
+        control_variate_mode=args.control_variate_mode,
     )
     alpha_grid = [0.02 + 0.01 * index for index in range(300)]
     result = analyze(
@@ -1507,6 +1687,9 @@ def main() -> int:
         bootstrap_mode=args.bootstrap_mode,
         finite_size_models=finite_size_models,
         primary_finite_size_model=args.primary_finite_size_model,
+        propagate_reference_uncertainty=(
+            not args.ignore_control_reference_uncertainty
+        ),
     )
     variance = nested_variance_decomposition()
     multifidelity = multifidelity_estimates(
@@ -1521,6 +1704,14 @@ def main() -> int:
         f"bootstrap: {result['bootstrap_mode']} "
         f"({result['complete_replicate_blocks']} complete replicate vectors; "
         f"{args.boot} resamples)"
+    )
+    print(
+        "control variate: "
+        f"mode={result['control_variate_mode']}, "
+        f"adjusted={result['control_variate_adjusted_observations']}, "
+        f"raw={result['control_variate_raw_observations']}, "
+        f"reference groups={result['reference_uncertainty_groups']}, "
+        f"reference uncertainty propagated={result['reference_uncertainty_propagated']}"
     )
     if _load_info.get("legacy_observations"):
         print(

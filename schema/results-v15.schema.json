@@ -11,7 +11,6 @@
     "target",
     "threads",
     "memory_plan",
-    "timing",
     "wall_seconds",
     "mode",
     "distance_backend",
@@ -27,7 +26,7 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 16
+      "const": 15
     },
     "run_metadata": {
       "$ref": "#/$defs/run_metadata"
@@ -132,19 +131,6 @@
     },
     "memory_plan": {
       "$ref": "#/$defs/memory_plan"
-    },
-    "timing": {
-      "$ref": "#/$defs/timing"
-    },
-    "full_bound_expectation_stddev": {
-      "type": "number",
-      "minimum": 0,
-      "description": "Sample standard deviation of the independent full-instance control-reference draws."
-    },
-    "full_bound_expectation_point_operations": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Exact N times reference-sample count used by the control-reference phase."
     }
   },
   "additionalProperties": false,
@@ -304,7 +290,6 @@
         "periodic",
         "control_variate",
         "cv_mc_samples",
-        "cv_max_point_ops",
         "held_karp",
         "hk_iterations",
         "verbose",
@@ -468,12 +453,6 @@
           "minimum": 1,
           "description": "Cheap KNN-only samples used to estimate the full-set control-variate expectation.",
           "default": 2000
-        },
-        "cv_max_point_ops": {
-          "type": "integer",
-          "minimum": 2,
-          "description": "Maximum N times control-reference samples; bounds the Monte Carlo point-generation work exactly.",
-          "default": 100000000
         },
         "held_karp": {
           "type": "boolean",
@@ -2014,28 +1993,6 @@
           "type": "integer",
           "minimum": 0,
           "description": "Number of instances globally proven optimal by the exact subset oracle."
-        },
-        "cv_sampling_stderr": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Sampling standard error of the cross-fitted adjusted observations, excluding independent reference-MC uncertainty."
-        },
-        "cv_reference_stderr": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Propagated standard error from the independently estimated control-reference expectation."
-        },
-        "cv_lambda": {
-          "type": "number",
-          "description": "Mean coefficient applied by the two cross-fitting folds."
-        },
-        "cv_lambda_fold0": {
-          "type": "number",
-          "description": "Coefficient applied to even replicate IDs, fitted on odd replicate IDs."
-        },
-        "cv_lambda_fold1": {
-          "type": "number",
-          "description": "Coefficient applied to odd replicate IDs, fitted on even replicate IDs."
         }
       },
       "additionalProperties": false
@@ -2265,18 +2222,6 @@
         "exact_optimal": {
           "type": "boolean",
           "description": "True only when the global cardinality-k subset choice and its cycle were solved exactly."
-        },
-        "control_variate_x": {
-          "type": "number",
-          "description": "Normalized full-instance two-NN control value for this observation."
-        },
-        "cv_adjusted_value": {
-          "type": "number",
-          "description": "Cross-fitted control-variate adjusted observation used for correlation-aware campaign analysis."
-        },
-        "cv_lambda": {
-          "type": "number",
-          "description": "Cross-fitted coefficient applied to this observation."
         }
       },
       "additionalProperties": false
@@ -2721,38 +2666,6 @@
         },
         "reverse_knn_enabled": {
           "type": "boolean"
-        }
-      },
-      "additionalProperties": false
-    },
-    "timing": {
-      "type": "object",
-      "required": [
-        "solver_wall_seconds",
-        "control_reference_seconds",
-        "aggregation_seconds",
-        "experiment_wall_seconds"
-      ],
-      "properties": {
-        "solver_wall_seconds": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Elapsed time through completion of the instance-search workers."
-        },
-        "control_reference_seconds": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Elapsed time spent estimating the independent control-reference expectation."
-        },
-        "aggregation_seconds": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Elapsed time spent aggregating instance results and fitting control-variate summaries."
-        },
-        "experiment_wall_seconds": {
-          "type": "number",
-          "minimum": 0,
-          "description": "Complete in-process experiment time through aggregation. Output serialization and commit are reported in the adjacent .receipt file."
         }
       },
       "additionalProperties": false

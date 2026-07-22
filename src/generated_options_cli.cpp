@@ -208,6 +208,8 @@ Statistical diagnostics:
                                           measures tour quality conditional on that subset. (default: false)
   --cv-mc-samples <int>                   Cheap KNN-only samples used to estimate the full-set control-variate expectation.
                                           (default: 2000)
+  --cv-max-point-ops <int>                Maximum N times control-reference samples; bounds the Monte Carlo point-generation
+                                          work exactly. (default: 100000000)
   --held-karp[=bool]                      Compute the Held-Karp lower bound for each selected subset; this certifies tour
                                           quality conditional on that subset, not global subset optimality. (default: false)
   --hk-iterations <int>                   Held-Karp subgradient iterations. (default: 400)
@@ -339,6 +341,12 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
         if (!parse_int(value, opt.cv_mc_samples)) { error = "invalid integer for --cv-mc-samples: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--cv-max-point-ops") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_int(value, opt.cv_max_point_ops)) { error = "invalid integer for --cv-max-point-ops: " + value; return GeneratedCliParseResult::Error; }
         return GeneratedCliParseResult::Matched;
     }
     if (flag == "--held-karp") {
