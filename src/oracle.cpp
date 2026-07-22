@@ -111,17 +111,34 @@ struct TempWorkDir {
     }
 };
 
-// Reads the external solver's captured console output and returns the part worth
-// reporting: LKH prints its fatal diagnostics after a "*** Error ***" banner, so
-// prefer that; otherwise fall back to the tail (the end is where failures show).
+constexpr std::uintmax_t kMaxOracleConsoleBytes = 16U * 1024U * 1024U;
+constexpr std::uintmax_t kMaxOracleTourBytes = 16U * 1024U * 1024U;
+constexpr std::size_t kOracleConsoleReadBytes = 64U * 1024U;
+
+// Reads a bounded tail of the external solver's captured console output and
+// returns the part worth reporting. A malicious or broken solver must not make
+// the parent allocate according to an untrusted output-file size.
 std::string summarize_child_output(const std::filesystem::path& path) {
+    std::error_code size_error;
+    const std::uintmax_t file_bytes = std::filesystem::file_size(path, size_error);
+    if (size_error) {
+        return {};
+    }
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return {};
     }
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::uintmax_t bounded = std::min<std::uintmax_t>(file_bytes, kOracleConsoleReadBytes);
+    if (file_bytes > bounded) {
+        in.seekg(static_cast<std::streamoff>(file_bytes - bounded), std::ios::beg);
+    }
+    std::string text(static_cast<std::size_t>(bounded), '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    text.resize(static_cast<std::size_t>(in.gcount()));
     if (text.empty()) {
-        return {};
+        return file_bytes > kMaxOracleConsoleBytes
+            ? "oracle console output exceeded the 16 MiB security limit"
+            : std::string{};
     }
     constexpr std::size_t kMaxReport = 240U;
     const std::size_t marker = text.find("*** Error ***");
@@ -149,7 +166,11 @@ std::string summarize_child_output(const std::filesystem::path& path) {
             prev_space = false;
         }
     }
-    return trim_ascii(flat);
+    std::string summary = trim_ascii(flat);
+    if (file_bytes > kMaxOracleConsoleBytes) {
+        summary = "oracle console output exceeded the 16 MiB security limit; tail: " + summary;
+    }
+    return summary;
 }
 
 #if !defined(_WIN32)
@@ -939,11 +960,21 @@ bool parse_window(const std::vector<long long>& values, std::size_t start, int k
 }
 
 bool parse_external_tour_file(const std::filesystem::path& path, int k, std::vector<int>& permutation) {
-    std::ifstream in(path);
+    std::error_code size_error;
+    const std::uintmax_t file_bytes = std::filesystem::file_size(path, size_error);
+    if (size_error || file_bytes > kMaxOracleTourBytes) {
+        return false;
+    }
+    std::ifstream in(path, std::ios::binary);
     if (!in) {
         return false;
     }
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::string text(static_cast<std::size_t>(file_bytes), '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (!in && !in.eof()) {
+        return false;
+    }
+    text.resize(static_cast<std::size_t>(in.gcount()));
     return parse_external_tour_text(text, k, permutation);
 }
 
@@ -963,6 +994,15 @@ bool external_oracle_polish_nodes(const Instance& inst,
     const int k = static_cast<int>(input_nodes.size());
     if (k < 3) {
         return fail("tour has fewer than 3 nodes");
+    }
+    std::string launch_hash;
+    std::string hash_error;
+    if (!detail::sha256_file(oracle.exec_path, launch_hash, hash_error)) {
+        return fail("oracle executable identity could not be verified before launch: " + hash_error);
+    }
+    if (launch_hash != oracle.exec_sha256) {
+        return fail("oracle executable changed after resolution; refusing launch (expected sha256="
+                    + oracle.exec_sha256 + ", actual sha256=" + launch_hash + ")");
     }
     TempWorkDir tmp("aldous_oracle");
     if (!tmp.ok) {
@@ -1014,6 +1054,9 @@ bool external_oracle_polish_nodes(const Instance& inst,
 
     std::string child_output;
     const int rc = run_external_process(argv, tmp.path, oracle.cfg.time_limit_sec, oracle.cfg.verbose, &child_output);
+    if (child_output.rfind("oracle console output exceeded the 16 MiB security limit", 0U) == 0U) {
+        return fail(child_output);
+    }
     // Accept whatever the solver actually produced: its contract is the tour
     // file, and exit-code conventions vary between solvers and versions. Only if
     // no usable tour comes back do we treat the call as failed -- and then we
@@ -1128,7 +1171,10 @@ bool build_oracle_context(const ExternalOracleConfig& cfg, OracleContext& oracle
 
     std::string hash_error;
     if (!detail::sha256_file(oracle.exec_path, oracle.exec_sha256, hash_error)) {
-        oracle.exec_sha256 = "unknown";
+        error = "failed to hash requested oracle executable: " + hash_error;
+        oracle = OracleContext();
+        oracle.cfg = cfg_copy;
+        return false;
     }
     oracle.version = capture_process_first_line({oracle.exec_path, "--version"}, 2);
     std::ostringstream status;

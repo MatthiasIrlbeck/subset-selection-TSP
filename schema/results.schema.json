@@ -168,6 +168,24 @@
           "type": "string",
           "minLength": 1
         },
+        "git_tree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_dirty": {
+          "type": "boolean"
+        },
+        "revision_source": {
+          "type": "string",
+          "enum": [
+            "git",
+            "source-archive",
+            "unknown"
+          ]
+        },
+        "source_refnames": {
+          "type": "string"
+        },
         "compiler": {
           "type": "string",
           "minLength": 1

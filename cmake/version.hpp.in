@@ -3,6 +3,10 @@
 namespace aldous_tsp {
 inline constexpr const char* kProjectVersion = "@PROJECT_VERSION@";
 inline constexpr const char* kGitCommit = "@ALDOUS_TSP_GIT_COMMIT@";
+inline constexpr const char* kGitTree = "@ALDOUS_TSP_GIT_TREE@";
+inline constexpr bool kSourceDirty = @ALDOUS_TSP_SOURCE_DIRTY@;
+inline constexpr const char* kRevisionSource = "@ALDOUS_TSP_REVISION_SOURCE@";
+inline constexpr const char* kSourceRefNames = "@ALDOUS_TSP_SOURCE_REFNAMES@";
 inline constexpr const char* kConfiguredBuildType = "@ALDOUS_TSP_CONFIGURED_BUILD_TYPE@";
 inline constexpr const char* kCMakeGenerator = "@ALDOUS_TSP_CMAKE_GENERATOR@";
 inline constexpr const char* kCMakeVersion = "@ALDOUS_TSP_CMAKE_VERSION@";

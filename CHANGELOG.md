@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased -- trust and publication hardening
+## 0.12.0 -- trust-boundary and verifiable-release hardening
+
+- Added immutable prepared-instance and checked lower-bound contracts, representable numerical-domain checks, and mandatory successful-solve postconditions.
+- Made JSON locale-independent and UTF-8-safe, enforced no-clobber atomically at commit, distinguished pre/post-commit durability outcomes, and installed a full CLI exception boundary.
+- Added physical-memory-aware planning and separate phase permits for Held--Karp, external oracles, control-reference work, exact solves, and serialization.
+- Added honest end-to-end phase timing, two-fold cross-fitted control variates, independent reference Monte-Carlo uncertainty propagation, and replicate-block bootstrap integration.
+- Bound publication campaigns to exact configuration and method fingerprints, durable result receipts, and fail-closed manifests; mixed methods, stale cells, partial completion, unscaled budgets, and silent oracle fallback are rejected by default.
+- Added source-archive commit/tree fallback, fully SHA-pinned reusable GitHub Actions, digest-gated oracle downloads, pre-launch oracle executable re-verification, bounded oracle outputs, SPDX SBOMs, in-toto/SLSA provenance, signed GitHub attestations, and a signed-tag release workflow.
 
 - Promoted native result output to strict schema 16 with explicit solver, control-reference, aggregation, and complete experiment timing. The CLI emits a digest-bound adjacent receipt for serialization, durable commit, and process end-to-end timing.
 - Replaced the same-sample control coefficient with stable two-fold cross-fitting, propagated independent control-reference Monte-Carlo uncertainty, and integrated adjusted observations plus shared reference draws into replicate-block campaign bootstrap.

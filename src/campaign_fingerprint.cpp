@@ -54,13 +54,16 @@ ConfigurationFingerprints configuration_fingerprints(const RunOptions& options) 
     // have the same exact-cell fingerprint.
     resolved.dry_run = false;
     resolved.dump_config = false;
+    const std::string source_identity =
+        std::string(kGitCommit) + ":" + kGitTree + ":"
+        + (kSourceDirty ? "dirty" : "clean") + ":" + kRevisionSource;
     const std::string resolved_material =
         std::string("aldous-tsp-resolved-v1\nproject=") + kProjectVersion
-        + "\nsource=" + kGitCommit + "\n" + canonical_config(resolved);
+        + "\nsource=" + source_identity + "\n" + canonical_config(resolved);
     const RunOptions method = method_projection(options);
     const std::string method_material =
         std::string("aldous-tsp-method-v1\nproject=") + kProjectVersion
-        + "\nsource=" + kGitCommit + "\n" + canonical_config(method);
+        + "\nsource=" + source_identity + "\n" + canonical_config(method);
     return {
         sha256_hex(resolved_material),
         sha256_hex(method_material),

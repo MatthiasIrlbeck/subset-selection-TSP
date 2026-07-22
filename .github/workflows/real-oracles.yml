@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "43 4 1 * *"
   workflow_dispatch:
+    inputs:
+      lkh_sha256:
+        description: Independently verified SHA-256 of LKH-3.0.14.tgz
+        required: false
+        type: string
+      concorde_sha256:
+        description: Independently verified SHA-256 of the official Concorde Linux gzip
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -13,8 +22,11 @@ jobs:
     name: lkh-3.0.14-and-concorde
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      LKH_ARCHIVE_SHA256: ${{ inputs.lkh_sha256 || vars.LKH_3_0_14_SHA256 }}
+      CONCORDE_ARCHIVE_SHA256: ${{ inputs.concorde_sha256 || vars.CONCORDE_LINUX24_SHA256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install build and runtime dependencies
         run: |
           sudo apt-get update
@@ -31,23 +43,39 @@ jobs:
             -DALDOUS_TSP_ENABLE_WARNINGS=ON \
             -DALDOUS_TSP_ENABLE_WERROR=ON
           cmake --build build --target aldous_tsp --parallel 2
-      - name: Download and build LKH 3.0.14
+      - name: Require independently approved oracle digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$LKH_ARCHIVE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "Configure repository variable LKH_3_0_14_SHA256 or supply workflow input lkh_sha256" >&2
+            exit 1
+          }
+          [[ "$CONCORDE_ARCHIVE_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "Configure repository variable CONCORDE_LINUX24_SHA256 or supply workflow input concorde_sha256" >&2
+            exit 1
+          }
+      - name: Download, verify, and build LKH 3.0.14
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p external-solvers downloads
-          curl --fail --location --proto '=https' --tlsv1.2 \
-            https://webhotel4.ruc.dk/~keld/research/LKH-3/LKH-3.0.14.tgz \
+          python3 scripts/verified_download.py \
+            --lock config/oracle_sources.json \
+            --source lkh-3.0.14 \
+            --expected-sha256 "$LKH_ARCHIVE_SHA256" \
             --output downloads/LKH-3.0.14.tgz
           tar -xzf downloads/LKH-3.0.14.tgz -C external-solvers
           make -C external-solvers/LKH-3.0.14 -j2
           install -m 0755 external-solvers/LKH-3.0.14/LKH external-solvers/LKH
-      - name: Download official Concorde Linux executable
+      - name: Download and verify official Concorde Linux executable
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --proto '=https' --tlsv1.2 \
-            https://www.math.uwaterloo.ca/tsp/concorde/downloads/codes/linux24/concorde.gz \
+          python3 scripts/verified_download.py \
+            --lock config/oracle_sources.json \
+            --source concorde-linux24 \
+            --expected-sha256 "$CONCORDE_ARCHIVE_SHA256" \
             --output downloads/concorde.gz
           gzip -dc downloads/concorde.gz > external-solvers/concorde
           chmod 0755 external-solvers/concorde
@@ -70,7 +98,7 @@ jobs:
         run: rm -rf "real-oracle-evidence/solver binaries with spaces"
       - name: Upload provenance and integration evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: real-oracle-integration-evidence
           if-no-files-found: warn

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(aldous_tsp VERSION 0.11.0 LANGUAGES CXX)
+project(aldous_tsp VERSION 0.12.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -90,14 +90,59 @@ if(ALDOUS_TSP_ENABLE_PYTHON_TESTS)
   find_program(Python3_EXECUTABLE NAMES python3 python REQUIRED)
 endif()
 
+set(ALDOUS_TSP_GIT_COMMIT "unknown")
+set(ALDOUS_TSP_GIT_TREE "unknown")
+set(ALDOUS_TSP_SOURCE_DIRTY false)
+set(ALDOUS_TSP_REVISION_SOURCE "unknown")
+set(ALDOUS_TSP_SOURCE_REFNAMES "")
+
 execute_process(
   COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse --verify HEAD
-  OUTPUT_VARIABLE ALDOUS_TSP_GIT_COMMIT
+  RESULT_VARIABLE ALDOUS_TSP_GIT_RESULT
+  OUTPUT_VARIABLE ALDOUS_TSP_GIT_COMMIT_CANDIDATE
   OUTPUT_STRIP_TRAILING_WHITESPACE
   ERROR_QUIET
 )
-if(NOT ALDOUS_TSP_GIT_COMMIT)
-  set(ALDOUS_TSP_GIT_COMMIT "unknown")
+if(ALDOUS_TSP_GIT_RESULT EQUAL 0 AND ALDOUS_TSP_GIT_COMMIT_CANDIDATE)
+  set(ALDOUS_TSP_GIT_COMMIT "${ALDOUS_TSP_GIT_COMMIT_CANDIDATE}")
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" rev-parse "HEAD^{tree}"
+    OUTPUT_VARIABLE ALDOUS_TSP_GIT_TREE
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" status --porcelain --untracked-files=no
+    OUTPUT_VARIABLE ALDOUS_TSP_GIT_STATUS
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  if(ALDOUS_TSP_GIT_STATUS)
+    set(ALDOUS_TSP_SOURCE_DIRTY true)
+  endif()
+  execute_process(
+    COMMAND git -C "${CMAKE_CURRENT_SOURCE_DIR}" log -1 --format=%D
+    OUTPUT_VARIABLE ALDOUS_TSP_SOURCE_REFNAMES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  set(ALDOUS_TSP_REVISION_SOURCE "git")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SOURCE_REVISION")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/SOURCE_REVISION" ALDOUS_TSP_ARCHIVE_REVISION)
+  string(REGEX MATCH "commit=([0-9A-Fa-f]+)" _commit_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
+  set(_archive_commit "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "tree=([0-9A-Fa-f]+)" _tree_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
+  set(_archive_tree "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "refnames=(.*)" _refnames_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
+  set(_archive_refnames "${CMAKE_MATCH_1}")
+  string(LENGTH "${_archive_commit}" _archive_commit_length)
+  string(LENGTH "${_archive_tree}" _archive_tree_length)
+  if(_archive_commit_length EQUAL 40 AND _archive_tree_length EQUAL 40)
+    set(ALDOUS_TSP_GIT_COMMIT "${_archive_commit}")
+    set(ALDOUS_TSP_GIT_TREE "${_archive_tree}")
+    set(ALDOUS_TSP_SOURCE_REFNAMES "${_archive_refnames}")
+    set(ALDOUS_TSP_REVISION_SOURCE "source-archive")
+  endif()
 endif()
 
 if(CMAKE_CONFIGURATION_TYPES)
@@ -525,6 +570,8 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(campaign_analysis_self_test PROPERTIES TIMEOUT 120)
       add_test(NAME campaign_manifest_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/campaign_manifest_test.py ${CMAKE_CURRENT_SOURCE_DIR} $<TARGET_FILE:aldous_tsp>)
       set_tests_properties(campaign_manifest_self_test PROPERTIES TIMEOUT 180)
+      add_test(NAME release_security_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/release_security_test.py ${CMAKE_CURRENT_SOURCE_DIR})
+      set_tests_properties(release_security_self_test PROPERTIES TIMEOUT 180)
       add_test(NAME convergence_study_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/convergence_study.py --self-test)
       add_test(NAME policy_tuning_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tune_search_policy.py --self-test)
       set_tests_properties(convergence_study_self_test PROPERTIES TIMEOUT 60)

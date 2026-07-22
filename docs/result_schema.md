@@ -46,7 +46,7 @@ Top-level fields include `schema_version`, `timing`, `run_metadata`, `build_meta
 
 Control-variate summaries are two-fold cross-fitted by stable replicate identity. `cv_sampling_stderr` records finite-instance variation, `cv_reference_stderr` propagates the independent Monte-Carlo reference estimate, and `cv_stderr` is their quadrature total. Per-instance rows carry `control_variate_x`, `cv_adjusted_value`, and the coefficient applied to that observation. `scripts/analyze_campaign.py` uses these adjusted observations inside the replicate-block bootstrap and resamples each result document's shared reference uncertainty as one correlated draw.
 
-`run_metadata` records project/runtime metadata: project version, detected git commit, compiler string, platform, CPU model, and hardware-thread count.
+`run_metadata` records project/runtime metadata: project version, source commit and Git tree, source dirty state, whether revision identity came from Git or an exported source archive, exported ref names, compiler string, platform, CPU model, and hardware-thread count. The additional source-identity fields are optional for earlier schema-16 documents but are always emitted by native 0.12 builds.
 
 `build_metadata` records configured build type, CMake generator/version, native/sanitizer/warning/Werror/Python-test build options, whether the low-memory compiler profile was enabled, the named optimization profile, configured/effective C++ flags, target/source compile options, the structured `effective_optimization_level`, and the active `__cplusplus` value.
 

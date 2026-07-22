@@ -302,4 +302,6 @@ Historical schema-13 result files can first be converted to frozen schema 14 wit
 
 Publication campaign drivers create exact configuration manifests and accept resumed outputs only when their complete resolved configuration, method fingerprint, completion counts, oracle identity, result digest, and fully durable timing receipt match. They require an explicit search policy and a positive `--sa-iters-per-n`; incomplete campaigns and silent oracle fallback fail by default. See `docs/reproducibility.md`.
 
+Source releases preserve commit/tree identity without `.git`; release automation pins actions by full commit SHA, verifies external-oracle archives against independently approved digests, and emits checksums, an SPDX SBOM, SLSA provenance, and signed GitHub attestations. See `docs/release_security.md`.
+
 Large campaigns can set `--memory-budget-mb` to cap active instance workers before allocation. Result JSON records the conservative per-instance/peak estimate and requested, resolved, and effective concurrency under `memory_plan`. Reverse-KNN wakeup adjacency is created lazily and can be disabled with `--reverse-knn=false` when memory is more valuable than wakeup acceleration.

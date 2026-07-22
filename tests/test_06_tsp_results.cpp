@@ -467,6 +467,11 @@ ALDOUS_TEST(test_json_atomic) {
                 && text.find("\"aggregation_seconds\"") != std::string::npos
                 && text.find("\"experiment_wall_seconds\"") != std::string::npos,
             "JSON includes explicit experiment-phase timing");
+    require(text.find("\"git_tree\"") != std::string::npos
+                && text.find("\"source_dirty\"") != std::string::npos
+                && text.find("\"revision_source\"") != std::string::npos
+                && text.find("\"source_refnames\"") != std::string::npos,
+            "JSON includes source commit/tree provenance and dirty state");
     require(text.find("\"build_metadata\"") != std::string::npos, "JSON includes build metadata");
     require(text.find("\"memory_plan\"") != std::string::npos
                 && text.find("\"estimated_instance_bytes\"") != std::string::npos

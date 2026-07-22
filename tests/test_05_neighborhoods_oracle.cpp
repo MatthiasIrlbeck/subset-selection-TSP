@@ -1160,8 +1160,43 @@ ALDOUS_TEST(test_oracle_posix_spawn_timeout_and_concurrency) {
         missing_stats.oracle_call_records.front().error;
     require(launch_error.find("posix_spawn failed") != std::string::npos
                 || launch_error.find("oracle executable is not runnable")
+                    != std::string::npos
+                || launch_error.find("identity could not be verified")
                     != std::string::npos,
             "spawn failure retains a deterministic launch diagnostic");
+
+    // The executable identity is immutable after resolution. Replacing or
+    // editing the file between version discovery and launch must fail closed.
+    const std::filesystem::path mutable_script = make_executable(
+        "mutable lkh",
+        "if [ \"$1\" = \"--version\" ]; then echo mutable-1.0; exit 0; fi\n"
+        "cp init.tour out.tour\n"
+        "exit 0\n");
+    ExternalOracleConfig mutable_cfg;
+    mutable_cfg.mode = ExternalOracleMode::Lkh;
+    mutable_cfg.lkh_path = mutable_script.string();
+    mutable_cfg.min_k = 3;
+    mutable_cfg.max_k = 64;
+    OracleContext mutable_ctx;
+    require(build_oracle_context(mutable_cfg, mutable_ctx, error),
+            "build mutable oracle context");
+    {
+        std::ofstream changed(mutable_script, std::ios::app);
+        require(static_cast<bool>(changed), "open resolved oracle for mutation");
+        changed << "# changed after resolution\n";
+    }
+    Tour mutable_candidate;
+    mutable_candidate.init(inst.N);
+    mutable_candidate.set_tour(initial, inst);
+    SearchStats mutable_stats;
+    require(!external_oracle_polish_tour(
+                mutable_candidate, inst, mutable_ctx, true, &mutable_stats, false),
+            "changed oracle executable is refused");
+    require(mutable_stats.oracle_failed == 1
+                && mutable_stats.oracle_call_records.size() == 1U
+                && mutable_stats.oracle_call_records.front().error.find(
+                       "changed after resolution") != std::string::npos,
+            "changed oracle executable produces a provenance diagnostic");
 
     // Exercise posix_spawn concurrently from restart workers. The fake solver
     // intentionally uses relative paths, pinning the native working-directory
