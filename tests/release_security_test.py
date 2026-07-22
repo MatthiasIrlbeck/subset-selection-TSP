@@ -46,6 +46,8 @@ def test_workflow_pins(root: Path) -> None:
     require(".verification.verified" in release, "release tags are not signature-verified")
     require('--root "$source_dir"' in release,
             "SBOM is not generated from the archived source bytes")
+    require(release.count("git -c tar.umask=0022 archive") == 2,
+            "release archives do not use a deterministic permission mask")
 
 
 def test_oracle_lock(root: Path) -> None:

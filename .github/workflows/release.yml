@@ -73,9 +73,9 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           prefix="subset-selection-TSP-${VERSION}/"
-          git archive --format=zip --prefix="$prefix" \
+          git -c tar.umask=0022 archive --format=zip --prefix="$prefix" \
             -o "dist/subset-selection-TSP-${VERSION}.zip" HEAD
-          git archive --format=tar --prefix="$prefix" HEAD \
+          git -c tar.umask=0022 archive --format=tar --prefix="$prefix" HEAD \
             | gzip -n -9 > "dist/subset-selection-TSP-${VERSION}.tar.gz"
           rm -rf release-sbom-source
           unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d release-sbom-source
