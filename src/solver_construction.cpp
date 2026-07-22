@@ -29,10 +29,22 @@ std::vector<int> nearest_neighbor_order(const Instance& inst, const std::vector<
         for (int i = 0; i < k; ++i) {
             if (used[static_cast<std::size_t>(i)] != 0U) { continue; }
             const double d2 = inst.dist2(last, subset[static_cast<std::size_t>(i)]);
-            if (d2 < best_d2 || (d2 == best_d2 && subset[static_cast<std::size_t>(i)] < subset[static_cast<std::size_t>(best)])) {
+            if (!std::isfinite(d2) || d2 < 0.0) {
+                throw std::domain_error(
+                    "nearest_neighbor_order encountered a nonfinite edge cost");
+            }
+            if (d2 < best_d2
+                || (d2 == best_d2
+                    && (best < 0
+                        || subset[static_cast<std::size_t>(i)]
+                            < subset[static_cast<std::size_t>(best)]))) {
                 best_d2 = d2;
                 best = i;
             }
+        }
+        if (best < 0) {
+            throw std::logic_error(
+                "nearest_neighbor_order could not find an unvisited node");
         }
         out.push_back(subset[static_cast<std::size_t>(best)]);
         used[static_cast<std::size_t>(best)] = 1U;
@@ -77,6 +89,10 @@ std::vector<int> nearest_neighbor_full_order(const Instance& inst, int start_nod
                     continue;
                 }
                 const double d2 = inst.dist2(last, node);
+                if (!std::isfinite(d2) || d2 < 0.0) {
+                    throw std::domain_error(
+                        "nearest_neighbor_full_order encountered a nonfinite edge cost");
+                }
                 if (d2 < best_d2
                     || (d2 == best_d2 && (best < 0 || node < best))) {
                     best = node;

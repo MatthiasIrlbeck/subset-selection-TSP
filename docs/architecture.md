@@ -6,7 +6,7 @@ The project is organized as a reusable C++ library with a thin command-line appl
 apps/aldous_tsp_main.cpp
   └── aldous_tsp::cli_main
        └── aldous_tsp::ExperimentRunner
-            ├── Instance / exact KNN backend
+            ├── InstanceBuilder → immutable PreparedInstance / exact KNN backend
             ├── optional exact cardinality-k subset DP (N <= 18)
             ├── TspSolver
             │    ├── tour construction
@@ -28,7 +28,12 @@ apps/aldous_tsp_main.cpp
 
 Public headers live under `include/aldous_tsp/`. The most important types are:
 
-- `Instance`: point set, bounds, KNN data, and distance helpers.
+- `PreparedInstance`: immutable, validated point set, bounds, KNN/grid data, and
+  distance helpers accepted by hardened solver/lower-bound APIs.
+- `InstanceBuilder`: preferred construction surface for generated or imported
+  point sets.
+- `Instance`: mutable compatibility/construction type; solver overloads taking
+  it perform a checked canonical conversion before search.
 - `Tour`: mutable cycle with index/membership/edge-cache invariants.
 - `ExactSubsetSolution` and `exact_subset_cycle()`: global small-instance
   cardinality-`k` subset-and-tour proof API.

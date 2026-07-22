@@ -231,7 +231,23 @@ SolveResult solve_subset(const Instance& inst,
                          const SolverOptions& options,
                          const std::vector<int>* warm_start,
                          const SubsetSolveRequest& request) {
-    require_valid_subset_request(inst, k, options, warm_start);
+    return solve_subset(
+        PreparedInstance::from_instance(inst),
+        k,
+        rng,
+        options,
+        warm_start,
+        request);
+}
+
+SolveResult solve_subset(const PreparedInstance& prepared,
+                         int k,
+                         Rng& rng,
+                         const SolverOptions& options,
+                         const std::vector<int>* warm_start,
+                         const SubsetSolveRequest& request) {
+    require_valid_subset_request(prepared, k, options, warm_start);
+    const Instance& inst = prepared.instance();
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
@@ -240,7 +256,7 @@ SolveResult solve_subset(const Instance& inst,
         throw std::invalid_argument(
             "exact_subset_max_n must be in [0,kExactSubsetHardLimit]");
     }
-    if (k == inst.N) { return solve_tsp(inst, rng, options); }
+    if (k == inst.N) { return solve_tsp(prepared, rng, options); }
 
     const double p = static_cast<double>(k) / static_cast<double>(std::max(1, inst.N));
     if (options.racing_candidates < 0) {
@@ -339,6 +355,7 @@ SolveResult solve_subset(const Instance& inst,
         result.exact_optimal = true;
         result.stats.subset_seconds =
             std::chrono::duration<double>(Clock::now() - start).count();
+        require_valid_solve_postconditions(prepared, k, result.tour);
         return result;
     }
 
@@ -375,8 +392,8 @@ SolveResult solve_subset(const Instance& inst,
     const int total_restarts = continuation_begin + continuation_n;
     const int racing_n = policy.racing_candidates;
     if (total_restarts <= 0) {
-        result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
-        return result;
+        throw std::logic_error(
+            "subset search resolved to zero executable restarts");
     }
 
     const auto seed_pool_start = Clock::now();
@@ -1512,6 +1529,7 @@ SolveResult solve_subset(const Instance& inst,
     result.stats.elite_diversity_retained += elite.diversity_retained();
     result.stats.elite_diversity_rejected += elite.diversity_rejected();
     result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    require_valid_solve_postconditions(prepared, k, result.tour);
     return result;
 }
 

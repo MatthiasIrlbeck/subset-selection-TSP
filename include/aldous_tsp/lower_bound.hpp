@@ -5,6 +5,7 @@
 namespace aldous_tsp {
 
 class Instance;
+class PreparedInstance;
 
 // Result of a Held-Karp (Lagrangian 1-tree) lower-bound computation.
 struct HeldKarpBound {
@@ -38,6 +39,10 @@ struct HeldKarpBound {
 // ascent. The routine materializes an O(n^2) distance matrix for the subset, so
 // it is intended for moderate subset sizes (a few thousand).
 HeldKarpBound held_karp_bound(const Instance& base,
+                              const std::vector<int>& subset,
+                              double upper_bound,
+                              int max_iters);
+HeldKarpBound held_karp_bound(const PreparedInstance& base,
                               const std::vector<int>& subset,
                               double upper_bound,
                               int max_iters);

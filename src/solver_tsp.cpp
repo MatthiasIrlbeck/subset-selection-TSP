@@ -127,8 +127,17 @@ std::vector<int> select_tsp_candidates(const std::vector<TspCandidate>& candidat
 
 } // namespace
 
-SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& options) {
-    require_valid_tsp_request(inst, options);
+SolveResult solve_tsp(const Instance& inst,
+                      Rng& rng,
+                      const SolverOptions& options) {
+    return solve_tsp(PreparedInstance::from_instance(inst), rng, options);
+}
+
+SolveResult solve_tsp(const PreparedInstance& prepared,
+                      Rng& rng,
+                      const SolverOptions& options) {
+    require_valid_tsp_request(prepared, options);
+    const Instance& inst = prepared.instance();
     const auto start = Clock::now();
     SolveResult result;
     result.tour.init(inst.N);
@@ -171,6 +180,7 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         result.exact_optimal = true;
         result.stats.tsp_seconds =
             std::chrono::duration<double>(Clock::now() - start).count();
+        require_valid_solve_postconditions(prepared, inst.N, result.tour);
         return result;
     }
 
@@ -362,6 +372,7 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
     }
     result.stats.tsp_seconds =
         std::chrono::duration<double>(Clock::now() - start).count();
+    require_valid_solve_postconditions(prepared, inst.N, result.tour);
     return result;
 }
 

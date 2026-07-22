@@ -66,6 +66,47 @@ int safe_initial_grid_radius(int knn_k, int max_r, int n, double cell_size,
     return static_cast<int>(raw);
 }
 
+void require_representable_metric_domain(const std::vector<Point>& points,
+                                         const bool periodic,
+                                         const double side) {
+    if (points.empty()) {
+        return;
+    }
+    const long double max_double =
+        static_cast<long double>(std::numeric_limits<double>::max());
+    long double max_d2 = 0.0L;
+    if (periodic) {
+        if (!std::isfinite(side) || !(side > 0.0)) {
+            throw std::invalid_argument(
+                "periodic metric side must be finite and positive");
+        }
+        const long double half = static_cast<long double>(side) / 2.0L;
+        max_d2 = 2.0L * half * half;
+    } else {
+        long double min_x = static_cast<long double>(points.front().x);
+        long double max_x = min_x;
+        long double min_y = static_cast<long double>(points.front().y);
+        long double max_y = min_y;
+        for (const Point& point : points) {
+            min_x = std::min(min_x, static_cast<long double>(point.x));
+            max_x = std::max(max_x, static_cast<long double>(point.x));
+            min_y = std::min(min_y, static_cast<long double>(point.y));
+            max_y = std::max(max_y, static_cast<long double>(point.y));
+        }
+        const long double width = max_x - min_x;
+        const long double height = max_y - min_y;
+        if (!std::isfinite(width) || !std::isfinite(height)) {
+            throw std::invalid_argument(
+                "instance coordinate span is not representable");
+        }
+        max_d2 = width * width + height * height;
+    }
+    if (!std::isfinite(max_d2) || max_d2 > max_double) {
+        throw std::invalid_argument(
+            "instance metric exceeds the representable double-precision distance domain");
+    }
+}
+
 } // namespace
 
 std::uint64_t mix_hash64(std::uint64_t value) noexcept {
@@ -134,8 +175,15 @@ void Instance::recompute_bounds() {
     };
 
     scan_bounds();
-    const double width = std::max(0.0, max_x - min_x);
-    const double height = std::max(0.0, max_y - min_y);
+    if (!periodic) {
+        require_representable_metric_domain(points, false, 1.0);
+    }
+    const long double width_ld = static_cast<long double>(max_x)
+        - static_cast<long double>(min_x);
+    const long double height_ld = static_cast<long double>(max_y)
+        - static_cast<long double>(min_y);
+    const double width = static_cast<double>(std::max(0.0L, width_ld));
+    const double height = static_cast<double>(std::max(0.0L, height_ld));
     side = std::max({std::sqrt(static_cast<double>(std::max(N, 0))),
                      width,
                      height,
@@ -145,6 +193,7 @@ void Instance::recompute_bounds() {
         if (explicit_side > 0.0) {
             side = explicit_side;
         }
+        require_representable_metric_domain(points, true, side);
         const PeriodicDomain domain{side};
         for (Point& point : points) {
             point = domain.normalize(point);

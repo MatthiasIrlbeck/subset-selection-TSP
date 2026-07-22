@@ -1,11 +1,13 @@
 #include "aldous_tsp/lower_bound.hpp"
 
 #include "aldous_tsp/instance.hpp"
+#include "aldous_tsp/validation.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace aldous_tsp {
@@ -22,6 +24,17 @@ HeldKarpBound held_karp_bound(const Instance& base,
                               const std::vector<int>& subset,
                               double upper_bound,
                               int max_iters) {
+    return held_karp_bound(
+        PreparedInstance::from_instance(base), subset, upper_bound, max_iters);
+}
+
+HeldKarpBound held_karp_bound(const PreparedInstance& prepared,
+                              const std::vector<int>& subset,
+                              double upper_bound,
+                              int max_iters) {
+    require_valid_lower_bound_request(
+        prepared, subset, upper_bound, max_iters);
+    const Instance& base = prepared.instance();
     HeldKarpBound result;
     const int n = static_cast<int>(subset.size());
     if (n < 3 || n > kMaxHeldKarpNodes) {
@@ -76,6 +89,10 @@ HeldKarpBound held_karp_bound(const Instance& base,
                     u = v;
                 }
             }
+            if (u < 0 || !std::isfinite(best_key)) {
+                throw std::domain_error(
+                    "Held-Karp MST construction encountered a nonfinite metric");
+            }
             in_tree[static_cast<std::size_t>(u)] = 1;
             mst_cost += key[static_cast<std::size_t>(u)];
             const int pu = parent[static_cast<std::size_t>(u)];
@@ -116,6 +133,10 @@ HeldKarpBound held_karp_bound(const Instance& base,
             }
         }
         const double one_tree_cost = mst_cost + first_w + second_w;
+        if (first < 0 || second < 0 || !std::isfinite(one_tree_cost)) {
+            throw std::domain_error(
+                "Held-Karp 1-tree construction encountered a nonfinite metric");
+        }
         degree[0] = 2;
         ++degree[static_cast<std::size_t>(first)];
         ++degree[static_cast<std::size_t>(second)];

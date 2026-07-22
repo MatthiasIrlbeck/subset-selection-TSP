@@ -723,5 +723,69 @@ ALDOUS_TEST(test_memory_budget_planning) {
     require(rejected, "a budget below one-instance demand is rejected before allocation");
 }
 
+ALDOUS_TEST(test_prepared_instance_contracts_and_metric_domain) {
+    Instance valid;
+    valid.periodic = true;
+    valid.explicit_side = 10.0;
+    valid.set_points({{0.1, 0.1}, {1.0, 1.0}, {4.0, 3.0}, {9.9, 0.2}});
+    valid.build_knn(3, KnnBackend::GridExact);
+
+    const PreparedInstance prepared = PreparedInstance::from_instance(valid);
+    require(prepared.size() == 4 && prepared.periodic(),
+            "prepared instances retain validated geometry");
+    const double original = prepared.instance().points[0].x;
+    valid.points[0].x = 7.0;
+    require(prepared.instance().points[0].x == original,
+            "prepared instances are independent of mutable source state");
+
+    Instance malformed = valid;
+    malformed.points[0].x = original;
+    malformed.knn[0] = malformed.N + 17;
+    bool malformed_rejected = false;
+    try {
+        (void)PreparedInstance::from_instance(malformed);
+    } catch (const std::invalid_argument&) {
+        malformed_rejected = true;
+    }
+    require(malformed_rejected,
+            "out-of-range KNN IDs are rejected before solver access");
+
+    Instance wrong_neighbor = valid;
+    wrong_neighbor.points[0].x = original;
+    std::swap(wrong_neighbor.knn[0], wrong_neighbor.knn[1]);
+    std::swap(wrong_neighbor.knn_d[0], wrong_neighbor.knn_d[1]);
+    bool ordering_rejected = false;
+    try {
+        (void)PreparedInstance::from_instance(wrong_neighbor);
+    } catch (const std::invalid_argument&) {
+        ordering_rejected = true;
+    }
+    require(ordering_rejected,
+            "noncanonical KNN ordering is rejected");
+
+    bool extreme_rejected = false;
+    try {
+        Instance extreme;
+        extreme.set_points({
+            {-1.0e308, -1.0e308},
+            {1.0e308, -1.0e308},
+            {1.0e308, 1.0e308},
+            {-1.0e308, 1.0e308},
+        });
+    } catch (const std::invalid_argument&) {
+        extreme_rejected = true;
+    }
+    require(extreme_rejected,
+            "finite coordinates whose metric would overflow are rejected");
+
+    InstanceBuilder builder;
+    Rng rng(1234);
+    const PreparedInstance generated = builder.periodic(true)
+        .generate(32, rng)
+        .build(8, KnnBackend::GridExact);
+    require(generated.size() == 32 && generated.instance().knn_k == 8,
+            "the private-state builder creates reusable prepared instances");
+}
+
 
 } // namespace

@@ -93,13 +93,14 @@ void estimate_full_bound_expectation(const RunOptions& opt, ResultsDocument& doc
     double sum = 0.0;
     double sum2 = 0.0;
     for (int s = 0; s < samples; ++s) {
-        Instance inst;
-        inst.periodic = opt.periodic;
         Rng rng(make_stream_seed(static_cast<std::uint64_t>(effective_point_seed(opt)),
                                  0xC0DEC0DEC0DEC0DEULL,
                                  static_cast<std::uint64_t>(s) ^ 0x9E3779B97F4A7C15ULL));
-        inst.generate(opt.N, rng);
-        inst.build_knn(2, KnnBackend::GridExact);
+        PreparedInstance prepared = InstanceBuilder()
+            .periodic(opt.periodic)
+            .generate(opt.N, rng)
+            .build(2, KnnBackend::GridExact);
+        const Instance& inst = prepared.instance();
         const double b = two_nn_bound_from_knn(inst);
         sum += b;
         sum2 += b * b;
@@ -178,12 +179,12 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
     out.values.assign(opt.p_values.size(), std::numeric_limits<double>::quiet_NaN());
 
     Rng point_rng(out.point_stream_id);
-    Instance inst;
-    inst.periodic = opt.periodic;
-    inst.generate(opt.N, point_rng);
-
     const auto knn_start = Clock::now();
-    inst.build_knn(opt.solver.knn_k, opt.solver.knn_backend, opt.solver.grid_cell);
+    PreparedInstance prepared = InstanceBuilder()
+        .periodic(opt.periodic)
+        .generate(opt.N, point_rng)
+        .build(opt.solver.knn_k, opt.solver.knn_backend, opt.solver.grid_cell);
+    const Instance& inst = prepared.instance();
     out.stats.knn_build_seconds += std::chrono::duration<double>(Clock::now() - knn_start).count();
     out.knn_info = inst.last_knn_build;
     record_knn_build_stats(out.stats, inst.last_knn_build);
@@ -219,7 +220,9 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
                                        out.replicate_id,
                                        mix_hash64(static_cast<std::uint64_t>(std::llround(p * 1000000.0)))));
         const auto solve_start = Clock::now();
-        SolveResult solved = solve_subset(inst, k, local_rng, opt.solver, warm.empty() ? nullptr : &warm);
+        SolveResult solved = solve_subset(
+            prepared, k, local_rng, opt.solver,
+            warm.empty() ? nullptr : &warm);
         const double solve_s = std::chrono::duration<double>(Clock::now() - solve_start).count();
         out.stats.add(solved.stats);
         out.values[static_cast<std::size_t>(pi)] = solved.tour.length / static_cast<double>(k);
@@ -266,7 +269,7 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
             const auto solve_start = Clock::now();
             SubsetSolveRequest continuation_request;
             continuation_request.continuation_only = true;
-            SolveResult solved = solve_subset(inst, k, up_rng, opt.solver,
+            SolveResult solved = solve_subset(prepared, k, up_rng, opt.solver,
                                               grow.empty() ? nullptr : &grow,
                                               continuation_request);
             out.solve_seconds[pi] += std::chrono::duration<double>(Clock::now() - solve_start).count();
@@ -303,7 +306,8 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
         for (std::size_t pi = 0; pi < np; ++pi) {
             if (final_nodes[pi].size() >= 3U) {
                 const double ub = cycle_length(inst, final_nodes[pi]);
-                const HeldKarpBound hk = held_karp_bound(inst, final_nodes[pi], ub, opt.hk_iterations);
+                const HeldKarpBound hk = held_karp_bound(
+                    prepared, final_nodes[pi], ub, opt.hk_iterations);
                 if (hk.computed) {
                     out.held_karp_bounds[pi] = hk.bound;
                 }

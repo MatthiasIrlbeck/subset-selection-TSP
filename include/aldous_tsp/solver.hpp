@@ -48,7 +48,16 @@ int or_opt_1_descent(Tour& tour, const Instance& inst, int max_passes, SearchSta
 int subset_swap_descent(Tour& tour, const Instance& inst, int max_passes, SearchStats* stats = nullptr);
 
 SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& options);
+SolveResult solve_tsp(const PreparedInstance& inst,
+                      Rng& rng,
+                      const SolverOptions& options);
 SolveResult solve_subset(const Instance& inst,
+                         int k,
+                         Rng& rng,
+                         const SolverOptions& options,
+                         const std::vector<int>* warm_start = nullptr,
+                         const SubsetSolveRequest& request = {});
+SolveResult solve_subset(const PreparedInstance& inst,
                          int k,
                          Rng& rng,
                          const SolverOptions& options,
@@ -61,6 +70,7 @@ public:
 
     [[nodiscard]] const SolverOptions& options() const noexcept { return options_; }
     [[nodiscard]] SolveResult solve(const Instance& inst, Rng& rng) const;
+    [[nodiscard]] SolveResult solve(const PreparedInstance& inst, Rng& rng) const;
 
 private:
     SolverOptions options_;
@@ -72,7 +82,12 @@ public:
 
     [[nodiscard]] const SolverOptions& options() const noexcept { return options_; }
     [[nodiscard]] SolveResult solve(const Instance& inst, int k, Rng& rng) const;
+    [[nodiscard]] SolveResult solve(const PreparedInstance& inst, int k, Rng& rng) const;
     [[nodiscard]] SolveResult solve_with_warm_start(const Instance& inst, int k, Rng& rng, const std::vector<int>& warm_start) const;
+    [[nodiscard]] SolveResult solve_with_warm_start(const PreparedInstance& inst,
+                                                    int k,
+                                                    Rng& rng,
+                                                    const std::vector<int>& warm_start) const;
 
 private:
     SolverOptions options_;

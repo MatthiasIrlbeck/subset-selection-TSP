@@ -200,12 +200,22 @@ Campaign inference supports replicate-block bootstrap, finite-size model envelop
 
 ## Design style
 
-The public library API uses domain types for stateful concepts (`Instance`, `Tour`, `ElitePool`, `TspSolver`, `SubsetSolver`, `ExperimentRunner`, result/config structs). The hottest local-search operators are still implemented as free functions over those types. That is intentional: the operators are stateless, performance-sensitive algorithms, and keeping them as functions makes them easier to test, profile, and optimize without forcing inheritance-heavy design into numerical code.
+The hardened public solve path uses an immutable `PreparedInstance`. Build one
+with `InstanceBuilder`, which validates the numerical metric domain and creates
+the exact KNN/grid representation before returning an object that exposes only
+const state. The older mutable `Instance` surface remains source-compatible;
+passing it to a solver performs a complete checked canonical conversion first.
+The hottest local-search operators are still implemented as free functions over
+the internal const instance view. That keeps stateless numerical kernels easy to
+test and profile without allowing application-owned buffers into search code.
 
 For application code, use the facade classes:
 
 ```cpp
 aldous_tsp::SolverOptions options;
+aldous_tsp::PreparedInstance instance = aldous_tsp::InstanceBuilder()
+    .generate(120, rng)
+    .build(32, aldous_tsp::KnnBackend::GridExact);
 aldous_tsp::TspSolver tsp_solver(options);
 auto tsp = tsp_solver.solve(instance, rng);
 
@@ -228,7 +238,9 @@ if (proof.proven_optimal) {
 ```
 
 The direct exact API does not require KNN construction. Instances above the hard
-limit return `solved == false` without allocating the exponential DP table.
+limit return `solved == false` without allocating the exponential DP table. The
+heuristic solver and Held–Karp APIs accept `PreparedInstance`; compatibility
+overloads taking mutable `Instance` validate and canonicalize before execution.
 
 See `examples/library_usage.cpp` for a complete library-use example.
 

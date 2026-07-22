@@ -161,6 +161,7 @@ add_library(aldous_tsp_core
   src/validation.cpp
   src/exact_subset.cpp
   src/instance.cpp
+  src/prepared_instance.cpp
   src/tour.cpp
   src/solver_moves.cpp
   src/solver_spatial.cpp

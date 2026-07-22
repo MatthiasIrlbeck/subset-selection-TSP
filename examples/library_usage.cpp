@@ -7,9 +7,9 @@
 int main() {
     aldous_tsp::Rng rng(2024);
 
-    aldous_tsp::Instance instance;
-    instance.generate(120, rng);
-    instance.build_knn(32, aldous_tsp::KnnBackend::GridExact);
+    const aldous_tsp::PreparedInstance instance = aldous_tsp::InstanceBuilder()
+        .generate(120, rng)
+        .build(32, aldous_tsp::KnnBackend::GridExact);
 
     aldous_tsp::SolverOptions options;
     options.tsp_restarts = 2;

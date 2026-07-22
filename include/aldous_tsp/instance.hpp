@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 namespace aldous_tsp {
@@ -107,6 +108,60 @@ private:
     double outside_bound_d2(int qi, int radius) const noexcept;
 };
 
+// Immutable, validated instance representation accepted by the hardened public
+// solver and lower-bound APIs.  The mutable Instance type remains available as
+// a source-compatible construction surface, but conversion to PreparedInstance
+// performs complete structural validation and canonical reconstruction before
+// any search code can observe the state.
+class PreparedInstance {
+public:
+    PreparedInstance(const PreparedInstance&) noexcept = default;
+    PreparedInstance(PreparedInstance&&) noexcept = default;
+    PreparedInstance& operator=(const PreparedInstance&) noexcept = default;
+    PreparedInstance& operator=(PreparedInstance&&) noexcept = default;
+
+    [[nodiscard]] static PreparedInstance from_instance(const Instance& instance);
+    [[nodiscard]] static PreparedInstance from_instance(Instance&& instance);
+
+    [[nodiscard]] bool valid() const noexcept {
+        return static_cast<bool>(instance_);
+    }
+    [[nodiscard]] const Instance& instance() const noexcept { return *instance_; }
+    [[nodiscard]] int size() const noexcept { return instance_->N; }
+    [[nodiscard]] bool periodic() const noexcept { return instance_->periodic; }
+    [[nodiscard]] double side() const noexcept { return instance_->side; }
+
+private:
+    struct TrustedTag {};
+    explicit PreparedInstance(std::shared_ptr<const Instance> instance, TrustedTag)
+        : instance_(std::move(instance)) {}
+
+    std::shared_ptr<const Instance> instance_;
+
+    friend class InstanceBuilder;
+};
+
+// Builder that never exposes the mutable intermediate state.  It is the
+// preferred construction path for applications that generate or import point
+// sets and then reuse an instance across many solves.
+class InstanceBuilder {
+public:
+    InstanceBuilder& periodic(bool enabled) noexcept;
+    InstanceBuilder& explicit_side(double side);
+    InstanceBuilder& generate(int n, Rng& rng);
+    InstanceBuilder& set_points(std::vector<Point> points);
+
+    [[nodiscard]] PreparedInstance build(
+        int knn_k,
+        KnnBackend backend = KnnBackend::GridExact,
+        double forced_cell_size = 0.0);
+
+private:
+    Instance instance_;
+};
+
 void dist_many_from(const Instance& inst, int src, const int* ids, int count, double* out);
+void dist_many_from(const PreparedInstance& inst, int src, const int* ids,
+                    int count, double* out);
 
 } // namespace aldous_tsp

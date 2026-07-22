@@ -134,6 +134,42 @@ ALDOUS_TEST(test_held_karp_bound) {
     require(worst_ratio >= 0.9, "worst-case Held-Karp tightness stays high");
 }
 
+ALDOUS_TEST(test_held_karp_public_input_contract) {
+    Rng rng(777);
+    const PreparedInstance prepared = InstanceBuilder()
+        .periodic(true)
+        .generate(12, rng)
+        .build(8, KnnBackend::GridExact);
+    std::vector<int> valid = {0, 1, 2, 3, 4};
+    require(held_karp_bound(prepared, valid,
+                           std::numeric_limits<double>::infinity(), 20).computed,
+            "prepared Held-Karp input computes normally");
+
+    for (const std::vector<int>& malformed : {
+             std::vector<int>{0, 1, 12},
+             std::vector<int>{0, 1, 1},
+             std::vector<int>{0, 1},
+         }) {
+        bool rejected = false;
+        try {
+            (void)held_karp_bound(prepared, malformed, 100.0, 20);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        require(rejected,
+                "malformed Held-Karp subsets are rejected without indexing them");
+    }
+
+    bool iterations_rejected = false;
+    try {
+        (void)held_karp_bound(prepared, valid, 100.0, 0);
+    } catch (const std::invalid_argument&) {
+        iterations_rejected = true;
+    }
+    require(iterations_rejected,
+            "nonpositive Held-Karp iteration budgets are rejected");
+}
+
 ALDOUS_TEST(test_control_variate_bounds) {
     // The two-NN subset bound must lower-bound the found tour on every instance;
     // at p=1 the selected subset is the full set so the subset bound equals the
