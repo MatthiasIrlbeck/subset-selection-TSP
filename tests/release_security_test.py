@@ -46,8 +46,8 @@ def test_workflow_pins(root: Path) -> None:
     require(".verification.verified" in release, "release tags are not signature-verified")
     require('--root "$source_dir"' in release,
             "SBOM is not generated from the archived source bytes")
-    require(release.count("git -c tar.umask=0022 archive") == 2,
-            "release archives do not use a deterministic permission mask")
+    require("python3 scripts/create_source_archives.py" in release,
+            "release archives do not use the mode-preserving generator")
 
 
 def test_oracle_lock(root: Path) -> None:
@@ -143,6 +143,59 @@ def test_sbom_and_provenance(root: Path) -> None:
         require(len(statement["subject"]) == 2, "provenance subjects are incomplete")
 
 
+
+def test_source_archive_modes(root: Path) -> None:
+    with tempfile.TemporaryDirectory(prefix="aldous-tsp-archive-mode-") as tmp:
+        temp = Path(tmp)
+        first_zip = temp / "first.zip"
+        first_tar = temp / "first.tar.gz"
+        second_zip = temp / "second.zip"
+        second_tar = temp / "second.tar.gz"
+        common = [
+            sys.executable,
+            str(root / "scripts" / "create_source_archives.py"),
+            "--repo",
+            str(root),
+            "--ref",
+            "HEAD",
+            "--prefix",
+            "archive-test/",
+        ]
+        subprocess.run(
+            common + ["--zip", str(first_zip), "--tar-gz", str(first_tar)],
+            check=True,
+        )
+        subprocess.run(
+            common + ["--zip", str(second_zip), "--tar-gz", str(second_tar)],
+            check=True,
+        )
+        require(first_zip.read_bytes() == second_zip.read_bytes(),
+                "source ZIP generation is not deterministic")
+        require(first_tar.read_bytes() == second_tar.read_bytes(),
+                "source tar.gz generation is not deterministic")
+
+        import tarfile
+        import zipfile
+
+        expected = {
+            "archive-test/.clang-format": 0o644,
+            "archive-test/scripts/generate_options.py": 0o755,
+        }
+        with zipfile.ZipFile(first_zip) as archive:
+            for name, mode in expected.items():
+                info = archive.getinfo(name)
+                require(info.create_system == 3,
+                        f"ZIP entry is not marked as Unix: {name}")
+                actual = (info.external_attr >> 16) & 0o777
+                require(actual == mode,
+                        f"ZIP mode mismatch for {name}: {oct(actual)} != {oct(mode)}")
+        with tarfile.open(first_tar, "r:gz") as archive:
+            for name, mode in expected.items():
+                actual = archive.getmember(name).mode & 0o777
+                require(actual == mode,
+                        f"tar mode mismatch for {name}: {oct(actual)} != {oct(mode)}")
+
+
 def test_source_archive_fallback(root: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="aldous-source-archive-") as raw:
         temp = Path(raw)
@@ -190,6 +243,7 @@ def main() -> int:
     test_workflow_pins(root)
     test_oracle_lock(root)
     test_sbom_and_provenance(root)
+    test_source_archive_modes(root)
     test_source_archive_fallback(root)
     print("release security self-test passed")
     return 0
