@@ -67,6 +67,34 @@ def migrate_document(
     unrecoverable: list[str] = []
     notes: list[str] = []
 
+    source_digest = hashlib.sha256(
+        source_bytes if source_bytes is not None else json.dumps(
+            document, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode("utf-8")
+    ).hexdigest()
+
+    campaign = result.get("campaign_metadata")
+    if campaign is not None:
+        if not isinstance(campaign, dict):
+            raise MigrationError("schema-15 campaign_metadata is not an object")
+        if "configuration_fingerprint" not in campaign:
+            campaign["configuration_fingerprint"] = hashlib.sha256(
+                ("unrecoverable-schema15-configuration:" + source_digest).encode("ascii")
+            ).hexdigest()
+            inferred.append("/campaign_metadata/configuration_fingerprint")
+            unrecoverable.append("/campaign_metadata/configuration_fingerprint")
+        if "method_fingerprint" not in campaign:
+            campaign["method_fingerprint"] = hashlib.sha256(
+                ("unrecoverable-schema15-method:" + source_digest).encode("ascii")
+            ).hexdigest()
+            inferred.append("/campaign_metadata/method_fingerprint")
+            unrecoverable.append("/campaign_metadata/method_fingerprint")
+        notes.append(
+            "/campaign_metadata fingerprints: schema 15 did not record the complete "
+            "resolved method; deterministic document-specific placeholders prevent "
+            "unverified historical files from being merged as one method"
+        )
+
     config = result["config"]
     if "cv_max_point_ops" not in config:
         config["cv_max_point_ops"] = 100_000_000

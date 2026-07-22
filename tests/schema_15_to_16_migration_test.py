@@ -52,12 +52,37 @@ def main() -> int:
     assert not errors, errors[0].message if errors else ""
     assert migrated["schema_version"] == 16
     assert migrated["config"]["cv_max_point_ops"] == 100_000_000
+    if "campaign_metadata" in source15:
+        campaign = migrated["campaign_metadata"]
+        assert len(campaign["configuration_fingerprint"]) == 64
+        assert len(campaign["method_fingerprint"]) == 64
+        assert campaign["configuration_fingerprint"] != campaign["method_fingerprint"]
     assert migrated["timing"]["solver_wall_seconds"] == source15["wall_seconds"]
     step = migrated["migration_metadata"]["steps"][-1]
     assert step["source_schema_version"] == 15
     assert step["target_schema_version"] == 16
     assert "/timing/control_reference_seconds" in step["unrecoverable_fields"]
+    if "campaign_metadata" in source15:
+        assert "/campaign_metadata/configuration_fingerprint" in step["unrecoverable_fields"]
+        assert "/campaign_metadata/method_fingerprint" in step["unrecoverable_fields"]
     assert migrator.migrate_document(migrated) == migrated
+
+    identified15 = json.loads(json.dumps(source15))
+    identified15["campaign_metadata"] = {
+        "campaign_id": "legacy-identified", "campaign_shard": 0,
+        "replicate_offset": 0, "point_seed": 1, "search_seed": 2,
+        "solver_policy_id": "legacy", "fidelity_level": "strong",
+    }
+    identified16 = migrator.migrate_document(identified15)
+    campaign = identified16["campaign_metadata"]
+    assert len(campaign["configuration_fingerprint"]) == 64
+    assert len(campaign["method_fingerprint"]) == 64
+    assert campaign["configuration_fingerprint"] != campaign["method_fingerprint"]
+    identified_errors = list(validator.iter_errors(identified16))
+    assert not identified_errors, identified_errors[0].message if identified_errors else ""
+    identified_step = identified16["migration_metadata"]["steps"][-1]
+    assert "/campaign_metadata/configuration_fingerprint" in identified_step["unrecoverable_fields"]
+    assert "/campaign_metadata/method_fingerprint" in identified_step["unrecoverable_fields"]
 
     with tempfile.TemporaryDirectory(prefix="aldous-schema16-") as temporary:
         directory = Path(temporary)

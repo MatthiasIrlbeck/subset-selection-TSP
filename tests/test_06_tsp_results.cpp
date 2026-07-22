@@ -476,6 +476,9 @@ ALDOUS_TEST(test_json_atomic) {
                 && text.find("\"limited_by_budget\"") != std::string::npos,
             "JSON includes phase-aware memory and effective-concurrency telemetry");
     require(text.find("\"oracle_call_records\"") != std::string::npos, "JSON includes oracle call records");
+    require(text.find("\"configuration_fingerprint\"") != std::string::npos
+                && text.find("\"method_fingerprint\"") != std::string::npos,
+            "JSON includes exact configuration and method fingerprints");
     require(text.find("\"summary_rows\"") != std::string::npos, "JSON includes array-form summary rows");
     require(text.find("\"knn_build_seconds\"") != std::string::npos, "JSON includes KNN timing stats");
     require(text.find("\"pair_exchange_max_k\"") != std::string::npos,

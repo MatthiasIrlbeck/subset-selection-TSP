@@ -300,4 +300,6 @@ Result JSON records build flags, target compile options, effective KNN backend/c
 
 Historical schema-13 result files can first be converted to frozen schema 14 with `scripts/migrate_schema13_to14.py`, then to schema 15 with `scripts/migrate_schema14_to15.py`, and finally to current schema 16 with `scripts/migrate_schema15_to16.py`. Migration records every inferred or unrecoverable field and preserves the complete step history; it does not invent missing replicate identities.
 
+Publication campaign drivers create exact configuration manifests and accept resumed outputs only when their complete resolved configuration, method fingerprint, completion counts, oracle identity, result digest, and fully durable timing receipt match. They require an explicit search policy and a positive `--sa-iters-per-n`; incomplete campaigns and silent oracle fallback fail by default. See `docs/reproducibility.md`.
+
 Large campaigns can set `--memory-budget-mb` to cap active instance workers before allocation. Result JSON records the conservative per-instance/peak estimate and requested, resolved, and effective concurrency under `memory_plan`. Reverse-KNN wakeup adjacency is created lazily and can be disabled with `--reverse-knn=false` when memory is more valuable than wakeup acceleration.

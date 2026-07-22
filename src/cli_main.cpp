@@ -2,6 +2,7 @@
 
 #include "aldous_tsp/experiment.hpp"
 #include "generated_options.hpp"
+#include "campaign_fingerprint.hpp"
 #include "json_writer.hpp"
 #include "sha256.hpp"
 
@@ -98,6 +99,12 @@ int cli_main_impl(int argc, char** argv) {
     }
     if (opt.dump_config || opt.dry_run) {
         std::printf("Resolved config: %s\n", config_summary(opt).c_str());
+        const detail::ConfigurationFingerprints fingerprints =
+            detail::configuration_fingerprints(opt);
+        std::printf(
+            "ALDOUS_TSP_FINGERPRINTS {\"configuration_fingerprint\":\"%s\","
+            "\"method_fingerprint\":\"%s\"}\n",
+            fingerprints.resolved.c_str(), fingerprints.method.c_str());
     }
     if (opt.dry_run) {
         return 0;

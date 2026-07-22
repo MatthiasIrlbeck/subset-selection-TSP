@@ -156,6 +156,7 @@ configure_file(
 add_library(aldous_tsp_core
   src/geometry.cpp
   src/sha256.cpp
+  src/campaign_fingerprint.cpp
   src/generated_options_core.cpp
   src/memory.cpp
   src/validation.cpp
@@ -522,6 +523,8 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(extrapolation_self_test PROPERTIES TIMEOUT 60)
       add_test(NAME campaign_analysis_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/analyze_campaign.py --self-test)
       set_tests_properties(campaign_analysis_self_test PROPERTIES TIMEOUT 120)
+      add_test(NAME campaign_manifest_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/campaign_manifest_test.py ${CMAKE_CURRENT_SOURCE_DIR} $<TARGET_FILE:aldous_tsp>)
+      set_tests_properties(campaign_manifest_self_test PROPERTIES TIMEOUT 180)
       add_test(NAME convergence_study_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/convergence_study.py --self-test)
       add_test(NAME policy_tuning_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tune_search_policy.py --self-test)
       set_tests_properties(convergence_study_self_test PROPERTIES TIMEOUT 60)

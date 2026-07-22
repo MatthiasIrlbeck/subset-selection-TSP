@@ -5,6 +5,8 @@
 - Promoted native result output to strict schema 16 with explicit solver, control-reference, aggregation, and complete experiment timing. The CLI emits a digest-bound adjacent receipt for serialization, durable commit, and process end-to-end timing.
 - Replaced the same-sample control coefficient with stable two-fold cross-fitting, propagated independent control-reference Monte-Carlo uncertainty, and integrated adjusted observations plus shared reference draws into replicate-block campaign bootstrap.
 - Added an exact `N * samples` control-reference work cap and a loss-aware schema-15-to-16 migration.
+- Added resolved-configuration and quality-method fingerprints, exact campaign manifests, digest-bound fail-closed resume, and default rejection of mixed-method analysis.
+- Publication drivers now require explicit validated N-scaled SA budgets and search policies, refuse silent oracle fallback, and fail on incomplete cells unless partial output is explicitly authorized.
 
 ## 0.11.0 -- held-out search-policy presets
 

@@ -275,7 +275,14 @@ def main() -> int:
             ],
             tmp / "campaign-identities.json",
         )
-        assert identity_doc["campaign_metadata"] == {
+        campaign_metadata = identity_doc["campaign_metadata"]
+        assert {
+            key: campaign_metadata[key]
+            for key in (
+                "campaign_id", "campaign_shard", "replicate_offset",
+                "point_seed", "search_seed", "solver_policy_id", "fidelity_level",
+            )
+        } == {
             "campaign_id": "cli-regression",
             "campaign_shard": 4,
             "replicate_offset": 20,
@@ -283,7 +290,11 @@ def main() -> int:
             "search_seed": 222,
             "solver_policy_id": "staged-v1",
             "fidelity_level": "cheap",
-        }, identity_doc["campaign_metadata"]
+        }, campaign_metadata
+        assert len(campaign_metadata["configuration_fingerprint"]) == 64
+        assert len(campaign_metadata["method_fingerprint"]) == 64
+        assert all(character in "0123456789abcdef" for character in campaign_metadata["configuration_fingerprint"])
+        assert all(character in "0123456789abcdef" for character in campaign_metadata["method_fingerprint"])
         assert [row["replicate_id"] for row in identity_doc["instance_rows"]] == [20, 21]
         assert all(len(row["point_stream_id"]) == 16 for row in identity_doc["instance_rows"])
         assert all(len(row["search_stream_id"]) == 16 for row in identity_doc["instance_rows"])

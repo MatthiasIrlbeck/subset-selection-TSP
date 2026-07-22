@@ -2524,7 +2524,9 @@
         "point_seed",
         "search_seed",
         "solver_policy_id",
-        "fidelity_level"
+        "fidelity_level",
+        "configuration_fingerprint",
+        "method_fingerprint"
       ],
       "properties": {
         "campaign_id": {
@@ -2555,6 +2557,16 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "configuration_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the complete resolved configuration and runtime oracle identity."
+        },
+        "method_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of all quality-affecting solver, build-source, and oracle inputs after removing campaign/grid/output identities."
         }
       },
       "additionalProperties": false

@@ -791,6 +791,8 @@ def _campaign_metadata(doc: dict[str, object]) -> dict[str, object]:
         "search_seed": metadata.get("search_seed", config.get("search_seed", config.get("seed", 2024))),
         "solver_policy_id": metadata.get("solver_policy_id", config.get("solver_policy_id", "default")),
         "fidelity_level": metadata.get("fidelity_level", config.get("fidelity_level", "strong")),
+        "configuration_fingerprint": metadata.get("configuration_fingerprint"),
+        "method_fingerprint": metadata.get("method_fingerprint"),
     }
 
 
@@ -815,6 +817,7 @@ def load_campaign(
     fidelity_level: str = "strong",
     solver_policy_id: str = "default",
     control_variate_mode: str = "auto",
+    allow_mixed_methods: bool = False,
 ) -> dict[float, dict[int, list[float]]]:
     """Load selected-policy observations and preserve campaign identities.
 
@@ -854,6 +857,7 @@ def load_campaign(
     adjusted_selected = 0
     raw_selected = 0
     files_loaded = 0
+    selected_method_fingerprints: set[str] = set()
 
     for filename in paths:
         path = str(filename)
@@ -866,6 +870,16 @@ def load_campaign(
         policy = str(metadata["solver_policy_id"])
         fidelity = str(metadata["fidelity_level"])
         selected_document = policy == solver_policy_id and fidelity == fidelity_level
+        method_fingerprint = metadata.get("method_fingerprint")
+        if selected_document:
+            if not isinstance(method_fingerprint, str) or len(method_fingerprint) != 64:
+                if not allow_mixed_methods:
+                    raise ValueError(
+                        f"{path}: selected result has no valid method_fingerprint; "
+                        "use --allow-mixed-methods only for an explicitly non-comparable legacy analysis"
+                    )
+            else:
+                selected_method_fingerprints.add(method_fingerprint)
         config = doc.get("config") or {}
         doc_n = doc.get("N")
         periodic = config.get("periodic")
@@ -1078,6 +1092,11 @@ def load_campaign(
             f"no observations matched solver policy {solver_policy_id!r} and "
             f"fidelity {fidelity_level!r}"
         )
+    if len(selected_method_fingerprints) > 1 and not allow_mixed_methods:
+        raise ValueError(
+            "selected campaign files have incompatible method_fingerprint values: "
+            + ", ".join(sorted(selected_method_fingerprints))
+        )
     identities_complete = legacy_selected == 0 and identified_selected > 0
     _load_info.update({
         "files_loaded": files_loaded,
@@ -1096,6 +1115,8 @@ def load_campaign(
             for weights in cell_weights
             for source in weights
         }),
+        "method_fingerprints": sorted(selected_method_fingerprints),
+        "method_compatibility_enforced": not allow_mixed_methods,
     })
     return {p: dict(k_values) for p, k_values in ladders.items()}
 
@@ -1499,6 +1520,8 @@ def run_self_test() -> int:
                 "campaign_id": "loader", "campaign_shard": 0,
                 "replicate_offset": 0, "point_seed": 11, "search_seed": 12,
                 "solver_policy_id": "default", "fidelity_level": "strong",
+                "configuration_fingerprint": "1" * 64,
+                "method_fingerprint": "2" * 64,
             },
         }
         docs = []
@@ -1536,6 +1559,25 @@ def run_self_test() -> int:
             and _load_info["identities_complete"] is True
             and len(_replicate_blocks) == 6
         )
+        conflicting = json.loads(Path(docs[0]).read_text(encoding="utf-8"))
+        conflicting["campaign_metadata"]["campaign_shard"] = 9
+        conflicting["campaign_metadata"]["replicate_offset"] = 20
+        conflicting["campaign_metadata"]["method_fingerprint"] = "3" * 64
+        for row in conflicting["instance_rows"]:
+            row["replicate_id"] += 20
+            row["point_stream_id"] = f"{int(row['point_stream_id'], 16) + 20:016x}"
+            row["search_stream_id"] = f"{int(row['search_stream_id'], 16) + 20:016x}"
+        conflict_path = root / "conflicting-method.json"
+        conflict_path.write_text(json.dumps(conflicting), encoding="utf-8")
+        try:
+            load_campaign([*docs, str(conflict_path)])
+            methods_fail_closed = False
+        except ValueError as exc:
+            methods_fail_closed = "incompatible method_fingerprint" in str(exc)
+        mixed = load_campaign([*docs, str(conflict_path)], allow_mixed_methods=True)
+        methods_fail_closed = methods_fail_closed and len(mixed[0.2][20]) == 8
+        # Restore the ordinary identified-shard state for later diagnostics.
+        load_campaign(docs)
 
     # Alternative finite-size laws should expose deliberate curvature rather
     # than silently folding it into f(0+). The quadratic law is exact for this
@@ -1593,6 +1635,7 @@ def run_self_test() -> int:
         "nested variance": nested_ok,
         "multifidelity correction": mf_ok,
         "identified shard merge": loader_ok,
+        "method fingerprint contract": methods_fail_closed,
         "finite-size model envelope": model_ok,
         "conditional-bound semantics": semantics_ok,
     }
@@ -1643,6 +1686,14 @@ def main() -> int:
         action="store_true",
         help="do not propagate independent control-reference Monte-Carlo error",
     )
+    parser.add_argument(
+        "--allow-mixed-methods",
+        action="store_true",
+        help=(
+            "permit missing or conflicting method fingerprints; this disables "
+            "the default fail-closed comparability contract"
+        ),
+    )
     parser.add_argument("--cheap-fidelity", default="cheap")
     parser.add_argument("--strong-fidelity", default="strong")
     parser.add_argument("--plot", metavar="PNG", default=None)
@@ -1676,6 +1727,7 @@ def main() -> int:
         fidelity_level=args.fidelity_level,
         solver_policy_id=args.solver_policy_id,
         control_variate_mode=args.control_variate_mode,
+        allow_mixed_methods=args.allow_mixed_methods,
     )
     alpha_grid = [0.02 + 0.01 * index for index in range(300)]
     result = analyze(

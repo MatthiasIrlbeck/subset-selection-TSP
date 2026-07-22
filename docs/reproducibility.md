@@ -54,6 +54,26 @@ Use the same `campaign_id`, `replicate_id`, and point seed across every `(p,k)` 
 
 `scripts/analyze_campaign.py` resamples complete replicate vectors when all selected files carry identities. It averages repeated search streams within a point set before the main fit, reports point-versus-search variance when repeats exist, and computes a paired cheap-plus-correction estimate when cheap and strong fidelities overlap. It also compares `1/k`, `1/k + 1/k^2`, and `1/sqrt(k)` finite-size laws inside the same bootstrap, reports a combined model/statistical envelope, and runs leave-one-size, leave-one-probability, and nested-`pmax` sensitivity refits. Legacy summary-only files remain readable, but the script explicitly falls back to independent-cell bootstrap because their cross-cell correlation cannot be reconstructed. See [`campaign_analysis.md`](campaign_analysis.md) for interpretation and command-line controls.
 
+## Exact campaign manifests and fail-closed publication runs
+
+Native schema-16 campaign results carry two SHA-256 identities. `configuration_fingerprint` binds one exact resolved cell, including the problem grid, streams, output contract, solver controls, build revision, and resolved oracle identity. `method_fingerprint` removes cell, stream, shard, and output identities while retaining every quality-affecting solver, build, and oracle input. `scripts/analyze_campaign.py` rejects selected files with missing or unequal method fingerprints by default; `--allow-mixed-methods` is an explicit non-comparable legacy escape hatch.
+
+`scripts/run_torus_campaign.py` and `scripts/run_full_study.py` create an exact JSON manifest before launching work. Each entry records the complete argv, expected dimensions and p-grid, both fingerprints, output path, completion state, and final result digest. Resume validates the result, its strict schema, completion counts, oracle identity, and the adjacent fully durable timing receipt. A parseable or stale JSON file is not accepted as completed work, and any change to a command or expectation makes the existing manifest incompatible.
+
+Publication drivers require a positive `--sa-iters-per-n` and an explicit search policy. The default publication contract is `--search-policy heldout-quality`; exploratory policies require an explicit override. LKH disappearance is a hard error unless the full-study driver is given `--allow-oracle-fallback`, which records the methodology change in the manifest. Timeouts, invalid cells, and missing outputs make the campaign fail unless `--allow-partial` is deliberately selected.
+
+A representative fail-closed campaign command is:
+
+```bash
+python3 scripts/run_torus_campaign.py \
+  --exe ./build/aldous_tsp \
+  --lkh-path /opt/lkh/LKH \
+  --search-policy heldout-quality \
+  --sa-iters-per-n 30 \
+  --campaign-id aldous-publication-v1 \
+  --out-dir campaign-v1
+```
+
 ## Effective KNN/build metadata
 
 Schema version 14 records both requested and effective KNN behavior. This distinguishes a requested grid backend from a safe brute-force fallback on pathological tiny-coordinate inputs, and records forced grid-cell capping through `knn_grid_cell_capped_instances` plus per-instance `knn_build` details. Build metadata also records configured and effective C++ flags, target compile options, source-level low-memory overrides, and the optimization profile.

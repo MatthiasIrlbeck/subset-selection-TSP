@@ -11,6 +11,7 @@
 
 #include "json_writer.hpp"
 #include "generated_options.hpp"
+#include "campaign_fingerprint.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -711,6 +712,8 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
 
 std::string results_to_json(const ResultsDocument& doc) {
     std::ostringstream out;
+    const detail::ConfigurationFingerprints fingerprints =
+        detail::configuration_fingerprints(doc.options);
     out << "{\n"
         << "  \"schema_version\": " << doc.schema_version << ",\n"
         << "  \"run_metadata\": {\n"
@@ -751,7 +754,11 @@ std::string results_to_json(const ResultsDocument& doc) {
         << "    \"point_seed\": " << effective_point_seed(doc.options) << ",\n"
         << "    \"search_seed\": " << effective_search_seed(doc.options) << ",\n"
         << "    \"solver_policy_id\": \"" << json_escape(doc.options.solver_policy_id) << "\",\n"
-        << "    \"fidelity_level\": \"" << json_escape(doc.options.fidelity_level) << "\"\n"
+        << "    \"fidelity_level\": \"" << json_escape(doc.options.fidelity_level) << "\",\n"
+        << "    \"configuration_fingerprint\": \""
+        << fingerprints.resolved << "\",\n"
+        << "    \"method_fingerprint\": \""
+        << fingerprints.method << "\"\n"
         << "  },\n"
         << "  \"N\": " << doc.N << ",\n"
         << "  \"done\": " << doc.instances_done << ",\n"
