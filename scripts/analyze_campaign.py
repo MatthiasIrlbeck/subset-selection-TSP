@@ -28,6 +28,7 @@ Usage:
   analyze_campaign.py torus_campaign/*.json
   analyze_campaign.py --pmax 0.2 --boot 2000 --plot fit.png campaign/*.json
   analyze_campaign.py --bootstrap-mode block --analysis-json analysis.json files...
+  analyze_campaign.py --finite-size-models inv-k,inv-k2,inv-sqrt-k files...
   analyze_campaign.py --self-test
 """
 from __future__ import annotations
@@ -112,6 +113,140 @@ def wls(x: list[float], y: list[float], weights: list[float]) -> tuple[float, fl
     return intercept, slope, swxx / denom
 
 
+FINITE_SIZE_MODEL_SPECS: dict[str, tuple[str, int]] = {
+    "inv-k": ("a + b/k", 2),
+    "inv-k2": ("a + b/k + c/k^2", 3),
+    "inv-sqrt-k": ("a + b/sqrt(k)", 2),
+}
+
+
+@dataclass(frozen=True)
+class FiniteSizeFit:
+    model: str
+    intercept: float
+    stderr: float
+    coefficients: tuple[float, ...]
+    weighted_ssr: float
+    k_levels: int
+    identifiable: bool
+
+
+def _finite_size_basis(model: str, k: int, k_scale: float = 1.0) -> list[float]:
+    if k <= 0 or not math.isfinite(k_scale) or k_scale <= 0.0:
+        raise ValueError("finite-size cardinalities and scale must be positive")
+    if model == "inv-k":
+        return [1.0, k_scale / k]
+    if model == "inv-k2":
+        inverse = k_scale / k
+        return [1.0, inverse, inverse * inverse]
+    if model == "inv-sqrt-k":
+        return [1.0, math.sqrt(k_scale / k)]
+    raise ValueError(f"unknown finite-size model: {model}")
+
+
+def _solve_linear_system(matrix: list[list[float]], rhs: list[float]) -> list[float]:
+    """Solve a small dense system with deterministic partial pivoting."""
+    size = len(rhs)
+    if size == 0 or len(matrix) != size or any(len(row) != size for row in matrix):
+        raise ValueError("invalid linear system")
+    augmented = [list(row) + [rhs[index]] for index, row in enumerate(matrix)]
+    scale = max((abs(value) for row in matrix for value in row), default=1.0)
+    tolerance = max(1e-300, scale * 1e-14)
+    for column in range(size):
+        pivot = max(range(column, size), key=lambda row: abs(augmented[row][column]))
+        if abs(augmented[pivot][column]) <= tolerance:
+            raise ValueError("singular finite-size design")
+        if pivot != column:
+            augmented[column], augmented[pivot] = augmented[pivot], augmented[column]
+        pivot_value = augmented[column][column]
+        augmented[column] = [value / pivot_value for value in augmented[column]]
+        for row in range(size):
+            if row == column:
+                continue
+            factor = augmented[row][column]
+            if factor == 0.0:
+                continue
+            augmented[row] = [
+                left - factor * right
+                for left, right in zip(augmented[row], augmented[column])
+            ]
+    return [augmented[index][-1] for index in range(size)]
+
+
+def fit_finite_size(
+    points: list[tuple[int, float, float]],
+    model: str,
+    *,
+    allow_single_inv_k: bool = False,
+) -> FiniteSizeFit:
+    """Fit a named finite-size law to ``(k, mean, precision)`` points."""
+    if model not in FINITE_SIZE_MODEL_SPECS:
+        raise ValueError(f"unknown finite-size model: {model}")
+    ordered = sorted(points)
+    if not ordered:
+        raise ValueError("finite-size fit has no points")
+    if any(not math.isfinite(mean) or not math.isfinite(weight) or weight <= 0.0
+           for _, mean, weight in ordered):
+        raise ValueError("finite-size fit requires finite values and positive weights")
+    if model == "inv-k" and len(ordered) == 1 and allow_single_inv_k:
+        return FiniteSizeFit(
+            model=model, intercept=ordered[0][1], stderr=0.0,
+            coefficients=(ordered[0][1], 0.0), weighted_ssr=0.0,
+            k_levels=1, identifiable=False,
+        )
+    minimum = FINITE_SIZE_MODEL_SPECS[model][1]
+    if len(ordered) < minimum:
+        raise ValueError(
+            f"finite-size model {model} requires at least {minimum} distinct k levels"
+        )
+
+    # Preserve the historical two-parameter arithmetic exactly for the primary
+    # 1/k model. This keeps existing point estimates bit-for-bit stable.
+    if model == "inv-k":
+        x = [1.0 / k for k, _, _ in ordered]
+        y = [mean for _, mean, _ in ordered]
+        weights = [weight for _, _, weight in ordered]
+        intercept, slope, variance = wls(x, y, weights)
+        residual = sum(
+            weight * (mean - intercept - slope / k) ** 2
+            for k, mean, weight in ordered
+        )
+        return FiniteSizeFit(
+            model=model, intercept=intercept,
+            stderr=math.sqrt(max(variance, 0.0)) if math.isfinite(variance) else 0.0,
+            coefficients=(intercept, slope), weighted_ssr=residual,
+            k_levels=len(ordered), identifiable=True,
+        )
+
+    # Scale the inverse-cardinality predictor into O(1) without changing the
+    # k -> infinity intercept. This keeps the quadratic normal equations well
+    # conditioned across production cardinalities.
+    k_scale = float(min(k for k, _, _ in ordered))
+    rows = [_finite_size_basis(model, k, k_scale) for k, _, _ in ordered]
+    dimension = len(rows[0])
+    normal = [[0.0] * dimension for _ in range(dimension)]
+    target = [0.0] * dimension
+    for row, (_, mean, weight) in zip(rows, ordered):
+        for left in range(dimension):
+            target[left] += weight * row[left] * mean
+            for right in range(dimension):
+                normal[left][right] += weight * row[left] * row[right]
+    coefficients = _solve_linear_system(normal, target)
+    inverse_first_column = _solve_linear_system(
+        normal, [1.0] + [0.0] * (dimension - 1)
+    )
+    residual = 0.0
+    for row, (_, mean, weight) in zip(rows, ordered):
+        prediction = sum(coefficient * value for coefficient, value in zip(coefficients, row))
+        residual += weight * (mean - prediction) ** 2
+    return FiniteSizeFit(
+        model=model, intercept=coefficients[0],
+        stderr=math.sqrt(max(inverse_first_column[0], 0.0)),
+        coefficients=tuple(coefficients), weighted_ssr=residual,
+        k_levels=len(ordered), identifiable=True,
+    )
+
+
 def extrapolate_intercept(points: list[tuple[int, float, float]]) -> tuple[float, float]:
     """Fit mean = intercept + slope/k from (k, mean, weight) points."""
     if len(points) == 1:
@@ -175,18 +310,195 @@ def _cell_weight(values: list[float]) -> float:
     return 1.0 / max(stderr, 1e-9) ** 2
 
 
+def _finite_size_points(
+    ladders: dict[float, dict[int, list[float]]], p: float
+) -> list[tuple[int, float, float]]:
+    points = [
+        (k, _mean(values), _cell_weight(values))
+        for k, values in ladders[p].items()
+    ]
+    points.sort()
+    return points
+
+
 def _extrapolate_ladders(
-    ladders: dict[float, dict[int, list[float]]], ps: list[float]
+    ladders: dict[float, dict[int, list[float]]],
+    ps: list[float],
+    model: str = "inv-k",
 ) -> dict[float, tuple[float, float]]:
     output: dict[float, tuple[float, float]] = {}
     for p in ps:
-        points = [
-            (k, _mean(values), _cell_weight(values))
-            for k, values in ladders[p].items()
-        ]
-        points.sort()
-        output[p] = extrapolate_intercept(points)
+        fit = fit_finite_size(
+            _finite_size_points(ladders, p), model,
+            allow_single_inv_k=(model == "inv-k"),
+        )
+        output[p] = (fit.intercept, fit.stderr)
     return output
+
+
+def _power_fit_for_model(
+    ladders: dict[float, dict[int, list[float]]],
+    ps: list[float],
+    model: str,
+    alpha_grid: list[float],
+) -> dict[str, object]:
+    fp_point = _extrapolate_ladders(ladders, ps, model)
+    fp_values = [fp_point[p][0] for p in ps]
+    weights = [1.0 / max(fp_point[p][1], 1e-9) ** 2 for p in ps]
+    f0, coefficient, alpha, power_ssr = profile_power_fit(
+        ps, fp_values, weights, alpha_grid
+    )
+    per_p_fits = {
+        p: fit_finite_size(
+            _finite_size_points(ladders, p), model,
+            allow_single_inv_k=(model == "inv-k"),
+        )
+        for p in ps
+    }
+    return {
+        "model": model,
+        "formula": FINITE_SIZE_MODEL_SPECS[model][0],
+        "fp_point": fp_point,
+        "f0": f0,
+        "C": coefficient,
+        "alpha": alpha,
+        "power_weighted_ssr": power_ssr,
+        "finite_size_weighted_ssr": sum(
+            fit.weighted_ssr for fit in per_p_fits.values()
+        ),
+        "per_p_fits": per_p_fits,
+    }
+
+
+def _point_model_results(
+    ladders: dict[float, dict[int, list[float]]],
+    ps: list[float],
+    models: list[str],
+    alpha_grid: list[float],
+) -> tuple[dict[str, dict[str, object]], dict[str, str]]:
+    available: dict[str, dict[str, object]] = {}
+    unavailable: dict[str, str] = {}
+    for model in models:
+        try:
+            available[model] = _power_fit_for_model(
+                ladders, ps, model, alpha_grid
+            )
+        except ValueError as exc:
+            unavailable[model] = str(exc)
+    return available, unavailable
+
+
+def _model_envelope(
+    model_results: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    if not model_results:
+        return {
+            "models": [],
+            "f0": (float("nan"), float("nan")),
+            "alpha": (float("nan"), float("nan")),
+            "C": (float("nan"), float("nan")),
+        }
+    return {
+        "models": sorted(model_results),
+        "f0": (
+            min(float(row["f0"]) for row in model_results.values()),
+            max(float(row["f0"]) for row in model_results.values()),
+        ),
+        "alpha": (
+            min(float(row["alpha"]) for row in model_results.values()),
+            max(float(row["alpha"]) for row in model_results.values()),
+        ),
+        "C": (
+            min(float(row["C"]) for row in model_results.values()),
+            max(float(row["C"]) for row in model_results.values()),
+        ),
+    }
+
+
+def _sensitivity_report(
+    ladders: dict[float, dict[int, list[float]]],
+    ps: list[float],
+    primary_model: str,
+    alpha_grid: list[float],
+    reference_f0: float,
+    reference_alpha: float,
+) -> dict[str, object]:
+    leave_k: list[dict[str, object]] = []
+    all_k = sorted({k for p in ps for k in ladders[p]})
+    minimum_levels = FINITE_SIZE_MODEL_SPECS[primary_model][1]
+    for omitted in all_k:
+        reduced = {
+            p: {k: values for k, values in ladders[p].items() if k != omitted}
+            for p in ps
+        }
+        if any(len(reduced[p]) < minimum_levels for p in ps):
+            continue
+        try:
+            row = _power_fit_for_model(reduced, ps, primary_model, alpha_grid)
+        except ValueError:
+            continue
+        leave_k.append({
+            "omitted_k": omitted,
+            "f0": row["f0"],
+            "alpha": row["alpha"],
+            "delta_f0": float(row["f0"]) - reference_f0,
+            "delta_alpha": float(row["alpha"]) - reference_alpha,
+        })
+
+    leave_p: list[dict[str, object]] = []
+    if len(ps) >= 4:
+        for omitted in ps:
+            retained = [p for p in ps if p != omitted]
+            try:
+                row = _power_fit_for_model(
+                    ladders, retained, primary_model, alpha_grid
+                )
+            except ValueError:
+                continue
+            leave_p.append({
+                "omitted_p": omitted,
+                "f0": row["f0"],
+                "alpha": row["alpha"],
+                "delta_f0": float(row["f0"]) - reference_f0,
+                "delta_alpha": float(row["alpha"]) - reference_alpha,
+            })
+
+    nested_pmax: list[dict[str, object]] = []
+    for end in range(3, len(ps) + 1):
+        retained = ps[:end]
+        try:
+            row = _power_fit_for_model(
+                ladders, retained, primary_model, alpha_grid
+            )
+        except ValueError:
+            continue
+        nested_pmax.append({
+            "pmax": retained[-1],
+            "p_values": retained,
+            "f0": row["f0"],
+            "alpha": row["alpha"],
+            "delta_f0": float(row["f0"]) - reference_f0,
+            "delta_alpha": float(row["alpha"]) - reference_alpha,
+        })
+
+    def maximum(rows: list[dict[str, object]], field: str) -> float:
+        return max((abs(float(row[field])) for row in rows), default=0.0)
+
+    return {
+        "leave_one_k_out": leave_k,
+        "leave_one_p_out": leave_p,
+        "nested_pmax": nested_pmax,
+        "max_abs_delta_f0": max(
+            maximum(leave_k, "delta_f0"),
+            maximum(leave_p, "delta_f0"),
+            maximum(nested_pmax, "delta_f0"),
+        ),
+        "max_abs_delta_alpha": max(
+            maximum(leave_k, "delta_alpha"),
+            maximum(leave_p, "delta_alpha"),
+            maximum(nested_pmax, "delta_alpha"),
+        ),
+    }
 
 
 def _complete_blocks(
@@ -208,8 +520,10 @@ def analyze(
     bootstrap_mode: str = "auto",
     replicate_blocks: dict[BlockKey, dict[Cell, float]] | None = None,
     identities_complete: bool | None = None,
+    finite_size_models: list[str] | None = None,
+    primary_finite_size_model: str = "inv-k",
 ) -> dict[str, object]:
-    """Run the finite-size fit and a correlation-aware master bootstrap."""
+    """Run finite-size fits, model sensitivity, and a correlated bootstrap."""
     ps = [p for p in sorted(ladders) if p <= pmax]
     if len(ps) < 3:
         raise SystemExit(f"need >= 3 p-values with p <= {pmax}; have {len(ps)}")
@@ -217,6 +531,18 @@ def analyze(
         raise ValueError("bootstrap count must be nonnegative")
     if bootstrap_mode not in {"auto", "block", "independent"}:
         raise ValueError("bootstrap_mode must be auto, block, or independent")
+
+    requested_models = list(finite_size_models or FINITE_SIZE_MODEL_SPECS)
+    if primary_finite_size_model not in requested_models:
+        requested_models.insert(0, primary_finite_size_model)
+    requested_models = list(dict.fromkeys(requested_models))
+    unknown_models = [
+        model for model in requested_models if model not in FINITE_SIZE_MODEL_SPECS
+    ]
+    if unknown_models:
+        raise ValueError(
+            "unknown finite-size model(s): " + ", ".join(unknown_models)
+        )
 
     blocks = _replicate_blocks if replicate_blocks is None else replicate_blocks
     if identities_complete is None:
@@ -232,26 +558,38 @@ def analyze(
         bootstrap_mode == "block" or (bootstrap_mode == "auto" and can_block)
     ) else "independent-cell"
 
-    fp_point = _extrapolate_ladders(ladders, ps)
-    fp_values = [fp_point[p][0] for p in ps]
-    fit_weights = [1.0 / max(fp_point[p][1], 1e-9) ** 2 for p in ps]
-    f0, coefficient, alpha, _ = profile_power_fit(
-        ps, fp_values, fit_weights, alpha_grid
+    point_models, unavailable_models = _point_model_results(
+        ladders, ps, requested_models, alpha_grid
     )
+    if primary_finite_size_model not in point_models:
+        reason = unavailable_models.get(primary_finite_size_model, "unknown failure")
+        raise ValueError(
+            f"primary finite-size model {primary_finite_size_model} is unavailable: {reason}"
+        )
+    primary = point_models[primary_finite_size_model]
+    fp_point = primary["fp_point"]
+    f0 = float(primary["f0"])
+    coefficient = float(primary["C"])
+    alpha = float(primary["alpha"])
 
     rng = random.Random(seed)
-    bootstrap_f0: list[float] = []
-    bootstrap_coefficient: list[float] = []
-    bootstrap_alpha: list[float] = []
-    bootstrap_fp: dict[float, list[float]] = {p: [] for p in ps}
+    bootstrap_by_model: dict[str, dict[str, object]] = {
+        model: {
+            "f0": [], "C": [], "alpha": [],
+            "fp": {p: [] for p in ps},
+        }
+        for model in point_models
+    }
 
     for _ in range(boot):
         sampled: dict[float, dict[int, list[float]]] = {
             p: {k: [] for k in ladders[p]} for p in ps
         }
         if effective_mode == "replicate-block":
-            drawn = [complete_blocks[rng.randrange(len(complete_blocks))]
-                     for _ in complete_blocks]
+            drawn = [
+                complete_blocks[rng.randrange(len(complete_blocks))]
+                for _ in complete_blocks
+            ]
             for block in drawn:
                 block_values = blocks[block]
                 for p, k in required_cells:
@@ -259,25 +597,75 @@ def analyze(
         else:
             for p in ps:
                 for k, values in ladders[p].items():
-                    sampled[p][k] = [values[rng.randrange(len(values))]
-                                     for _ in values]
+                    sampled[p][k] = [
+                        values[rng.randrange(len(values))] for _ in values
+                    ]
 
-        fp_bootstrap = _extrapolate_ladders(sampled, ps)
-        sampled_fp_values = [fp_bootstrap[p][0] for p in ps]
-        # Recompute finite-size and power-fit weights inside every draw. Holding
-        # the original weights fixed understates uncertainty when cell variances
-        # themselves are estimated from the campaign.
-        sampled_weights = [
-            1.0 / max(fp_bootstrap[p][1], 1e-9) ** 2 for p in ps
+        for model in point_models:
+            fitted = _power_fit_for_model(sampled, ps, model, alpha_grid)
+            bucket = bootstrap_by_model[model]
+            bucket["f0"].append(float(fitted["f0"]))
+            bucket["C"].append(float(fitted["C"]))
+            bucket["alpha"].append(float(fitted["alpha"]))
+            fitted_fp = fitted["fp_point"]
+            for p in ps:
+                bucket["fp"][p].append(float(fitted_fp[p][0]))
+
+    model_reports: dict[str, dict[str, object]] = {}
+    for model, fitted in point_models.items():
+        bucket = bootstrap_by_model[model]
+        per_p_fits = fitted["per_p_fits"]
+        model_reports[model] = {
+            "formula": fitted["formula"],
+            "f0": fitted["f0"],
+            "f0_ci": _ci(bucket["f0"]),
+            "C": fitted["C"],
+            "C_ci": _ci(bucket["C"]),
+            "alpha": fitted["alpha"],
+            "alpha_ci": _ci(bucket["alpha"]),
+            "power_weighted_ssr": fitted["power_weighted_ssr"],
+            "finite_size_weighted_ssr": fitted["finite_size_weighted_ssr"],
+            "p_estimates": {
+                p: {
+                    "f_p": fitted["fp_point"][p][0],
+                    "f_p_ci": _ci(bucket["fp"][p]),
+                    "stderr": fitted["fp_point"][p][1],
+                    "coefficients": list(per_p_fits[p].coefficients),
+                    "weighted_ssr": per_p_fits[p].weighted_ssr,
+                    "k_levels": per_p_fits[p].k_levels,
+                    "identifiable": per_p_fits[p].identifiable,
+                }
+                for p in ps
+            },
+        }
+
+    point_envelope = _model_envelope(point_models)
+
+    def uncertainty_envelope(field: str) -> tuple[float, float]:
+        intervals = [
+            model_reports[model][f"{field}_ci"] for model in model_reports
         ]
-        for p, value in zip(ps, sampled_fp_values):
-            bootstrap_fp[p].append(value)
-        f0_bootstrap, coefficient_bootstrap, alpha_bootstrap, _ = profile_power_fit(
-            ps, sampled_fp_values, sampled_weights, alpha_grid
+        finite_intervals = [
+            interval for interval in intervals
+            if all(math.isfinite(float(value)) for value in interval)
+        ]
+        if not finite_intervals:
+            return point_envelope[field]
+        return (
+            min(float(interval[0]) for interval in finite_intervals),
+            max(float(interval[1]) for interval in finite_intervals),
         )
-        bootstrap_f0.append(f0_bootstrap)
-        bootstrap_coefficient.append(coefficient_bootstrap)
-        bootstrap_alpha.append(alpha_bootstrap)
+
+    model_envelope = dict(point_envelope)
+    model_envelope.update({
+        "f0_ci": uncertainty_envelope("f0"),
+        "alpha_ci": uncertainty_envelope("alpha"),
+        "C_ci": uncertainty_envelope("C"),
+    })
+
+    sensitivity = _sensitivity_report(
+        ladders, ps, primary_finite_size_model, alpha_grid, f0, alpha
+    )
 
     conditional_f0_diagnostic = None
     have_conditional_bounds = all(
@@ -285,30 +673,42 @@ def analyze(
     )
     if have_conditional_bounds:
         bound_fp: dict[float, tuple[float, float]] = {}
-        for p in ps:
-            points = [
-                (k, _conditional_bound_of[(p, k)], _cell_weight(ladders[p][k]))
-                for k in ladders[p]
-            ]
-            points.sort()
-            bound_fp[p] = extrapolate_intercept(points)
-        conditional_f0_diagnostic, _, _, _ = profile_power_fit(
-            ps,
-            [bound_fp[p][0] for p in ps],
-            fit_weights,
-            alpha_grid,
-        )
+        try:
+            for p in ps:
+                points = [
+                    (k, _conditional_bound_of[(p, k)], _cell_weight(ladders[p][k]))
+                    for k in ladders[p]
+                ]
+                fit = fit_finite_size(
+                    points, primary_finite_size_model,
+                    allow_single_inv_k=(primary_finite_size_model == "inv-k"),
+                )
+                bound_fp[p] = (fit.intercept, fit.stderr)
+            conditional_f0_diagnostic, _, _, _ = profile_power_fit(
+                ps,
+                [bound_fp[p][0] for p in ps],
+                [1.0 / max(bound_fp[p][1], 1e-9) ** 2 for p in ps],
+                alpha_grid,
+            )
+        except ValueError:
+            conditional_f0_diagnostic = None
 
+    primary_bootstrap = bootstrap_by_model[primary_finite_size_model]
     return {
         "ps": ps,
         "fp_point": fp_point,
-        "fp_ci": {p: _ci(bootstrap_fp[p]) for p in ps},
+        "fp_ci": {p: _ci(primary_bootstrap["fp"][p]) for p in ps},
         "f0": f0,
-        "f0_ci": _ci(bootstrap_f0),
+        "f0_ci": _ci(primary_bootstrap["f0"]),
         "C": coefficient,
-        "C_ci": _ci(bootstrap_coefficient),
+        "C_ci": _ci(primary_bootstrap["C"]),
         "alpha": alpha,
-        "alpha_ci": _ci(bootstrap_alpha),
+        "alpha_ci": _ci(primary_bootstrap["alpha"]),
+        "primary_finite_size_model": primary_finite_size_model,
+        "finite_size_models": model_reports,
+        "unavailable_finite_size_models": unavailable_models,
+        "model_uncertainty_envelope": model_envelope,
+        "sensitivity": sensitivity,
         "bootstrap_mode": effective_mode,
         "bootstrap_replicates": boot,
         "complete_replicate_blocks": len(complete_blocks),
@@ -723,9 +1123,18 @@ def make_plot(result: dict[str, object], path: str) -> None:
     axes.plot(
         x_values,
         result["f0"] + result["C"] * x_values ** result["alpha"],
-        label=f"fit f0 + C p^alpha (alpha={result['alpha']:.2f})",
+        label=(
+            f"{result['primary_finite_size_model']} fit: "
+            f"f0 + C p^alpha (alpha={result['alpha']:.2f})"
+        ),
     )
     axes.axhline(result["f0"], linestyle=":", linewidth=1)
+    envelope_ci = result["model_uncertainty_envelope"]["f0_ci"]
+    if all(math.isfinite(float(value)) for value in envelope_ci):
+        axes.axhspan(
+            envelope_ci[0], envelope_ci[1], alpha=0.06,
+            label="finite-size model + bootstrap envelope",
+        )
     axes.fill_between(
         [0, max(ps) * 1.05],
         result["f0_ci"][0],
@@ -751,13 +1160,24 @@ def make_plot(result: dict[str, object], path: str) -> None:
     figure.savefig(path, dpi=130, bbox_inches="tight")
 
 
+def _json_safe(value: object) -> object:
+    """Replace nonfinite analysis sentinels with JSON null recursively."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _json_report(
     result: dict[str, object],
     ladders: dict[float, dict[int, list[float]]],
     variance: list[dict[str, object]],
     multifidelity: list[dict[str, object]],
 ) -> dict[str, object]:
-    return {
+    payload = {
         "selection": dict(_load_info),
         "bootstrap": {
             "mode": result["bootstrap_mode"],
@@ -766,6 +1186,7 @@ def _json_report(
             "required_cells": result["required_cells"],
         },
         "small_p_fit": {
+            "primary_finite_size_model": result["primary_finite_size_model"],
             "f0": result["f0"],
             "f0_ci": result["f0_ci"],
             "C": result["C"],
@@ -773,6 +1194,12 @@ def _json_report(
             "alpha": result["alpha"],
             "alpha_ci": result["alpha_ci"],
             "conditional_f0_diagnostic": result["conditional_f0_diagnostic"],
+        },
+        "finite_size_model_analysis": {
+            "models": result["finite_size_models"],
+            "unavailable_models": result["unavailable_finite_size_models"],
+            "model_uncertainty_envelope": result["model_uncertainty_envelope"],
+            "sensitivity": result["sensitivity"],
         },
         "p_estimates": [
             {
@@ -787,6 +1214,7 @@ def _json_report(
         "variance_decomposition": variance,
         "multifidelity": multifidelity,
     }
+    return _json_safe(payload)
 
 
 def run_self_test() -> int:
@@ -945,6 +1373,54 @@ def run_self_test() -> int:
             and len(_replicate_blocks) == 6
         )
 
+    # Alternative finite-size laws should expose deliberate curvature rather
+    # than silently folding it into f(0+). The quadratic law is exact for this
+    # synthetic campaign, while deletion and pmax diagnostics must be populated.
+    model_ps = [0.02, 0.05, 0.1, 0.2, 0.3]
+    model_ks = [80, 120, 200, 400]
+    model_rng = random.Random(123)
+    curved_ladders: dict[float, dict[int, list[float]]] = {}
+    for p_value in model_ps:
+        curved_ladders[p_value] = {}
+        true_value = 0.6 + 0.28 * p_value**0.8
+        for k in model_ks:
+            finite_value = true_value + 3.0 / k + 100.0 / (k * k)
+            curved_ladders[p_value][k] = [
+                finite_value + model_rng.gauss(0.0, 0.00002)
+                for _ in range(20)
+            ]
+    model_fit = analyze(
+        curved_ladders, 1.0, 80, alpha_grid, seed=19,
+        bootstrap_mode="independent", identities_complete=False,
+    )
+    model_rows = model_fit["finite_size_models"]
+    model_envelope = model_fit["model_uncertainty_envelope"]
+    sensitivity = model_fit["sensitivity"]
+    zero_bootstrap_fit = analyze(
+        curved_ladders, 1.0, 0, alpha_grid, seed=19,
+        bootstrap_mode="independent", identities_complete=False,
+    )
+    zero_bootstrap_report = _json_report(
+        zero_bootstrap_fit, curved_ladders, [], []
+    )
+    model_ok = (
+        set(model_rows) == set(FINITE_SIZE_MODEL_SPECS)
+        and abs(model_rows["inv-k2"]["f0"] - 0.6)
+            < abs(model_rows["inv-k"]["f0"] - 0.6)
+        and model_envelope["f0"][0] <= 0.6 <= model_envelope["f0"][1]
+        and len(sensitivity["leave_one_k_out"]) == len(model_ks)
+        and len(sensitivity["leave_one_p_out"]) == len(model_ps)
+        and len(sensitivity["nested_pmax"]) == len(model_ps) - 2
+        and "finite_size_model_analysis" in _json_report(
+            model_fit, curved_ladders, [], []
+        )
+        and bool(json.dumps(
+            _json_report(model_fit, curved_ladders, [], []), allow_nan=False
+        ))
+        and zero_bootstrap_report["small_p_fit"]["f0_ci"] == [None, None]
+        and bool(json.dumps(zero_bootstrap_report, allow_nan=False))
+    )
+
     semantics_ok = 10.0 > 9.0 and 10.0 <= 11.0
     checks = {
         "two-stage fit": fit_ok,
@@ -952,6 +1428,7 @@ def run_self_test() -> int:
         "nested variance": nested_ok,
         "multifidelity correction": mf_ok,
         "identified shard merge": loader_ok,
+        "finite-size model envelope": model_ok,
         "conditional-bound semantics": semantics_ok,
     }
     for name, passed in checks.items():
@@ -971,6 +1448,20 @@ def main() -> int:
     parser.add_argument("--bootstrap-mode", choices=("auto", "block", "independent"),
                         default="auto", help="correlation policy (default: auto)")
     parser.add_argument("--bootstrap-seed", type=int, default=12345)
+    parser.add_argument(
+        "--finite-size-models",
+        default=",".join(FINITE_SIZE_MODEL_SPECS),
+        help=(
+            "comma-separated finite-size laws to compare: "
+            + ", ".join(FINITE_SIZE_MODEL_SPECS)
+        ),
+    )
+    parser.add_argument(
+        "--primary-finite-size-model",
+        choices=tuple(FINITE_SIZE_MODEL_SPECS),
+        default="inv-k",
+        help="model used for the headline estimate (default: inv-k)",
+    )
     parser.add_argument("--solver-policy-id", default="default")
     parser.add_argument("--fidelity-level", default="strong")
     parser.add_argument("--cheap-fidelity", default="cheap")
@@ -986,6 +1477,20 @@ def main() -> int:
         parser.error("no input files (or use --self-test)")
     if args.boot < 0:
         parser.error("--boot must be nonnegative")
+    finite_size_models = [
+        model.strip() for model in args.finite_size_models.split(",")
+        if model.strip()
+    ]
+    if not finite_size_models:
+        parser.error("--finite-size-models must contain at least one model")
+    unknown_models = [
+        model for model in finite_size_models
+        if model not in FINITE_SIZE_MODEL_SPECS
+    ]
+    if unknown_models:
+        parser.error(
+            "unknown --finite-size-models value(s): " + ", ".join(unknown_models)
+        )
 
     ladders = load_campaign(
         args.files,
@@ -1000,6 +1505,8 @@ def main() -> int:
         alpha_grid,
         seed=args.bootstrap_seed,
         bootstrap_mode=args.bootstrap_mode,
+        finite_size_models=finite_size_models,
+        primary_finite_size_model=args.primary_finite_size_model,
     )
     variance = nested_variance_decomposition()
     multifidelity = multifidelity_estimates(
@@ -1043,6 +1550,27 @@ def main() -> int:
     print(f"  alpha = {result['alpha']:.3f}    95% CI {_fmt(result['alpha_ci'])}")
     print(f"  C     = {result['C']:.4f}   95% CI {_fmt(result['C_ci'])}")
 
+    print("\n=== finite-size model sensitivity ===")
+    print(f"{'model':>12} {'formula':>24} {'f(0+)':>10} {'alpha':>9} {'fit SSR':>12}")
+    for model, row in result["finite_size_models"].items():
+        print(
+            f"{model:>12} {row['formula']:>24} {row['f0']:>10.5f} "
+            f"{row['alpha']:>9.4f} {row['finite_size_weighted_ssr']:>12.5g}"
+        )
+    for model, reason in result["unavailable_finite_size_models"].items():
+        print(f"{model:>12} {'unavailable':>24}  {reason}")
+    envelope = result["model_uncertainty_envelope"]
+    print(
+        "  combined statistical/model envelope: "
+        f"f(0+) {_fmt(envelope['f0_ci'])}; alpha {_fmt(envelope['alpha_ci'])}"
+    )
+    sensitivity = result["sensitivity"]
+    print(
+        "  maximum deletion/pmax shift from primary: "
+        f"|delta f(0+)|={sensitivity['max_abs_delta_f0']:.5g}, "
+        f"|delta alpha|={sensitivity['max_abs_delta_alpha']:.5g}"
+    )
+
     if variance:
         print("\n=== nested point/search variance ===")
         print(f"{'p':>7} {'k':>7} {'points':>8} {'searches':>9} {'point sd':>11} {'search sd':>11}")
@@ -1069,7 +1597,8 @@ def main() -> int:
     if args.analysis_json:
         report = _json_report(result, ladders, variance, multifidelity)
         Path(args.analysis_json).write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
         )
         print(f"wrote {args.analysis_json}")
     return 0

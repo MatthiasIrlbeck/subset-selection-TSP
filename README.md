@@ -182,6 +182,8 @@ Important flags:
 
 External post-processing is available through `--oracle auto`, `--oracle lkh`, or `--oracle concorde`. It is disabled by default with `--oracle none`. Boolean flags accept plain presence as true or explicit `=true`/`=false` values (`yes/no`, `on/off`, and `1/0` are also accepted). See `docs/oracles.md` for setup, TSPLIB format choices, and caveats.
 
+Campaign inference supports replicate-block bootstrap, finite-size model envelopes, deletion/range sensitivity, nested search-seed variance, and paired multifidelity correction. See [`docs/campaign_analysis.md`](docs/campaign_analysis.md).
+
 
 ## Design style
 
