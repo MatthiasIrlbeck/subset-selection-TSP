@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-METADATA_PATH = ROOT / "config" / "options.json"
-CURRENT_SCHEMA_PATH = ROOT / "schema" / "results.schema.json"
+METADATA_PATH = ROOT / "config" / "options-v14.json"
+CURRENT_SCHEMA_PATH = ROOT / "schema" / "results-v14.schema.json"
 LEGACY_SCHEMA_PATH = ROOT / "schema" / "results-v13.schema.json"
 TOOL_NAME = "scripts/migrate_schema13_to14.py"
 

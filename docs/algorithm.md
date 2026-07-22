@@ -37,12 +37,7 @@ and its tour. The `k = N` case is the full TSP; `k = 0` and `k = 1` have length
 zero. Exact ties are resolved deterministically by membership mask, endpoint,
 and predecessor identifiers.
 
-The worst-case time is `O(N^2 2^N)` and storage is `O(N 2^N)`. At `N = 18`,
-the DP, parent, and mask-cardinality tables occupy about 43 MiB before ordinary
-process overhead. Raising the hard cap therefore requires explicit memory and
-runtime evidence rather than only changing a constant. Each concurrent instance
-worker owns its own table, so exact campaigns should choose `--threads` with the
-corresponding memory multiplication in mind.
+The worst-case time remains `O(N^2 2^N)`, but storage is cardinality-sensitive. The implementation groups masks by cardinality, rolls adjacent value layers, and retains compact reconstruction parents only through the requested `k`. `estimate_exact_subset_memory()` reports a conservative peak before allocation; the experiment memory planner includes that estimate when exact mode is enabled. Each concurrent instance worker owns its own tables, so exact campaigns should still choose `--threads` with the corresponding memory multiplication in mind.
 
 A solved result proves the global optimum under the instance's implemented
 double-precision distance metric. It sets `exact_optimal`, records DP state and
@@ -106,6 +101,12 @@ T(it) = T0 * exp(log(T1/T0) * it/(iters-1))
 ```
 
 This guarantees the first iteration uses `T0` and the final iteration uses `T1`; for a one-iteration run, the solver uses `T0`. The release default uses the fixed `sa_t0` and `sa_t1` endpoints and one candidate proposal per iteration. Opt-in restart-local temperature calibration and multiple-candidate proposals are described in [Experimental simulated-annealing controls](sa_experiments.md); both preserve the historical path when disabled and expose per-restart and temperature-decile telemetry for matched-compute tuning.
+
+### Versioned search-policy presets
+
+`--search-policy` selects a versioned automatic controller. `legacy-balanced` is the default and preserves the 0.10 fixed-seed trajectory. `heldout-balanced` and `heldout-quality` are opt-in policies selected on disjoint held-out point and search streams. They retain the fixed temperature endpoints but evaluate four candidate swaps per iteration, choosing the best candidate except for a 10% random-exploration branch.
+
+The balanced policy applies 20,000 SA iterations only for `0.02 <= p <= 0.35` and `k >= 40`. The quality policy applies 30,000 iterations over the same open-square range and extends periodic instances through `p = 0.50`; it also strengthens the full-TSP screening controller. Outside those ranges, and whenever the affected SA/TSP controls are explicitly changed, the literal configured controller is used. Continuation-only secondary solves, non-staged search, automatic temperature calibration, and elapsed-time mode do not receive automatic preset overrides. See [Held-out search-policy study](heldout_search_policy.md).
 
 ### Iteration budgets
 

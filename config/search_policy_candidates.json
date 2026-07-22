@@ -1,11 +1,30 @@
 {
   "schema_version": 1,
-  "reference_policy": "balanced-automatic",
+  "reference_policy": "legacy-balanced",
   "policies": [
     {
-      "id": "balanced-automatic",
-      "description": "Current p-aware staged-search default.",
-      "args": []
+      "id": "legacy-balanced",
+      "description": "0.10-compatible automatic controller.",
+      "args": [
+        "--search-policy",
+        "legacy-balanced"
+      ]
+    },
+    {
+      "id": "heldout-balanced",
+      "description": "Held-out four-candidate SA preset through p=0.35.",
+      "args": [
+        "--search-policy",
+        "heldout-balanced"
+      ]
+    },
+    {
+      "id": "heldout-quality",
+      "description": "Deeper held-out subset policy plus stronger full-TSP controller.",
+      "args": [
+        "--search-policy",
+        "heldout-quality"
+      ]
     },
     {
       "id": "broader-8x3",

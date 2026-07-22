@@ -208,6 +208,33 @@ bool parse_continuation_policy(const std::string& text, ContinuationPolicy& out)
     return false;
 }
 
+const char* search_policy_preset_name(SearchPolicyPreset policy) noexcept {
+    switch (policy) {
+        case SearchPolicyPreset::LegacyBalanced: return "legacy-balanced";
+        case SearchPolicyPreset::HeldoutBalanced: return "heldout-balanced";
+        case SearchPolicyPreset::HeldoutQuality: return "heldout-quality";
+    }
+    return "legacy-balanced";
+}
+
+bool parse_search_policy_preset(const std::string& text,
+                                SearchPolicyPreset& out) noexcept {
+    if (text == "legacy-balanced" || text == "legacy") {
+        out = SearchPolicyPreset::LegacyBalanced;
+        return true;
+    }
+    if (text == "heldout-balanced" || text == "balanced-heldout"
+        || text == "heldout") {
+        out = SearchPolicyPreset::HeldoutBalanced;
+        return true;
+    }
+    if (text == "heldout-quality" || text == "quality") {
+        out = SearchPolicyPreset::HeldoutQuality;
+        return true;
+    }
+    return false;
+}
+
 const char* knn_backend_name(KnnBackend backend) noexcept {
     switch (backend) {
         case KnnBackend::BruteForce: return "coords_exact_bruteforce_knn";

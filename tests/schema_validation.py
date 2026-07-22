@@ -66,7 +66,7 @@ def main() -> int:
             path = "/".join(str(part) for part in error.path) or "<root>"
             print(f"schema validation error at {path}: {error.message}", file=sys.stderr)
         return 1
-    assert doc["schema_version"] == 14, doc["schema_version"]
+    assert doc["schema_version"] == 15, doc["schema_version"]
     assert doc["mode"] == "hybrid", doc["mode"]
     assert doc["distance_backend"] == "coords_exact_grid_knn", doc["distance_backend"]
     assert doc["config"]["oracle_mode"] == "none", doc["config"]
@@ -125,6 +125,7 @@ def main() -> int:
     assert "highp_exchange_scans" in doc["search_stats"], doc["search_stats"]
     assert "region_restarts" in doc["search_stats"], doc["search_stats"]
     assert "dense_restarts" in doc["search_stats"], doc["search_stats"]
+    assert doc["config"]["search_policy_preset"] == "legacy-balanced", doc["config"]
     assert doc["config"]["pair_exchange_max_k"] == 5000, doc["config"]
     assert doc["config"]["exact_subset_max_n"] == 0, doc["config"]
     assert doc["config"]["racing_candidates"] == 0, doc["config"]

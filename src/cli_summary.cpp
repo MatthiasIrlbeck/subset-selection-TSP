@@ -20,6 +20,8 @@ std::string config_summary(const RunOptions& opt) {
         << ", knn=" << opt.solver.knn_k
         << ", knn_backend=" << knn_backend_name(opt.solver.knn_backend)
         << ", verify_knn_checks=" << opt.solver.verify_knn_checks
+        << ", search_policy="
+        << search_policy_preset_name(opt.solver.search_policy_preset)
         << ", subset_restarts="
         << (opt.solver.subset_restarts >= 1
                 ? std::to_string(opt.solver.subset_restarts)

@@ -227,6 +227,15 @@ enum class ContinuationPolicy {
     FixedBudget,
 };
 
+// Selects an evidence-backed automatic search controller. The legacy value
+// preserves the published release behavior; held-out presets alter only the
+// SA/TSP sections whose affected controls remain at release defaults.
+enum class SearchPolicyPreset {
+    LegacyBalanced,
+    HeldoutBalanced,
+    HeldoutQuality,
+};
+
 enum class KnnBackend {
     BruteForce,
     GridExact
@@ -302,6 +311,8 @@ const char* solver_mode_name(SolverMode mode) noexcept;
 bool parse_solver_mode(const std::string& text, SolverMode& out) noexcept;
 const char* continuation_policy_name(ContinuationPolicy policy) noexcept;
 bool parse_continuation_policy(const std::string& text, ContinuationPolicy& out) noexcept;
+const char* search_policy_preset_name(SearchPolicyPreset policy) noexcept;
+bool parse_search_policy_preset(const std::string& text, SearchPolicyPreset& out) noexcept;
 const char* knn_backend_name(KnnBackend backend) noexcept;
 bool parse_knn_backend(const std::string& text, KnnBackend& out) noexcept;
 const char* exhaustive_two_opt_policy_name(ExhaustiveTwoOptPolicy policy) noexcept;

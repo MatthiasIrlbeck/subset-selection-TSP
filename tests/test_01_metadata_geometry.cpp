@@ -13,6 +13,9 @@ ALDOUS_TEST(test_generated_defaults_and_presets) {
             "the metadata-generated library probability grid is authoritative");
     require(library_defaults.solver.restart_threads == 1,
             "the metadata-generated library restart-thread default stays explicit");
+    require(library_defaults.solver.search_policy_preset
+                == SearchPolicyPreset::LegacyBalanced,
+            "the legacy-balanced controller remains the generated compatibility default");
 
     RunOptions cli_defaults;
     apply_generated_cli_defaults(cli_defaults);

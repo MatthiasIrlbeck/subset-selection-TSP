@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0 -- held-out search-policy presets
+
+- Added `--search-policy legacy-balanced|heldout-balanced|heldout-quality`. The default remains `legacy-balanced`, preserving the 0.10 fixed-seed controller.
+- Added a p-aware, fixed-temperature four-candidate SA preset selected on disjoint held-out point and search streams. `heldout-balanced` uses 20,000 SA iterations for `0.02 <= p <= 0.35` when `k >= 40`; `heldout-quality` uses 30,000 iterations, with the same open-square range and a periodic extension through `p = 0.50`.
+- Added a held-out full-TSP quality controller. `heldout-quality` screens 16 starts and promotes four into 450-iteration ILS searches while leaving explicit TSP controls authoritative.
+- Preset sections activate only when their core SA or TSP controls retain release defaults, staged deterministic search is active, and elapsed-time mode is disabled. Per-restart iteration diagnostics continue to expose the effective allocation.
+- Documented the matched-worker study, geometry-specific crossover, scale transfer, rejected generic temperature calibration, and release decision.
+- Promoted native result output to strict schema 15 so the selected search-policy preset is explicit. Archived schema 14 remains verifiable, and `scripts/migrate_schema14_to15.py` preserves prior migration provenance while assigning the exact `legacy-balanced` pre-preset controller.
+
 ## 0.10.0 -- reproducible release and schema migration
 
 - Synchronized the CMake package and citation metadata at version `0.10.0`.

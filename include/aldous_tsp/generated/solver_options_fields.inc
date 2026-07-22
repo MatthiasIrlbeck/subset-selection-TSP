@@ -26,6 +26,11 @@
     int tsp_ils = 300;
     // Full-TSP ILS stagnation patience.
     int tsp_patience = 80;
+    // Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-
+    // balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality
+    // uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP
+    // screening. Explicit core SA or TSP population controls take precedence.
+    SearchPolicyPreset search_policy_preset = SearchPolicyPreset::LegacyBalanced;
     // Subset restarts; -1 selects the p-aware automatic policy.
     int subset_restarts = -1;
     // Warm restarts when a neighboring-p parent exists.

@@ -1,6 +1,6 @@
 {
   "metadata_version": 1,
-  "schema_version": 15,
+  "schema_version": 14,
   "sections": [
     {
       "id": "general",
@@ -715,28 +715,6 @@
         "minimum": 0
       },
       "quick_default": 8
-    },
-    {
-      "id": "search_policy_preset",
-      "section": "search",
-      "struct": "solver",
-      "member": "search_policy_preset",
-      "cpp_type": "SearchPolicyPreset",
-      "default": "legacy-balanced",
-      "cpp_default": "SearchPolicyPreset::LegacyBalanced",
-      "cli": "--search-policy",
-      "json_key": "search_policy_preset",
-      "metavar": "<name>",
-      "help": "Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP screening. Explicit core SA or TSP population controls take precedence.",
-      "constraints": {
-        "enum": [
-          "legacy-balanced",
-          "heldout-balanced",
-          "heldout-quality"
-        ]
-      },
-      "parser": "parse_search_policy_preset",
-      "formatter": "search_policy_preset_name"
     },
     {
       "id": "subset_restarts",

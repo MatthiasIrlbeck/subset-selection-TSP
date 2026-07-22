@@ -78,6 +78,13 @@ bool validate_generated_option_ranges(const RunOptions& opt, std::string& error)
     if (opt.solver.tsp_restarts < 1) { error = "--tsp-restarts must be >= 1"; return false; }
     if (opt.solver.tsp_ils < 0) { error = "--tsp-ils must be >= 0"; return false; }
     if (opt.solver.tsp_patience < 0) { error = "--tsp-patience must be >= 0"; return false; }
+    {
+        SearchPolicyPreset roundtrip{};
+        if (!parse_search_policy_preset(search_policy_preset_name(opt.solver.search_policy_preset), roundtrip) || roundtrip != opt.solver.search_policy_preset) {
+            error = "--search-policy has an invalid enum value";
+            return false;
+        }
+    }
     if (opt.solver.subset_restarts < -1) { error = "--restarts must be >= -1"; return false; }
     if (opt.solver.continuation_restarts < 0) { error = "--continuation-restarts must be >= 0"; return false; }
     {
@@ -274,6 +281,8 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     out << opt.solver.tsp_ils;
     out << ",\n" << indent << "  \"tsp_patience\": ";
     out << opt.solver.tsp_patience;
+    out << ",\n" << indent << "  \"search_policy_preset\": ";
+    writer.string(search_policy_preset_name(opt.solver.search_policy_preset));
     out << ",\n" << indent << "  \"subset_restarts\": ";
     out << opt.solver.subset_restarts;
     out << ",\n" << indent << "  \"continuation_restarts\": ";

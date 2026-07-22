@@ -85,7 +85,8 @@ bool validate_solver_options(const SolverOptions& options, std::string& error) {
     probe.N = 3;
     probe.instances = 1;
     probe.threads = 1;
-    probe.p_values = {1.0};
+    probe.p_values.clear();
+    probe.p_values.push_back(1.0);
     probe.solver = options;
     if (!validate_generated_option_ranges(probe, error)) {
         return false;

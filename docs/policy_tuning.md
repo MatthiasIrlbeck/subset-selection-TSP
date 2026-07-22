@@ -52,3 +52,12 @@ list of CLI arguments; no shell parsing is used. The checked-in candidate set is
 a starting design, not a claim that one candidate is universally optimal. It
 also includes opt-in restart-local SA calibration and multiple-candidate
 proposal policies; see [Experimental simulated-annealing controls](sa_experiments.md).
+
+## Promoted 0.11 presets
+
+The checked-in matrix now includes the versioned `legacy-balanced`,
+`heldout-balanced`, and `heldout-quality` controllers. Their release-selection
+evidence and exact activation ranges are documented in
+[Held-out search-policy presets](heldout_search_policy.md). Future tuning should
+compare against `legacy-balanced` explicitly and use new point/search streams;
+reusing the 0.11 selection sample would understate model-selection uncertainty.

@@ -26,7 +26,7 @@
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 15
+      "const": 14
     },
     "run_metadata": {
       "$ref": "#/$defs/run_metadata"
@@ -320,7 +320,6 @@
         "tsp_restarts",
         "tsp_ils",
         "tsp_patience",
-        "search_policy_preset",
         "subset_restarts",
         "continuation_restarts",
         "continuation_policy",
@@ -653,15 +652,6 @@
           "minimum": 0,
           "description": "Full-TSP ILS stagnation patience.",
           "default": 80
-        },
-        "search_policy_preset": {
-          "enum": [
-            "legacy-balanced",
-            "heldout-balanced",
-            "heldout-quality"
-          ],
-          "description": "Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP screening. Explicit core SA or TSP population controls take precedence.",
-          "default": "legacy-balanced"
         },
         "subset_restarts": {
           "type": "integer",
@@ -2508,67 +2498,55 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "steps"
+        "source_schema_version",
+        "target_schema_version",
+        "tool",
+        "source_sha256",
+        "inferred_fields",
+        "unrecoverable_fields",
+        "notes"
       ],
       "properties": {
-        "steps": {
+        "source_schema_version": {
+          "type": "integer",
+          "const": 13
+        },
+        "target_schema_version": {
+          "type": "integer",
+          "const": 14
+        },
+        "tool": {
+          "type": "string",
+          "const": "scripts/migrate_schema13_to14.py"
+        },
+        "inferred_fields": {
           "type": "array",
-          "minItems": 1,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "source_schema_version",
-              "target_schema_version",
-              "tool",
-              "source_sha256",
-              "inferred_fields",
-              "unrecoverable_fields",
-              "notes"
-            ],
-            "properties": {
-              "source_schema_version": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "target_schema_version": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "tool": {
-                "type": "string",
-                "minLength": 1
-              },
-              "source_sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              },
-              "inferred_fields": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "uniqueItems": true
-              },
-              "unrecoverable_fields": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "uniqueItems": true
-              },
-              "notes": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "uniqueItems": true
-              }
-            }
-          }
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "unrecoverable_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the exact schema-13 source bytes."
         }
       }
     },

@@ -1,9 +1,6 @@
 # Experimental simulated-annealing controls
 
-The release default remains the historical fixed geometric temperature schedule
-and one candidate proposal per iteration.  Those defaults are deliberately
-unchanged: both alternatives below are experimental policies that must earn a
-place on a matched-worker-second frontier before becoming release defaults.
+The release default remains the historical fixed geometric temperature schedule and one candidate proposal per iteration. Generic temperature calibration remains experimental. Multiple-candidate proposals have earned an opt-in, p-aware role through `--search-policy heldout-balanced|heldout-quality`, but are not silently enabled by the default `legacy-balanced` controller.
 
 ## Restart-local temperature calibration
 
@@ -67,3 +64,7 @@ and search streams.  Tune on one replicate set and evaluate the selected policy
 on held-out point streams.  Acceptance targets should be selected separately by
 `p`, geometry, scale, seed kind, and controller role when the measured frontier
 shows material interactions.
+
+## Held-out preset
+
+The versioned held-out presets keep the fixed temperature schedule and set the proposal controller only inside validated p/cardinality ranges. They are disabled by explicit core SA settings, automatic temperature calibration, continuation-only solves, non-staged search, and elapsed-time mode. See [Held-out search-policy study](heldout_search_policy.md) for the exact contract and paired evidence.

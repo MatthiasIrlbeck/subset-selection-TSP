@@ -32,6 +32,34 @@ private:
     Clock::time_point start_;
 };
 
+struct ResolvedSubsetPolicy {
+    int restarts = 1;
+    int strong_polish_finalists = 1;
+    int racing_candidates = 0;
+    int racing_survivors = 1;
+    int racing_pilot_iters = 0;
+    // Negative means use the ordinary effective-SA calculation. A nonnegative
+    // value is an evidence-backed preset override for this cardinality.
+    int sa_iterations = -1;
+    int sa_candidate_trials = 1;
+    double sa_multiple_try_random_probability = 0.1;
+    bool heldout_sa_policy_applied = false;
+};
+
+struct ResolvedTspPolicy {
+    int candidate_starts = 1;
+    int promoted_restarts = 1;
+    int ils_iterations = 0;
+};
+
+ResolvedSubsetPolicy resolve_subset_policy(const SolverOptions& options,
+                                           double p,
+                                           int k,
+                                           bool periodic,
+                                           bool continuation_only) noexcept;
+ResolvedTspPolicy resolve_tsp_policy(const SolverOptions& options,
+                                     bool periodic) noexcept;
+
 std::vector<int> all_nodes(int n);
 std::vector<int> random_subset(int n, int k, Rng& rng);
 RestartRecord make_restart_record(const Instance& inst,

@@ -20,7 +20,7 @@ The project is organized as a reusable C++17 library plus a thin command-line ap
 - small-p spatial/dense seed pools
 - high-p deletion seeds and high-p reference-guided exchange descent
 - a staged subset-search funnel, deterministic subset swap descent, two-for-two pair exchange, ruin/recreate LNS, ejection chains, and budgeted elite path relinking
-- fixed simulated-annealing temperature schedule
+- fixed simulated-annealing temperature schedule, plus opt-in held-out p-aware multiple-candidate search presets
 - optional exhaustive final 2-opt threshold for small tours; by default exhaustive 2-opt is final-only rather than used in every polishing pass
 - configurable p-grid via `--p-values`, `--p-range`, or `--p-file`
 - atomic JSON output with schema-versioned metadata, stable campaign/replicate identities, and search statistics
@@ -100,6 +100,18 @@ Dry-run resolved configuration:
 ./build/aldous_tsp --N 500 --p-range 0.02:1.0:12 --dry-run
 ```
 
+The published 0.10 controller remains the default. Evidence-backed search presets are opt-in:
+
+```bash
+# Matched-compute four-candidate SA through p=0.35
+./build/aldous_tsp --search-policy heldout-balanced ...
+
+# Deeper subset policy, periodic extension through p=0.50, and stronger p=1 search
+./build/aldous_tsp --search-policy heldout-quality ...
+```
+
+See [`docs/heldout_search_policy.md`](docs/heldout_search_policy.md) for activation rules, held-out evidence, and interpretation limits.
+
 `--quick` is a preset applied before explicit user options, so overrides work regardless of order:
 
 ```bash
@@ -131,6 +143,7 @@ Important flags:
 - `--p-values <csv>`
 - `--p-range <start:end:count>`
 - `--p-file <file>`
+- `--search-policy legacy-balanced|heldout-balanced|heldout-quality`
 - `--restarts <int>`
 - `--sa-iters <int>`
 - `--sa-iters-per-k <int>` (extra SA iterations per subset element; effective budget is `sa_iters + sa_iters_per_k * k`)
@@ -273,6 +286,6 @@ The internal heuristic stack and optional external oracle path are now integrate
 
 Result JSON records build flags, target compile options, effective KNN backend/cell-size telemetry, and optionally per-instance rows via `--include-instance-rows`.
 
-Historical schema-13 result files can be converted to strict schema 14 with `scripts/migrate_schema13_to14.py`. The migrated document explicitly lists every inferred or unrecoverable field; conversion does not invent missing replicate identities.
+Historical schema-13 result files can first be converted to frozen schema 14 with `scripts/migrate_schema13_to14.py`, then to current schema 15 with `scripts/migrate_schema14_to15.py`. Migration records every inferred or unrecoverable field and preserves the complete step history; it does not invent missing replicate identities.
 
 Large campaigns can set `--memory-budget-mb` to cap active instance workers before allocation. Result JSON records the conservative per-instance/peak estimate and requested, resolved, and effective concurrency under `memory_plan`. Reverse-KNN wakeup adjacency is created lazily and can be disabled with `--reverse-knn=false` when memory is more valuable than wakeup acceleration.

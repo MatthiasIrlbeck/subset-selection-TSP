@@ -870,6 +870,115 @@ ALDOUS_TEST(test_windowed_insertion_correctness) {
     require(applied > 50, "windowed insertion test exercised enough applied moves");
 }
 
+ALDOUS_TEST(test_heldout_search_policy_resolution) {
+    SolverOptions opt;
+    opt.search_policy_preset = SearchPolicyPreset::LegacyBalanced;
+    const ResolvedSubsetPolicy legacy =
+        resolve_subset_policy(opt, 0.20, 400, true, false);
+    require(legacy.restarts == 5 && legacy.racing_candidates == 0
+                && legacy.sa_iterations < 0
+                && legacy.sa_candidate_trials == 1,
+            "legacy-balanced preserves the established automatic controller");
+
+    opt.search_policy_preset = SearchPolicyPreset::HeldoutBalanced;
+    const ResolvedSubsetPolicy below_p =
+        resolve_subset_policy(opt, 0.01, 40, true, false);
+    require(!below_p.heldout_sa_policy_applied,
+            "held-out SA policy does not extrapolate below its measured p range");
+    const ResolvedSubsetPolicy tiny_k =
+        resolve_subset_policy(opt, 0.02, 20, true, false);
+    require(!tiny_k.heldout_sa_policy_applied,
+            "held-out SA policy retains the measured tiny-cardinality guard");
+    const ResolvedSubsetPolicy balanced =
+        resolve_subset_policy(opt, 0.20, 400, true, false);
+    require(balanced.heldout_sa_policy_applied
+                && balanced.sa_iterations == 20000
+                && balanced.sa_candidate_trials == 4
+                && std::abs(balanced.sa_multiple_try_random_probability - 0.1) < 1e-15,
+            "balanced held-out policy resolves to the validated four-trial budget");
+    const ResolvedSubsetPolicy balanced_edge =
+        resolve_subset_policy(opt, 0.35, 700, true, false);
+    require(balanced_edge.heldout_sa_policy_applied,
+            "balanced policy includes its validated p=0.35 boundary");
+    const ResolvedSubsetPolicy balanced_above =
+        resolve_subset_policy(opt, 0.40, 800, true, false);
+    require(!balanced_above.heldout_sa_policy_applied,
+            "balanced policy stops above p=0.35 in both geometries");
+
+    opt.search_policy_preset = SearchPolicyPreset::HeldoutQuality;
+    const ResolvedSubsetPolicy quality =
+        resolve_subset_policy(opt, 0.40, 800, true, false);
+    require(quality.heldout_sa_policy_applied
+                && quality.sa_iterations == 30000
+                && quality.sa_candidate_trials == 4,
+            "quality policy uses the deeper held-out multiple-candidate budget");
+    const ResolvedSubsetPolicy quality_periodic_edge =
+        resolve_subset_policy(opt, 0.50, 1000, true, false);
+    require(quality_periodic_edge.heldout_sa_policy_applied,
+            "quality policy includes the validated periodic p=0.50 boundary");
+    const ResolvedSubsetPolicy quality_open_above =
+        resolve_subset_policy(opt, 0.40, 800, false, false);
+    require(!quality_open_above.heldout_sa_policy_applied,
+            "quality open-square policy stops above p=0.35");
+    const ResolvedSubsetPolicy high =
+        resolve_subset_policy(opt, 0.80, 1600, true, false);
+    require(!high.heldout_sa_policy_applied,
+            "quality policy does not extrapolate into the high-p regime");
+
+    SolverOptions explicit_sa = opt;
+    explicit_sa.sa_iters = 30000;
+    const ResolvedSubsetPolicy explicit_result =
+        resolve_subset_policy(explicit_sa, 0.20, 400, true, false);
+    require(!explicit_result.heldout_sa_policy_applied
+                && explicit_result.sa_candidate_trials == 1,
+            "explicit SA controls take precedence over policy presets");
+
+    SolverOptions explicit_temperature = opt;
+    explicit_temperature.sa_t0 = 2.0;
+    const ResolvedSubsetPolicy explicit_temperature_result =
+        resolve_subset_policy(explicit_temperature, 0.20, 400, true, false);
+    require(!explicit_temperature_result.heldout_sa_policy_applied,
+            "explicit fixed-temperature controls take precedence over policy presets");
+
+    SolverOptions automatic_temperature = opt;
+    automatic_temperature.sa_auto_temperature = true;
+    const ResolvedSubsetPolicy calibrated =
+        resolve_subset_policy(automatic_temperature, 0.20, 400, true, false);
+    require(!calibrated.heldout_sa_policy_applied,
+            "automatic temperature experiments are never silently combined with a preset");
+
+    const ResolvedSubsetPolicy continuation =
+        resolve_subset_policy(opt, 0.20, 400, true, true);
+    require(!continuation.heldout_sa_policy_applied
+                && continuation.racing_candidates == 0,
+            "continuation-only solves preserve their literal controller");
+
+    SolverOptions balanced_tsp_options;
+    balanced_tsp_options.search_policy_preset = SearchPolicyPreset::HeldoutBalanced;
+    const ResolvedTspPolicy balanced_tsp =
+        resolve_tsp_policy(balanced_tsp_options, true);
+    require(balanced_tsp.candidate_starts
+                    == balanced_tsp_options.tsp_candidate_starts
+                && balanced_tsp.promoted_restarts
+                    == balanced_tsp_options.tsp_restarts
+                && balanced_tsp.ils_iterations == balanced_tsp_options.tsp_ils,
+            "balanced held-out policy preserves the established full-TSP controller");
+
+    const ResolvedTspPolicy quality_tsp = resolve_tsp_policy(opt, true);
+    require(quality_tsp.candidate_starts == 16
+                && quality_tsp.promoted_restarts == 4
+                && quality_tsp.ils_iterations == 450,
+            "quality policy exposes the held-out full-TSP screening controller");
+
+    SolverOptions explicit_tsp = opt;
+    explicit_tsp.tsp_candidate_starts = 20;
+    const ResolvedTspPolicy explicit_tsp_result = resolve_tsp_policy(explicit_tsp, true);
+    require(explicit_tsp_result.candidate_starts == 20
+                && explicit_tsp_result.promoted_restarts == explicit_tsp.tsp_restarts
+                && explicit_tsp_result.ils_iterations == explicit_tsp.tsp_ils,
+            "explicit TSP controls take precedence over policy presets");
+}
+
 ALDOUS_TEST(test_restarts_flag_is_authoritative) {
     // Regression: the restart count used to be max(seed_pool.size(), restarts),
     // and the seed builders inject up to 8 small-p seeds at p <= 0.08 -- so
@@ -920,8 +1029,17 @@ ALDOUS_TEST(test_restarts_flag_is_authoritative) {
                 "staged auto default explores 12 restarts at p <= 0.08");
         Rng rng2(99u);
         const SolveResult largep = solve_subset(inst, 90, rng2, opt, nullptr);  // p = 0.30
-        require(largep.stats.subset_restarts == 5,
-                "staged auto default explores 5 restarts at p > 0.08");
+        require(largep.stats.subset_restarts == 5
+                    && largep.stats.racing_pilot_restarts == 0,
+                "legacy-balanced preserves the former staged automatic population");
+
+        opt.search_policy_preset = SearchPolicyPreset::HeldoutBalanced;
+        Rng heldout_policy_rng(99u);
+        const SolveResult heldout_policy =
+            solve_subset(inst, 90, heldout_policy_rng, opt, nullptr);
+        require(heldout_policy.stats.subset_restarts == 5
+                    && heldout_policy.stats.racing_pilot_restarts == 0,
+                "held-out SA policy preserves the automatic restart population");
 
         opt.staged_search = false;
         Rng rng3(99u);

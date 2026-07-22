@@ -25,6 +25,7 @@ Use explicit seeds and p-grids for reproducible experiments:
   --replicate-offset 0 \
   --point-seed 2024 \
   --search-seed 2024 \
+  --search-policy legacy-balanced \
   --solver-policy-id publication \
   --fidelity-level strong \
   --p-values 0.02,0.03,0.05,0.10,0.20,0.50,1.00 \
@@ -47,8 +48,10 @@ Pass `--include-instance-rows` when you want each Monte Carlo instance recorded 
 
 Use the same `campaign_id`, `replicate_id`, and point seed across every `(p,k)` cell that should share common random numbers. Use a different search seed to repeat the heuristic on exactly the same point sets. `solver_policy_id` distinguishes algorithm/budget policies, and `fidelity_level` pairs cheap and strong runs for multifidelity correction. `scripts/run_torus_campaign.py` and `scripts/run_full_study.py` now pass these fields and enable instance rows automatically for campaign batches.
 
+`search_policy_preset` is part of the serialized solver configuration. Record it explicitly in publication commands: `legacy-balanced` is the 0.10 compatibility controller, while held-out presets are versioned automatic policies whose effective per-p allocation is also visible through restart iteration and SA candidate-evaluation telemetry. A free-form `solver_policy_id` should still name the complete campaign policy, including any manual overrides.
+
 `scripts/analyze_campaign.py` resamples complete replicate vectors when all selected files carry identities. It averages repeated search streams within a point set before the main fit, reports point-versus-search variance when repeats exist, and computes a paired cheap-plus-correction estimate when cheap and strong fidelities overlap. It also compares `1/k`, `1/k + 1/k^2`, and `1/sqrt(k)` finite-size laws inside the same bootstrap, reports a combined model/statistical envelope, and runs leave-one-size, leave-one-probability, and nested-`pmax` sensitivity refits. Legacy summary-only files remain readable, but the script explicitly falls back to independent-cell bootstrap because their cross-cell correlation cannot be reconstructed. See [`campaign_analysis.md`](campaign_analysis.md) for interpretation and command-line controls.
 
 ## Effective KNN/build metadata
 
-Schema version 12 records both requested and effective KNN behavior. This distinguishes a requested grid backend from a safe brute-force fallback on pathological tiny-coordinate inputs, and records forced grid-cell capping through `knn_grid_cell_capped_instances` plus per-instance `knn_build` details. Build metadata also records configured and effective C++ flags, target compile options, source-level low-memory overrides, and the optimization profile.
+Schema version 14 records both requested and effective KNN behavior. This distinguishes a requested grid backend from a safe brute-force fallback on pathological tiny-coordinate inputs, and records forced grid-cell capping through `knn_grid_cell_capped_instances` plus per-instance `knn_build` details. Build metadata also records configured and effective C++ flags, target compile options, source-level low-memory overrides, and the optimization profile.

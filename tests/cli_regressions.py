@@ -40,6 +40,7 @@ def main() -> int:
         "--exact-subset-max-n",
         "--tsp-candidate-starts",
         "--staged-search",
+        "--search-policy",
         "--path-relink-max-pairs",
         "--campaign-id",
         "Boolean flags accept plain presence as true",
@@ -75,6 +76,43 @@ def main() -> int:
         stats = disable_doc["search_stats"]
         assert stats["two_opt_scans"] == 0, stats
         assert stats["two_opt_improvements"] == 0, stats
+
+        preset_doc = run_case(
+            exe,
+            [
+                "--N", "200",
+                "--instances", "1",
+                "--threads", "1",
+                "--restart-threads", "1",
+                "--p-values", "0.2",
+                "--periodic",
+                "--search-policy", "heldout-balanced",
+                "--restarts", "1",
+                "--continuation-restarts", "0",
+                "--disable-subset-swap",
+                "--disable-pair-exchange",
+                "--disable-ruin-recreate",
+                "--disable-ejection-chain",
+                "--disable-path-relink",
+                "--include-instance-rows",
+            ],
+            tmp / "heldout-balanced.json",
+        )
+        assert preset_doc["schema_version"] == 15, preset_doc["schema_version"]
+        assert preset_doc["config"]["search_policy_preset"] == "heldout-balanced"
+        preset_row = preset_doc["instance_rows"][0]["p_results"][0]
+        assert preset_row["executed_restarts"] == 1, preset_row
+        assert set(preset_row["restart_sa_iterations"]) == {20000}, preset_row
+        assert preset_doc["search_stats"]["sa_multiple_try_iterations"] > 0
+
+        bad_preset = subprocess.run(
+            [str(exe), "--search-policy", "not-a-policy", "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert bad_preset.returncode != 0, bad_preset
+        assert "invalid value for --search-policy" in bad_preset.stderr, bad_preset.stderr
 
         grid_doc = run_case(
             exe,

@@ -110,6 +110,11 @@ Subset search:
   --second-sweep[=bool]                   Run an ascending continuation sweep after the descending sweep. (default: false)
   --exact-subset-max-n <int>              Globally solve subset choice and tour when N is at most this threshold; zero
                                           disables it. (default: 0)
+  --search-policy <name>                  Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-
+                                          balanced uses the held-out four-candidate SA policy through p=0.35; heldout-
+                                          quality uses a deeper policy, extends periodic runs through p=0.50, and
+                                          strengthens full-TSP screening. Explicit core SA or TSP population controls take
+                                          precedence. (default: legacy-balanced)
   --restarts <int>                        Subset restarts; -1 selects the p-aware automatic policy. (default: -1)
   --continuation-restarts <int>           Warm restarts when a neighboring-p parent exists. (default: 1)
   --continuation-policy <name>            Continuation policy: supplemental or fixed-budget. (default: supplemental)
@@ -538,6 +543,12 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
         if (!parse_int(value, opt.solver.tsp_patience)) { error = "invalid integer for --tsp-patience: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--search-policy") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_search_policy_preset(value, opt.solver.search_policy_preset)) { error = "invalid value for --search-policy: " + value; return GeneratedCliParseResult::Error; }
         return GeneratedCliParseResult::Matched;
     }
     if (flag == "--restarts") {

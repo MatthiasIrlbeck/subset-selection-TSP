@@ -43,6 +43,7 @@ This file is generated from `config/options.json`. Do not edit it directly.
 |---|---|---:|---|---|
 | `--second-sweep` | `second_sweep` | `false` | boolean | Run an ascending continuation sweep after the descending sweep. |
 | `--exact-subset-max-n` | `exact_subset_max_n` | `0` | minimum=0, maximum=18 | Globally solve subset choice and tour when N is at most this threshold; zero disables it. |
+| `--search-policy` | `search_policy_preset` | `legacy-balanced` | enum=['legacy-balanced', 'heldout-balanced', 'heldout-quality'] | Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP screening. Explicit core SA or TSP population controls take precedence. |
 | `--restarts` | `subset_restarts` | `-1` | minimum=-1 | Subset restarts; -1 selects the p-aware automatic policy. |
 | `--continuation-restarts` | `continuation_restarts` | `1` | minimum=0 | Warm restarts when a neighboring-p parent exists. |
 | `--continuation-policy` | `continuation_policy` | `supplemental` | enum=['supplemental', 'fixed-budget'] | Continuation policy: supplemental or fixed-budget. |

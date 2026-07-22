@@ -305,15 +305,13 @@ SolveResult solve_subset(const Instance& inst,
         throw std::invalid_argument(
             "ejection_chain_max_uphill must be finite and >= 0");
     }
-    // Explicit values configure the base population. AUTO reproduces the
-    // historical effective count. Supplemental continuation is deliberately
-    // outside this population so adding neighboring p-values cannot remove an
-    // independent draw or worsen the best-of-restarts result.
-    const int resolved_restarts = options.subset_restarts >= 1
-        ? options.subset_restarts
-        : (options.staged_search
-               ? (p <= 0.08 ? 12 : 5)
-               : (p <= 0.08 ? 8 : 3));
+    // Resolve automatic population and promotion controls from the selected
+    // policy. Explicit restart, racing, and finalist settings retain priority.
+    // Supplemental continuation remains outside this population so adding
+    // neighboring p-values cannot remove an independent diagnostic draw.
+    const ResolvedSubsetPolicy policy =
+        resolve_subset_policy(options, p, k, inst.periodic, request.continuation_only);
+    const int resolved_restarts = policy.restarts;
     const bool has_warm = warm_start != nullptr && !warm_start->empty();
     if (request.continuation_only && !has_warm) {
         throw std::invalid_argument("continuation-only subset solve requires a warm start");
@@ -375,7 +373,7 @@ SolveResult solve_subset(const Instance& inst,
     const int kick_begin = indep_restarts;
     const int continuation_begin = kick_begin + kick_n;
     const int total_restarts = continuation_begin + continuation_n;
-    const int racing_n = request.continuation_only ? 0 : options.racing_candidates;
+    const int racing_n = policy.racing_candidates;
     if (total_restarts <= 0) {
         result.stats.subset_seconds = std::chrono::duration<double>(Clock::now() - start).count();
         return result;
@@ -570,7 +568,13 @@ SolveResult solve_subset(const Instance& inst,
 
     result.stats.phases.seed_construction_seconds +=
         std::chrono::duration<double>(Clock::now() - seed_pool_start).count();
-    const int sa_iters_eff = effective_sa_iters(options, k, inst.N);
+    const int configured_sa_iters = effective_sa_iters(options, k, inst.N);
+    const int sa_iters_eff = policy.sa_iterations >= 0
+        ? policy.sa_iterations : configured_sa_iters;
+    SolverOptions anneal_options = options;
+    anneal_options.sa_candidate_trials = policy.sa_candidate_trials;
+    anneal_options.sa_multiple_try_random_probability =
+        policy.sa_multiple_try_random_probability;
     const double time_budget = options.time_budget_per_p;
     const int restart_threads = std::max(1, options.restart_threads);
     // One base draw, then a derived stream per restart: restart results are a
@@ -781,7 +785,7 @@ SolveResult solve_subset(const Instance& inst,
         if (use_spatial) { sindex.build(inst, tour); }
         const int spatial_neighbors = std::max(1, options.sa_spatial_neighbors);
         const SaTemperatureSchedule schedule = resolve_sa_temperature_schedule(
-            inst, tour, rrng, options, out.elite_seed, restart_exact_insertion,
+            inst, tour, rrng, anneal_options, out.elite_seed, restart_exact_insertion,
             use_spatial ? &sindex : nullptr, spatial_neighbors, restart_sa_iters);
         const double restart_log_ratio = std::log(schedule.t1 / schedule.t0);
         if (restart_sa_iters > 0) {
@@ -790,7 +794,7 @@ SolveResult solve_subset(const Instance& inst,
             out.stats.sa_calibration_uphill_samples += schedule.uphill_samples;
             if (schedule.calibrated) {
                 ++out.stats.sa_temperature_calibrations;
-            } else if (options.sa_auto_temperature) {
+            } else if (anneal_options.sa_auto_temperature) {
                 ++out.stats.sa_temperature_fallbacks;
             }
             out.stats.sa_temperature_t0_sum += schedule.t0;
@@ -815,7 +819,7 @@ SolveResult solve_subset(const Instance& inst,
                 const double temperature = schedule.t0 * std::exp(restart_log_ratio * frac);
                 const bool timing_sample = (it & 63) == 0;
                 SaProposal proposal = propose_sa_move(
-                    inst, tour, rrng, options, restart_exact_insertion,
+                    inst, tour, rrng, anneal_options, restart_exact_insertion,
                     use_spatial ? &sindex : nullptr, spatial_neighbors,
                     timing_sample);
                 if (timing_sample) {
@@ -827,7 +831,7 @@ SolveResult solve_subset(const Instance& inst,
                         proposal.insertion_seconds;
                 }
                 out.stats.sa_candidate_evaluations += proposal.candidate_evaluations;
-                if (options.sa_candidate_trials > 1) {
+                if (anneal_options.sa_candidate_trials > 1) {
                     ++out.stats.sa_multiple_try_iterations;
                 }
                 const SwapInsertionMove& move = proposal.move;
@@ -1006,7 +1010,7 @@ SolveResult solve_subset(const Instance& inst,
     }
 
     if (racing_n > 0) {
-        const int pilot_iters = std::min(options.racing_pilot_iters, sa_iters_eff);
+        const int pilot_iters = std::min(policy.racing_pilot_iters, sa_iters_eff);
         std::vector<RestartOutcome> raced_outcomes(static_cast<std::size_t>(racing_n));
 
         // Run bounded waves, then retain the original candidate order. Promotion
@@ -1041,7 +1045,7 @@ SolveResult solve_subset(const Instance& inst,
             return lhs < rhs;
         });
 
-        const int survivor_count = std::min(options.racing_survivors, racing_n);
+        const int survivor_count = std::min(policy.racing_survivors, racing_n);
         std::vector<int> promoted;
         promoted.reserve(static_cast<std::size_t>(survivor_count));
         std::vector<unsigned char> membership(static_cast<std::size_t>(inst.N), 0U);
@@ -1215,22 +1219,22 @@ SolveResult solve_subset(const Instance& inst,
             std::vector<std::size_t> all(staged_candidates.size());
             std::iota(all.begin(), all.end(), 0U);
             append_unique(select_diverse(std::move(all),
-                                         options.strong_polish_finalists));
+                                         policy.strong_polish_finalists));
         } else if (options.continuation_policy == ContinuationPolicy::FixedBudget) {
             core_pool.insert(core_pool.end(), continuation_pool.begin(),
                              continuation_pool.end());
             append_unique(select_diverse(std::move(core_pool),
-                                         options.strong_polish_finalists));
+                                         policy.strong_polish_finalists));
         } else {
             // Supplemental continuation and racing cannot displace the stable
             // independent population. They receive small explicit finalist
             // reserves in addition to the configured core quota.
             append_unique(select_diverse(std::move(core_pool),
-                                         options.strong_polish_finalists));
+                                         policy.strong_polish_finalists));
             append_unique(select_diverse(std::move(continuation_pool), 1));
         }
         append_unique(select_diverse(
-            std::move(raced_pool), std::max(1, options.racing_survivors)));
+            std::move(raced_pool), std::max(1, policy.racing_survivors)));
         std::stable_sort(finalists.begin(), finalists.end(),
                          [&](const std::size_t lhs, const std::size_t rhs) {
             return staged_candidates[lhs].record_index

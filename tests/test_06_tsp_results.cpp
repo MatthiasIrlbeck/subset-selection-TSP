@@ -380,7 +380,7 @@ ALDOUS_TEST(test_json_atomic) {
     s.max = 0.7;
     doc.summary["1.0"] = s;
     const std::string text = results_to_json(doc);
-    require(text.find("\"schema_version\": 14") != std::string::npos, "JSON schema version present");
+    require(text.find("\"schema_version\": 15") != std::string::npos, "JSON schema version present");
     require(text.find("\"build_metadata\"") != std::string::npos, "JSON includes build metadata");
     require(text.find("\"memory_plan\"") != std::string::npos
                 && text.find("\"estimated_instance_bytes\"") != std::string::npos

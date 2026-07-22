@@ -41,8 +41,7 @@ def main() -> int:
     current_schema = json.loads((root / "schema" / "results.schema.json").read_text())
     current_version = schema_version(current_schema)
     schemas = {current_version: current_schema}
-    legacy_path = root / "schema" / "results-v13.schema.json"
-    if legacy_path.exists():
+    for legacy_path in sorted((root / "schema").glob("results-v*.schema.json")):
         legacy_schema = json.loads(legacy_path.read_text())
         schemas[schema_version(legacy_schema)] = legacy_schema
     validators = {

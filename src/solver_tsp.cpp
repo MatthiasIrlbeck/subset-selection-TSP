@@ -179,9 +179,10 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         inst.ensure_reverse_knn();
     }
 
-    const int promoted_target = std::max(1, options.tsp_restarts);
+    const ResolvedTspPolicy policy = resolve_tsp_policy(options, inst.periodic);
+    const int promoted_target = std::max(1, policy.promoted_restarts);
     const int candidate_count = std::max(promoted_target,
-                                         options.tsp_candidate_starts);
+                                         policy.candidate_starts);
     const int restart_threads = std::max(1, options.restart_threads);
     const double time_budget = options.time_budget_per_p;
     const std::uint64_t solve_stream_base = rng.next_u64();
@@ -255,7 +256,7 @@ SolveResult solve_tsp(const Instance& inst, Rng& rng, const SolverOptions& optio
         // Preserve the pilot's exact incrementally-polished value.
         best_restart.length = candidate.length;
         int no_improve = 0;
-        const int ils = std::max(0, options.tsp_ils);
+        const int ils = std::max(0, policy.ils_iterations);
         {
             ScopedPhaseTimer phase_timer(outcome.stats.phases.tsp_ils_seconds);
             for (int it = 0; it < ils; ++it) {

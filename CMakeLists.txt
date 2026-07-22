@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(aldous_tsp VERSION 0.10.0 LANGUAGES CXX)
+project(aldous_tsp VERSION 0.11.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -173,6 +173,7 @@ add_library(aldous_tsp_core
   src/solver_pair_exchange.cpp
   src/solver_path_relink.cpp
   src/solver_seeds.cpp
+  src/solver_policy.cpp
   src/solver_subset.cpp
   src/solver_tsp.cpp
   src/oracle.cpp
@@ -214,6 +215,7 @@ if(ALDOUS_TSP_LOW_MEMORY_BUILD AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|Appl
     src/solver_pair_exchange.cpp
     src/solver_path_relink.cpp
     src/solver_seeds.cpp
+    src/solver_policy.cpp
     src/solver_subset.cpp
     src/solver_tsp.cpp
     src/generated_options_cli.cpp
@@ -509,6 +511,8 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(validation_artifacts_schema PROPERTIES TIMEOUT 120)
       add_test(NAME schema_13_to_14_migration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/schema_migration_test.py ${CMAKE_CURRENT_SOURCE_DIR})
       set_tests_properties(schema_13_to_14_migration PROPERTIES TIMEOUT 120)
+      add_test(NAME schema_14_to_15_migration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/schema_14_to_15_migration_test.py ${CMAKE_CURRENT_SOURCE_DIR})
+      set_tests_properties(schema_14_to_15_migration PROPERTIES TIMEOUT 120)
       add_test(NAME quality_canary COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/quality_canary.py $<TARGET_FILE:aldous_tsp> ${CMAKE_CURRENT_BINARY_DIR}/quality-canary)
       set_tests_properties(quality_canary PROPERTIES TIMEOUT 300)
       add_test(NAME extrapolation_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/extrapolate_fpN.py --self-test)
