@@ -82,6 +82,21 @@
     double sa_t0 = 1.4;
     // Fixed SA end temperature.
     double sa_t1 = 5e-05;
+    // Calibrate each restart's SA temperatures from sampled uphill move deltas.
+    bool sa_auto_temperature = false;
+    // Target positive-delta samples for restart-local SA calibration.
+    int sa_temperature_samples = 256;
+    // Positive-delta quantile used to calibrate SA endpoints.
+    double sa_temperature_quantile = 0.5;
+    // Target initial acceptance for the calibrated uphill-delta quantile.
+    double sa_initial_uphill_acceptance = 0.6;
+    // Target final acceptance for the calibrated uphill-delta quantile.
+    double sa_final_uphill_acceptance = 0.01;
+    // Candidate swaps evaluated per SA iteration; one preserves the historical proposal.
+    int sa_candidate_trials = 1;
+    // For multiple-try SA, probability of selecting a random valid trial instead of the
+    // best.
+    double sa_multiple_try_random_probability = 0.1;
     // Parallel subset-restart workers; zero requests automatic allocation.
     int restart_threads = 1;
     // Wall-clock target per instance/p solve; zero disables anytime mode.

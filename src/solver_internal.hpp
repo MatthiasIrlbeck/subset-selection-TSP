@@ -133,6 +133,21 @@ SwapInsertionMove find_best_insert_after_remove_windowed(const Instance& inst, c
 // a spread-out subset (~1 member/cell) and a tight cluster (which would
 // otherwise pile 70+ members into one cell) both cost a few dozen distance
 // evaluations per query, against 2000 for the exact scan at k=2000.
+struct SaTemperatureSchedule {
+    double t0 = 0.0;
+    double t1 = 0.0;
+    std::uint64_t attempts = 0;
+    std::uint64_t uphill_samples = 0;
+    bool calibrated = false;
+};
+
+struct SaProposal {
+    SwapInsertionMove move;
+    std::uint64_t candidate_evaluations = 0;
+    double proposal_seconds = 0.0;
+    double insertion_seconds = 0.0;
+};
+
 class SubsetIndex {
 public:
     void build(const Instance& inst, const Tour& tour);
@@ -171,6 +186,25 @@ private:
 SwapInsertionMove find_best_insert_after_remove_spatial(const Instance& inst, const Tour& tour,
                                                         const SubsetIndex& index, int remove_pos,
                                                         int add_node, int neighbors, int window);
+SaProposal propose_sa_move(const Instance& inst,
+                           const Tour& tour,
+                           Rng& rng,
+                           const SolverOptions& options,
+                           bool exact_insertion,
+                           const SubsetIndex* spatial_index,
+                           int spatial_neighbors,
+                           bool measure_timing = false);
+SaTemperatureSchedule resolve_sa_temperature_schedule(
+    const Instance& inst,
+    const Tour& tour,
+    Rng calibration_rng,
+    const SolverOptions& options,
+    bool elite_seed,
+    bool exact_insertion,
+    const SubsetIndex* spatial_index,
+    int spatial_neighbors,
+    int sa_iterations);
+
 SwapMoveEval evaluate_swap_after_remove(const Instance& inst,
                                         const Tour& tour,
                                         int remove_pos,

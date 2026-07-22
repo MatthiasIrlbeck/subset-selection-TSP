@@ -68,6 +68,9 @@ With `--include-instance-rows`, every successful `instance_rows[].p_results[]` e
 | `restart_variants` | stable zero-based variant within a seed kind and role; independent of execution order and worker count |
 | `restart_promotion_stages` | racing state: `0` ordinary, `1` stopped after the pilot, `2` promoted and rerun at full depth |
 | `restart_sa_iterations` | actual SA iterations allocated to the recorded candidate; a promoted raced entry includes its pilot plus full-depth rerun |
+| `restart_sa_t0`, `restart_sa_t1` | actual geometric schedule endpoints used by the restart; both are zero when no SA ran |
+| `restart_sa_temperature_samples` | positive-delta samples collected by restart-local calibration; zero for fixed schedules |
+| `restart_sa_temperature_calibrated` | whether calibration succeeded and supplied the recorded endpoints |
 | `restart_centroids_x`, `restart_centroids_y` | metric-aware centroid of the selected nodes: circular mean for periodic coordinates and arithmetic mean for an open domain |
 | `restart_radii` | mean metric distance of selected nodes to that centroid |
 

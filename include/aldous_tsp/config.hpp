@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -25,6 +26,7 @@ inline constexpr int kExactSmallTourLimit = 16;
 inline constexpr int kExactSubsetHardLimit = 18;
 #include "aldous_tsp/generated/options_schema_version.inc"
 inline constexpr std::int64_t kMaxGridCells = 262144;
+inline constexpr std::size_t kSaTemperatureBins = 10U;
 
 struct OracleCallRecord {
     std::string type;
@@ -123,6 +125,25 @@ struct SearchStats {
     std::uint64_t sa_moves = 0;
     std::uint64_t sa_accepted = 0;
     std::uint64_t sa_improving = 0;
+    // Experimental SA-controller telemetry. Defaults preserve the historical
+    // one-candidate, fixed-temperature trajectory exactly.
+    std::uint64_t sa_candidate_evaluations = 0;
+    std::uint64_t sa_multiple_try_iterations = 0;
+    std::uint64_t sa_temperature_schedules = 0;
+    std::uint64_t sa_temperature_calibrations = 0;
+    std::uint64_t sa_temperature_fallbacks = 0;
+    std::uint64_t sa_calibration_attempts = 0;
+    std::uint64_t sa_calibration_uphill_samples = 0;
+    double sa_temperature_t0_sum = 0.0;
+    double sa_temperature_t1_sum = 0.0;
+    double sa_temperature_t0_min = std::numeric_limits<double>::infinity();
+    double sa_temperature_t0_max = 0.0;
+    double sa_temperature_t1_min = std::numeric_limits<double>::infinity();
+    double sa_temperature_t1_max = 0.0;
+    std::array<std::uint64_t, kSaTemperatureBins> sa_decile_moves{};
+    std::array<std::uint64_t, kSaTemperatureBins> sa_decile_uphill_moves{};
+    std::array<std::uint64_t, kSaTemperatureBins> sa_decile_accepted{};
+    std::array<std::uint64_t, kSaTemperatureBins> sa_decile_uphill_accepted{};
     std::uint64_t subset_swap_scans = 0;
     std::uint64_t subset_swap_improvements = 0;
     std::uint64_t highp_exchange_scans = 0;

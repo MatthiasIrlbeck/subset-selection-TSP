@@ -163,6 +163,7 @@ add_library(aldous_tsp_core
   src/tour.cpp
   src/solver_moves.cpp
   src/solver_spatial.cpp
+  src/solver_annealing.cpp
   src/solver_construction.cpp
   src/solver_local_search.cpp
   src/solver_exchange.cpp
@@ -202,14 +203,15 @@ target_link_libraries(aldous_tsp_core PUBLIC Threads::Threads)
 if(ALDOUS_TSP_LOW_MEMORY_BUILD AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   set_source_files_properties(
     src/solver_moves.cpp
-  src/solver_spatial.cpp
+    src/solver_spatial.cpp
+    src/solver_annealing.cpp
     src/solver_construction.cpp
     src/solver_local_search.cpp
     src/solver_exchange.cpp
-  src/solver_lns.cpp
-  src/solver_ejection_chain.cpp
-  src/solver_pair_exchange.cpp
-  src/solver_path_relink.cpp
+    src/solver_lns.cpp
+    src/solver_ejection_chain.cpp
+    src/solver_pair_exchange.cpp
+    src/solver_path_relink.cpp
     src/solver_seeds.cpp
     src/solver_subset.cpp
     src/solver_tsp.cpp

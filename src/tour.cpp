@@ -67,6 +67,39 @@ void SearchStats::add(const SearchStats& other) {
     sa_moves += other.sa_moves;
     sa_accepted += other.sa_accepted;
     sa_improving += other.sa_improving;
+    sa_candidate_evaluations += other.sa_candidate_evaluations;
+    sa_multiple_try_iterations += other.sa_multiple_try_iterations;
+    const std::uint64_t old_sa_schedules = sa_temperature_schedules;
+    sa_temperature_schedules += other.sa_temperature_schedules;
+    sa_temperature_calibrations += other.sa_temperature_calibrations;
+    sa_temperature_fallbacks += other.sa_temperature_fallbacks;
+    sa_calibration_attempts += other.sa_calibration_attempts;
+    sa_calibration_uphill_samples += other.sa_calibration_uphill_samples;
+    sa_temperature_t0_sum += other.sa_temperature_t0_sum;
+    sa_temperature_t1_sum += other.sa_temperature_t1_sum;
+    if (other.sa_temperature_schedules > 0U) {
+        if (old_sa_schedules == 0U) {
+            sa_temperature_t0_min = other.sa_temperature_t0_min;
+            sa_temperature_t0_max = other.sa_temperature_t0_max;
+            sa_temperature_t1_min = other.sa_temperature_t1_min;
+            sa_temperature_t1_max = other.sa_temperature_t1_max;
+        } else {
+            sa_temperature_t0_min = std::min(
+                sa_temperature_t0_min, other.sa_temperature_t0_min);
+            sa_temperature_t0_max = std::max(
+                sa_temperature_t0_max, other.sa_temperature_t0_max);
+            sa_temperature_t1_min = std::min(
+                sa_temperature_t1_min, other.sa_temperature_t1_min);
+            sa_temperature_t1_max = std::max(
+                sa_temperature_t1_max, other.sa_temperature_t1_max);
+        }
+    }
+    for (std::size_t bin = 0U; bin < kSaTemperatureBins; ++bin) {
+        sa_decile_moves[bin] += other.sa_decile_moves[bin];
+        sa_decile_uphill_moves[bin] += other.sa_decile_uphill_moves[bin];
+        sa_decile_accepted[bin] += other.sa_decile_accepted[bin];
+        sa_decile_uphill_accepted[bin] += other.sa_decile_uphill_accepted[bin];
+    }
     subset_swap_scans += other.subset_swap_scans;
     subset_swap_improvements += other.subset_swap_improvements;
     highp_exchange_scans += other.highp_exchange_scans;

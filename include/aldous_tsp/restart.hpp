@@ -175,6 +175,12 @@ struct RestartRecord {
     // For a promoted raced candidate this includes its screening pilot plus the
     // full-depth rerun used to produce the final recorded outcome.
     std::uint64_t sa_iterations = 0;
+    // Actual schedule used by this restart. Calibration uses a copied RNG, so
+    // enabling diagnostics never perturbs the subsequent search stream.
+    double sa_t0 = 0.0;
+    double sa_t1 = 0.0;
+    std::uint64_t sa_temperature_samples = 0;
+    bool sa_temperature_calibrated = false;
     double centroid_x = 0.0;
     double centroid_y = 0.0;
     double radius = 0.0;

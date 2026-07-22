@@ -130,7 +130,9 @@ def collect(docs, p, kinds, sweeps, roles, max_value):
                 for field_name in (
                     "restart_kinds", "restart_sweeps", "restart_roles",
                     "restart_variants", "restart_promotion_stages",
-                    "restart_sa_iterations", "restart_centroids_x",
+                    "restart_sa_iterations", "restart_sa_t0", "restart_sa_t1",
+                    "restart_sa_temperature_samples",
+                    "restart_sa_temperature_calibrated", "restart_centroids_x",
                     "restart_centroids_y", "restart_radii",
                 ):
                     column = pv.get(field_name)

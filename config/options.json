@@ -1146,6 +1146,123 @@
       }
     },
     {
+      "id": "sa_auto_temperature",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_auto_temperature",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--sa-auto-temperature",
+      "json_key": "sa_auto_temperature",
+      "help": "Calibrate each restart's SA temperatures from sampled uphill move deltas.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "sa_temperature_samples",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_temperature_samples",
+      "cpp_type": "int",
+      "default": 256,
+      "cli": "--sa-temperature-samples",
+      "json_key": "sa_temperature_samples",
+      "metavar": "<int>",
+      "help": "Target positive-delta samples for restart-local SA calibration.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65536
+      },
+      "quick_default": 32
+    },
+    {
+      "id": "sa_temperature_quantile",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_temperature_quantile",
+      "cpp_type": "double",
+      "default": 0.5,
+      "cli": "--sa-temperature-quantile",
+      "json_key": "sa_temperature_quantile",
+      "metavar": "<float>",
+      "help": "Positive-delta quantile used to calibrate SA endpoints.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "sa_initial_uphill_acceptance",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_initial_uphill_acceptance",
+      "cpp_type": "double",
+      "default": 0.6,
+      "cli": "--sa-initial-uphill-acceptance",
+      "json_key": "sa_initial_uphill_acceptance",
+      "metavar": "<float>",
+      "help": "Target initial acceptance for the calibrated uphill-delta quantile.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1
+      }
+    },
+    {
+      "id": "sa_final_uphill_acceptance",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_final_uphill_acceptance",
+      "cpp_type": "double",
+      "default": 0.01,
+      "cli": "--sa-final-uphill-acceptance",
+      "json_key": "sa_final_uphill_acceptance",
+      "metavar": "<float>",
+      "help": "Target final acceptance for the calibrated uphill-delta quantile.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1
+      }
+    },
+    {
+      "id": "sa_candidate_trials",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_candidate_trials",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--sa-candidate-trials",
+      "json_key": "sa_candidate_trials",
+      "metavar": "<int>",
+      "help": "Candidate swaps evaluated per SA iteration; one preserves the historical proposal.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 64
+      }
+    },
+    {
+      "id": "sa_multiple_try_random_probability",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_multiple_try_random_probability",
+      "cpp_type": "double",
+      "default": 0.1,
+      "cli": "--sa-multiple-try-random-probability",
+      "json_key": "sa_multiple_try_random_probability",
+      "metavar": "<float>",
+      "help": "For multiple-try SA, probability of selecting a random valid trial instead of the best.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
       "id": "restart_threads",
       "section": "search",
       "struct": "solver",

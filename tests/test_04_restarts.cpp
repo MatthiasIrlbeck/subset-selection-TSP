@@ -41,11 +41,128 @@ ALDOUS_TEST(test_restart_thread_invariance) {
                     && a.restarts[i].seed_variant == b.restarts[i].seed_variant
                     && a.restarts[i].promotion_stage == b.restarts[i].promotion_stage
                     && a.restarts[i].sa_iterations == b.restarts[i].sa_iterations
+                    && a.restarts[i].sa_t0 == b.restarts[i].sa_t0
+                    && a.restarts[i].sa_t1 == b.restarts[i].sa_t1
+                    && a.restarts[i].sa_temperature_samples
+                        == b.restarts[i].sa_temperature_samples
+                    && a.restarts[i].sa_temperature_calibrated
+                        == b.restarts[i].sa_temperature_calibrated
                     && a.restarts[i].centroid_x == b.restarts[i].centroid_x
                     && a.restarts[i].centroid_y == b.restarts[i].centroid_y
                     && a.restarts[i].radius == b.restarts[i].radius,
                 "restart records are invariant to restart parallelism");
     }
+}
+
+
+ALDOUS_TEST(test_sa_temperature_calibration_and_multiple_candidate_proposals) {
+    Rng points_rng(808080);
+    Instance inst;
+    inst.periodic = true;
+    inst.generate(144, points_rng);
+    inst.build_knn(20, KnnBackend::GridExact);
+
+    SolverOptions fixed;
+    fixed.seed = 808081;
+    fixed.subset_restarts = 3;
+    fixed.sa_iters = 120;
+    fixed.staged_search = false;
+    fixed.final_exhaustive_k = 0;
+    fixed.disable_subset_swap = true;
+    fixed.disable_pair_exchange = true;
+    fixed.disable_ruin_recreate = true;
+    fixed.disable_ejection_chain = true;
+    fixed.disable_path_relink = true;
+    fixed.restart_threads = 1;
+
+    Rng fixed_rng(808082);
+    const SolveResult fixed_result = solve_subset(inst, 52, fixed_rng, fixed);
+    require(fixed_result.stats.sa_multiple_try_iterations == 0U,
+            "one-candidate SA preserves the historical proposal controller");
+    require(fixed_result.stats.sa_temperature_calibrations == 0U
+                && fixed_result.stats.sa_temperature_fallbacks == 0U,
+            "fixed SA endpoints do not report calibration activity");
+    for (const RestartRecord& record : fixed_result.restarts) {
+        require(record.sa_t0 == fixed.sa_t0 && record.sa_t1 == fixed.sa_t1,
+                "fixed schedules serialize their exact configured endpoints");
+        require(record.sa_temperature_samples == 0U
+                    && !record.sa_temperature_calibrated,
+                "fixed schedules serialize no calibration samples");
+    }
+
+    SolverOptions calibrated = fixed;
+    calibrated.sa_auto_temperature = true;
+    calibrated.sa_temperature_samples = 32;
+    calibrated.sa_temperature_quantile = 0.5;
+    calibrated.sa_initial_uphill_acceptance = 0.6;
+    calibrated.sa_final_uphill_acceptance = 0.02;
+    calibrated.sa_candidate_trials = 4;
+    calibrated.sa_multiple_try_random_probability = 0.15;
+
+    Rng one_rng(808083);
+    const SolveResult one = solve_subset(inst, 52, one_rng, calibrated);
+    require(one.stats.sa_temperature_schedules == one.restarts.size(),
+            "every SA restart records one temperature schedule");
+    require(one.stats.sa_temperature_calibrations > 0U,
+            "representative subset restarts calibrate from uphill deltas");
+    require(one.stats.sa_candidate_evaluations >= one.stats.sa_moves,
+            "multiple-candidate telemetry counts every evaluated proposal");
+    require(one.stats.sa_multiple_try_iterations
+                == static_cast<std::uint64_t>(calibrated.subset_restarts
+                                              * calibrated.sa_iters),
+            "multiple-candidate telemetry counts every allocated SA iteration");
+    require(std::accumulate(one.stats.sa_decile_moves.begin(),
+                            one.stats.sa_decile_moves.end(), std::uint64_t{0})
+                == one.stats.sa_moves,
+            "temperature-decile move telemetry reconciles with aggregate SA moves");
+    require(std::accumulate(one.stats.sa_decile_accepted.begin(),
+                            one.stats.sa_decile_accepted.end(), std::uint64_t{0})
+                == one.stats.sa_accepted,
+            "temperature-decile acceptance telemetry reconciles with aggregate acceptance");
+    for (const RestartRecord& record : one.restarts) {
+        require(record.sa_t0 > record.sa_t1 && record.sa_t1 > 0.0,
+                "every resolved SA schedule is finite and decreasing");
+        require(record.sa_temperature_samples > 0U,
+                "calibration records the sampled uphill population");
+    }
+
+    calibrated.restart_threads = 3;
+    Rng parallel_rng(808083);
+    const SolveResult parallel = solve_subset(inst, 52, parallel_rng, calibrated);
+    require(parallel.tour.nodes == one.tour.nodes
+                && parallel.tour.length == one.tour.length
+                && parallel.best_restart == one.best_restart,
+            "calibrated multiple-candidate SA is restart-thread invariant");
+    require(parallel.stats.sa_moves == one.stats.sa_moves
+                && parallel.stats.sa_accepted == one.stats.sa_accepted
+                && parallel.stats.sa_candidate_evaluations
+                    == one.stats.sa_candidate_evaluations
+                && parallel.stats.sa_temperature_calibrations
+                    == one.stats.sa_temperature_calibrations
+                && parallel.stats.sa_decile_moves == one.stats.sa_decile_moves
+                && parallel.stats.sa_decile_accepted == one.stats.sa_decile_accepted,
+            "calibrated multiple-candidate discrete telemetry is thread invariant");
+    require(parallel.restarts.size() == one.restarts.size(),
+            "calibrated restart record count is thread invariant");
+    for (std::size_t i = 0; i < one.restarts.size(); ++i) {
+        const RestartRecord& lhs = one.restarts[i];
+        const RestartRecord& rhs = parallel.restarts[i];
+        require(lhs.length == rhs.length && lhs.kind == rhs.kind
+                    && lhs.role == rhs.role && lhs.seed_variant == rhs.seed_variant
+                    && lhs.sa_iterations == rhs.sa_iterations
+                    && lhs.sa_t0 == rhs.sa_t0 && lhs.sa_t1 == rhs.sa_t1
+                    && lhs.sa_temperature_samples == rhs.sa_temperature_samples
+                    && lhs.sa_temperature_calibrated
+                        == rhs.sa_temperature_calibrated,
+                "calibrated restart schedules are bit-identical across worker counts");
+    }
+
+    SolverOptions invalid = calibrated;
+    invalid.sa_initial_uphill_acceptance = invalid.sa_final_uphill_acceptance;
+    std::string error;
+    require(!validate_solver_options(invalid, error)
+                && error.find("sa-initial-uphill-acceptance") != std::string::npos,
+            "shared validation rejects nondecreasing calibrated acceptance targets");
 }
 
 ALDOUS_TEST(test_best_restart_diagnostic) {
@@ -428,6 +545,9 @@ ALDOUS_TEST(test_deterministic_restart_racing) {
                     && a.role == b.role && a.seed_variant == b.seed_variant
                     && a.promotion_stage == b.promotion_stage
                     && a.sa_iterations == b.sa_iterations
+                    && a.sa_t0 == b.sa_t0 && a.sa_t1 == b.sa_t1
+                    && a.sa_temperature_samples == b.sa_temperature_samples
+                    && a.sa_temperature_calibrated == b.sa_temperature_calibrated
                     && a.centroid_x == b.centroid_x
                     && a.centroid_y == b.centroid_y && a.radius == b.radius,
                 "enabling racing leaves independent diagnostics bit-identical");
@@ -481,6 +601,9 @@ ALDOUS_TEST(test_deterministic_restart_racing) {
                     && a.role == b.role && a.seed_variant == b.seed_variant
                     && a.promotion_stage == b.promotion_stage
                     && a.sa_iterations == b.sa_iterations
+                    && a.sa_t0 == b.sa_t0 && a.sa_t1 == b.sa_t1
+                    && a.sa_temperature_samples == b.sa_temperature_samples
+                    && a.sa_temperature_calibrated == b.sa_temperature_calibrated
                     && a.centroid_x == b.centroid_x
                     && a.centroid_y == b.centroid_y && a.radius == b.radius,
                 "racing records are invariant to restart worker count");

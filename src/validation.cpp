@@ -33,6 +33,12 @@ bool validate_solver_cross_options(const SolverOptions& solver, std::string& err
         error = "deterministic restart racing is incompatible with --time-budget-per-p";
         return false;
     }
+    if (!(solver.sa_initial_uphill_acceptance
+          > solver.sa_final_uphill_acceptance)) {
+        error = "--sa-initial-uphill-acceptance must exceed "
+                "--sa-final-uphill-acceptance";
+        return false;
+    }
     if (solver.path_relink_top > 0
         && solver.path_relink_diverse_reserve > solver.path_relink_top) {
         error = "--path-relink-diverse-reserve must not exceed --path-relink-top";

@@ -145,7 +145,8 @@ def main() -> int:
         restart_arrays = {
             "restart_values", "restart_kinds", "restart_sweeps", "restart_roles",
             "restart_variants", "restart_promotion_stages", "restart_sa_iterations",
-            "restart_strong_polished", "restart_centroids_x", "restart_centroids_y", "restart_radii",
+            "restart_sa_t0", "restart_sa_t1", "restart_sa_temperature_samples",
+            "restart_sa_temperature_calibrated", "restart_strong_polished", "restart_centroids_x", "restart_centroids_y", "restart_radii",
         }
         assert all(restart_arrays.isdisjoint(row) for row in exact_p_rows), exact_p_rows
         assert all(row["exact_optimal_instances"] == 1 for row in exact_doc["summary_rows"]), exact_doc["summary_rows"]
@@ -184,6 +185,19 @@ def main() -> int:
         assert racing_row["restart_promotion_stages"].count(1) == 2, racing_row
         assert racing_row["restart_promotion_stages"].count(2) == 2, racing_row
         assert sorted(racing_row["restart_sa_iterations"][-4:]) == [5, 5, 25, 25], racing_row
+        assert len(racing_row["restart_sa_t0"]) == racing_row["executed_restarts"], racing_row
+        assert len(racing_row["restart_sa_t1"]) == racing_row["executed_restarts"], racing_row
+        assert all(
+            (iterations == 0 and t0 == 0.0 and t1 == 0.0)
+            or (iterations > 0 and t0 > t1 > 0.0)
+            for iterations, t0, t1 in zip(
+                racing_row["restart_sa_iterations"],
+                racing_row["restart_sa_t0"],
+                racing_row["restart_sa_t1"],
+            )
+        ), racing_row
+        assert racing_doc["search_stats"]["sa_temperature_schedules"] > 0, racing_doc["search_stats"]
+        assert sum(racing_doc["search_stats"]["sa_decile_moves"]) == racing_doc["search_stats"]["sa_moves"], racing_doc["search_stats"]
 
         identity_doc = run_case(
             exe,

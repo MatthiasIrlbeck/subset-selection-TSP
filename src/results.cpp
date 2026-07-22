@@ -275,6 +275,40 @@ void write_restart_sa_iteration_array(
     out << ']';
 }
 
+void write_restart_sa_temperature_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records,
+    const bool start) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        write_json_double(out, start ? records[i].sa_t0 : records[i].sa_t1);
+    }
+    out << ']';
+}
+
+void write_restart_sa_temperature_sample_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << records[i].sa_temperature_samples;
+    }
+    out << ']';
+}
+
+void write_restart_sa_temperature_calibrated_array(
+    std::ostream& out,
+    const std::vector<RestartRecord>& records) {
+    out << '[';
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        if (i != 0U) { out << ", "; }
+        out << (records[i].sa_temperature_calibrated ? "true" : "false");
+    }
+    out << ']';
+}
+
 void write_restart_strong_polished_array(
     std::ostream& out,
     const std::vector<RestartRecord>& records) {
@@ -327,6 +361,17 @@ void write_phase_timing(std::ostream& out, const SearchPhaseTiming& phases, cons
     out << indent << '}';
 }
 
+template <std::size_t Size>
+void write_u64_array(std::ostream& out,
+                     const std::array<std::uint64_t, Size>& values) {
+    out << '[';
+    for (std::size_t i = 0U; i < Size; ++i) {
+        if (i != 0U) { out << ", "; }
+        out << values[i];
+    }
+    out << ']';
+}
+
 void write_stats(std::ostream& out, const SearchStats& stats, const std::string& indent) {
     out << indent << "{\n"
         << indent << "  \"exact_subset_calls\": " << stats.exact_subset_calls << ",\n"
@@ -363,6 +408,36 @@ void write_stats(std::ostream& out, const SearchStats& stats, const std::string&
         << indent << "  \"sa_moves\": " << stats.sa_moves << ",\n"
         << indent << "  \"sa_accepted\": " << stats.sa_accepted << ",\n"
         << indent << "  \"sa_improving\": " << stats.sa_improving << ",\n"
+        << indent << "  \"sa_candidate_evaluations\": " << stats.sa_candidate_evaluations << ",\n"
+        << indent << "  \"sa_multiple_try_iterations\": " << stats.sa_multiple_try_iterations << ",\n"
+        << indent << "  \"sa_temperature_schedules\": " << stats.sa_temperature_schedules << ",\n"
+        << indent << "  \"sa_temperature_calibrations\": " << stats.sa_temperature_calibrations << ",\n"
+        << indent << "  \"sa_temperature_fallbacks\": " << stats.sa_temperature_fallbacks << ",\n"
+        << indent << "  \"sa_calibration_attempts\": " << stats.sa_calibration_attempts << ",\n"
+        << indent << "  \"sa_calibration_uphill_samples\": " << stats.sa_calibration_uphill_samples << ",\n";
+    out << indent << "  \"sa_temperature_t0_sum\": ";
+    write_json_double(out, stats.sa_temperature_t0_sum);
+    out << ",\n" << indent << "  \"sa_temperature_t1_sum\": ";
+    write_json_double(out, stats.sa_temperature_t1_sum);
+    out << ",\n" << indent << "  \"sa_temperature_t0_min\": ";
+    write_json_double(out, stats.sa_temperature_schedules > 0U
+        ? stats.sa_temperature_t0_min : 0.0);
+    out << ",\n" << indent << "  \"sa_temperature_t0_max\": ";
+    write_json_double(out, stats.sa_temperature_t0_max);
+    out << ",\n" << indent << "  \"sa_temperature_t1_min\": ";
+    write_json_double(out, stats.sa_temperature_schedules > 0U
+        ? stats.sa_temperature_t1_min : 0.0);
+    out << ",\n" << indent << "  \"sa_temperature_t1_max\": ";
+    write_json_double(out, stats.sa_temperature_t1_max);
+    out << ",\n" << indent << "  \"sa_decile_moves\": ";
+    write_u64_array(out, stats.sa_decile_moves);
+    out << ",\n" << indent << "  \"sa_decile_uphill_moves\": ";
+    write_u64_array(out, stats.sa_decile_uphill_moves);
+    out << ",\n" << indent << "  \"sa_decile_accepted\": ";
+    write_u64_array(out, stats.sa_decile_accepted);
+    out << ",\n" << indent << "  \"sa_decile_uphill_accepted\": ";
+    write_u64_array(out, stats.sa_decile_uphill_accepted);
+    out << ",\n"
         << indent << "  \"subset_swap_scans\": " << stats.subset_swap_scans << ",\n"
         << indent << "  \"subset_swap_improvements\": " << stats.subset_swap_improvements << ",\n"
         << indent << "  \"highp_exchange_scans\": " << stats.highp_exchange_scans << ",\n"
@@ -553,6 +628,14 @@ void write_instance_rows(std::ostream& out, const std::vector<InstanceResultRow>
                 write_restart_promotion_stage_array(out, pv.restarts);
                 out << ",\n          \"restart_sa_iterations\": ";
                 write_restart_sa_iteration_array(out, pv.restarts);
+                out << ",\n          \"restart_sa_t0\": ";
+                write_restart_sa_temperature_array(out, pv.restarts, true);
+                out << ",\n          \"restart_sa_t1\": ";
+                write_restart_sa_temperature_array(out, pv.restarts, false);
+                out << ",\n          \"restart_sa_temperature_samples\": ";
+                write_restart_sa_temperature_sample_array(out, pv.restarts);
+                out << ",\n          \"restart_sa_temperature_calibrated\": ";
+                write_restart_sa_temperature_calibrated_array(out, pv.restarts);
                 out << ",\n          \"restart_strong_polished\": ";
                 write_restart_strong_polished_array(out, pv.restarts);
                 out << ",\n          \"restart_centroids_x\": ";

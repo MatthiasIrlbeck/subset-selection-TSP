@@ -105,7 +105,7 @@ The annealing temperature schedule is computed from the iteration index directly
 T(it) = T0 * exp(log(T1/T0) * it/(iters-1))
 ```
 
-This guarantees the first iteration uses `T0` and the final iteration uses `T1`; for a one-iteration run, the solver uses `T0`.
+This guarantees the first iteration uses `T0` and the final iteration uses `T1`; for a one-iteration run, the solver uses `T0`. The release default uses the fixed `sa_t0` and `sa_t1` endpoints and one candidate proposal per iteration. Opt-in restart-local temperature calibration and multiple-candidate proposals are described in [Experimental simulated-annealing controls](sa_experiments.md); both preserve the historical path when disabled and expose per-restart and temperature-decile telemetry for matched-compute tuning.
 
 ### Iteration budgets
 

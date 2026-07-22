@@ -49,4 +49,6 @@ when the measured frontier shows material interactions.
 
 The candidate file is ordinary JSON. Each policy supplies an identifier and a
 list of CLI arguments; no shell parsing is used. The checked-in candidate set is
-a starting design, not a claim that one candidate is universally optimal.
+a starting design, not a claim that one candidate is universally optimal. It
+also includes opt-in restart-local SA calibration and multiple-candidate
+proposal policies; see [Experimental simulated-annealing controls](sa_experiments.md).

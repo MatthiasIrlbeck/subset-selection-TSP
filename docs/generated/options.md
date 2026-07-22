@@ -70,6 +70,13 @@ This file is generated from `config/options.json`. Do not edit it directly.
 | `--kick-t0` | `kick_t0` | `0.35` | exclusiveMinimum=0 | SA start temperature for elite-kick restarts. |
 | `--sa-t0` | `sa_t0` | `1.4` | exclusiveMinimum=0 | Fixed SA start temperature. |
 | `--sa-t1` | `sa_t1` | `5e-05` | exclusiveMinimum=0 | Fixed SA end temperature. |
+| `--sa-auto-temperature` | `sa_auto_temperature` | `false` | boolean | Calibrate each restart's SA temperatures from sampled uphill move deltas. |
+| `--sa-temperature-samples` | `sa_temperature_samples` | `256` | minimum=1, maximum=65536 | Target positive-delta samples for restart-local SA calibration. |
+| `--sa-temperature-quantile` | `sa_temperature_quantile` | `0.5` | exclusiveMinimum=0, maximum=1 | Positive-delta quantile used to calibrate SA endpoints. |
+| `--sa-initial-uphill-acceptance` | `sa_initial_uphill_acceptance` | `0.6` | exclusiveMinimum=0, exclusiveMaximum=1 | Target initial acceptance for the calibrated uphill-delta quantile. |
+| `--sa-final-uphill-acceptance` | `sa_final_uphill_acceptance` | `0.01` | exclusiveMinimum=0, exclusiveMaximum=1 | Target final acceptance for the calibrated uphill-delta quantile. |
+| `--sa-candidate-trials` | `sa_candidate_trials` | `1` | minimum=1, maximum=64 | Candidate swaps evaluated per SA iteration; one preserves the historical proposal. |
+| `--sa-multiple-try-random-probability` | `sa_multiple_try_random_probability` | `0.1` | minimum=0, maximum=1 | For multiple-try SA, probability of selecting a random valid trial instead of the best. |
 | `--restart-threads` | `restart_threads` | `1` | minimum=0 | Parallel subset-restart workers; zero requests automatic allocation. |
 | `--time-budget-per-p` | `time_budget_per_p` | `0.0` | minimum=0 | Wall-clock target per instance/p solve; zero disables anytime mode. |
 | `--mode` | `mode` | `balanced` | enum=['balanced', 'smallp-region', 'highp-delete', 'hybrid'] | Solver mode: balanced, smallp-region, highp-delete, or hybrid. |

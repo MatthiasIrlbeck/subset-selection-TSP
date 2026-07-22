@@ -347,6 +347,13 @@
         "kick_t0",
         "sa_t0",
         "sa_t1",
+        "sa_auto_temperature",
+        "sa_temperature_samples",
+        "sa_temperature_quantile",
+        "sa_initial_uphill_acceptance",
+        "sa_final_uphill_acceptance",
+        "sa_candidate_trials",
+        "sa_multiple_try_random_probability",
         "restart_threads",
         "time_budget_per_p",
         "final_exhaustive_k",
@@ -805,6 +812,53 @@
           "exclusiveMinimum": 0,
           "description": "Fixed SA end temperature.",
           "default": 5e-05
+        },
+        "sa_auto_temperature": {
+          "type": "boolean",
+          "description": "Calibrate each restart's SA temperatures from sampled uphill move deltas.",
+          "default": false
+        },
+        "sa_temperature_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536,
+          "description": "Target positive-delta samples for restart-local SA calibration.",
+          "default": 256
+        },
+        "sa_temperature_quantile": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Positive-delta quantile used to calibrate SA endpoints.",
+          "default": 0.5
+        },
+        "sa_initial_uphill_acceptance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Target initial acceptance for the calibrated uphill-delta quantile.",
+          "default": 0.6
+        },
+        "sa_final_uphill_acceptance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Target final acceptance for the calibrated uphill-delta quantile.",
+          "default": 0.01
+        },
+        "sa_candidate_trials": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Candidate swaps evaluated per SA iteration; one preserves the historical proposal.",
+          "default": 1
+        },
+        "sa_multiple_try_random_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "For multiple-try SA, probability of selecting a random valid trial instead of the best.",
+          "default": 0.1
         },
         "restart_threads": {
           "type": "integer",
@@ -1317,6 +1371,103 @@
         "sa_improving": {
           "type": "integer",
           "minimum": 0
+        },
+        "sa_candidate_evaluations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Valid candidate swap evaluations performed by the SA proposal controller."
+        },
+        "sa_multiple_try_iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "SA iterations that used more than one candidate trial."
+        },
+        "sa_temperature_schedules": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restart schedules with at least one allocated SA iteration."
+        },
+        "sa_temperature_calibrations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restart schedules successfully calibrated from sampled uphill deltas."
+        },
+        "sa_temperature_fallbacks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Requested restart calibrations that safely fell back to fixed endpoints."
+        },
+        "sa_calibration_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_calibration_uphill_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_temperature_t0_sum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_sum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t0_min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t0_max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_decile_moves": {
+          "type": "array",
+          "description": "Valid SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_uphill_moves": {
+          "type": "array",
+          "description": "Uphill SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_accepted": {
+          "type": "array",
+          "description": "Accepted SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_uphill_accepted": {
+          "type": "array",
+          "description": "Accepted uphill SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
         },
         "subset_swap_scans": {
           "type": "integer",
@@ -1982,6 +2133,37 @@
           "items": {
             "type": "integer",
             "minimum": 0
+          }
+        },
+        "restart_sa_t0": {
+          "type": "array",
+          "description": "Actual initial SA temperature used by each recorded restart; zero when that restart performed no SA.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_sa_t1": {
+          "type": "array",
+          "description": "Actual final SA temperature used by each recorded restart; zero when that restart performed no SA.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_sa_temperature_samples": {
+          "type": "array",
+          "description": "Positive-delta calibration samples collected for each recorded restart.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "restart_sa_temperature_calibrated": {
+          "type": "array",
+          "description": "Whether each recorded restart used calibrated rather than fixed SA endpoints.",
+          "items": {
+            "type": "boolean"
           }
         },
         "restart_strong_polished": {

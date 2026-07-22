@@ -141,6 +141,16 @@ Subset search:
   --kick-t0 <float>                       SA start temperature for elite-kick restarts. (default: 0.35)
   --sa-t0 <float>                         Fixed SA start temperature. (default: 1.4)
   --sa-t1 <float>                         Fixed SA end temperature. (default: 5e-05)
+  --sa-auto-temperature[=bool]            Calibrate each restart's SA temperatures from sampled uphill move deltas.
+                                          (default: false)
+  --sa-temperature-samples <int>          Target positive-delta samples for restart-local SA calibration. (default: 256)
+  --sa-temperature-quantile <float>       Positive-delta quantile used to calibrate SA endpoints. (default: 0.5)
+  --sa-initial-uphill-acceptance <float>  Target initial acceptance for the calibrated uphill-delta quantile. (default: 0.6)
+  --sa-final-uphill-acceptance <float>    Target final acceptance for the calibrated uphill-delta quantile. (default: 0.01)
+  --sa-candidate-trials <int>             Candidate swaps evaluated per SA iteration; one preserves the historical proposal.
+                                          (default: 1)
+  --sa-multiple-try-random-probability <float> For multiple-try SA, probability of selecting a random valid trial instead of the
+                                          best. (default: 0.1)
   --restart-threads <int>                 Parallel subset-restart workers; zero requests automatic allocation. (default: 1)
   --time-budget-per-p <sec>               Wall-clock target per instance/p solve; zero disables anytime mode. (default: 0.0)
   --mode <name>                           Solver mode: balanced, smallp-region, highp-delete, or hybrid. (default: balanced)
@@ -697,6 +707,49 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
         if (!parse_double(value, opt.solver.sa_t1)) { error = "invalid floating-point value for --sa-t1: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-auto-temperature") {
+        bool matched = false;
+        bool value = true;
+        if (!bool_argument(arg, flag, matched, value, error)) { return GeneratedCliParseResult::Error; }
+        opt.solver.sa_auto_temperature = value;
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-temperature-samples") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_int(value, opt.solver.sa_temperature_samples)) { error = "invalid integer for --sa-temperature-samples: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-temperature-quantile") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_double(value, opt.solver.sa_temperature_quantile)) { error = "invalid floating-point value for --sa-temperature-quantile: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-initial-uphill-acceptance") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_double(value, opt.solver.sa_initial_uphill_acceptance)) { error = "invalid floating-point value for --sa-initial-uphill-acceptance: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-final-uphill-acceptance") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_double(value, opt.solver.sa_final_uphill_acceptance)) { error = "invalid floating-point value for --sa-final-uphill-acceptance: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-candidate-trials") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_int(value, opt.solver.sa_candidate_trials)) { error = "invalid integer for --sa-candidate-trials: " + value; return GeneratedCliParseResult::Error; }
+        return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--sa-multiple-try-random-probability") {
+        std::string value;
+        if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        if (!parse_double(value, opt.solver.sa_multiple_try_random_probability)) { error = "invalid floating-point value for --sa-multiple-try-random-probability: " + value; return GeneratedCliParseResult::Error; }
         return GeneratedCliParseResult::Matched;
     }
     if (flag == "--restart-threads") {

@@ -38,6 +38,28 @@
         "--strong-polish-finalists",
         "4"
       ]
+    },
+    {
+      "id": "calibrated-fixed-proposal",
+      "description": "Restart-local temperature calibration with the historical one-candidate proposal.",
+      "args": [
+        "--sa-auto-temperature",
+        "--sa-temperature-samples",
+        "256"
+      ]
+    },
+    {
+      "id": "calibrated-mt4",
+      "description": "Calibrated schedule with four candidate trials and a 10% random-trial branch.",
+      "args": [
+        "--sa-auto-temperature",
+        "--sa-temperature-samples",
+        "256",
+        "--sa-candidate-trials",
+        "4",
+        "--sa-multiple-try-random-probability",
+        "0.1"
+      ]
     }
   ]
 }

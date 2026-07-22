@@ -26,6 +26,7 @@ void apply_generated_quick_preset(RunOptions& opt) {
     opt.solver.tsp_patience = 8;
     opt.solver.subset_restarts = 1;
     opt.solver.sa_iters = 250;
+    opt.solver.sa_temperature_samples = 32;
     opt.solver.pair_exchange_passes = 0;
     opt.solver.ruin_recreate_rounds = 1;
     opt.solver.path_relink_top = 0;
@@ -111,6 +112,19 @@ bool validate_generated_option_ranges(const RunOptions& opt, std::string& error)
     if (!(opt.solver.sa_t0 > 0)) { error = "--sa-t0 must be > 0"; return false; }
     if (!std::isfinite(opt.solver.sa_t1)) { error = "--sa-t1 must be finite"; return false; }
     if (!(opt.solver.sa_t1 > 0)) { error = "--sa-t1 must be > 0"; return false; }
+    if (opt.solver.sa_temperature_samples < 1 || opt.solver.sa_temperature_samples > 65536) { error = "--sa-temperature-samples must be in [1,65536]"; return false; }
+    if (!std::isfinite(opt.solver.sa_temperature_quantile)) { error = "--sa-temperature-quantile must be finite"; return false; }
+    if (opt.solver.sa_temperature_quantile > 1) { error = "--sa-temperature-quantile must be <= 1"; return false; }
+    if (!(opt.solver.sa_temperature_quantile > 0)) { error = "--sa-temperature-quantile must be > 0"; return false; }
+    if (!std::isfinite(opt.solver.sa_initial_uphill_acceptance)) { error = "--sa-initial-uphill-acceptance must be finite"; return false; }
+    if (!(opt.solver.sa_initial_uphill_acceptance > 0)) { error = "--sa-initial-uphill-acceptance must be > 0"; return false; }
+    if (!(opt.solver.sa_initial_uphill_acceptance < 1)) { error = "--sa-initial-uphill-acceptance must be < 1"; return false; }
+    if (!std::isfinite(opt.solver.sa_final_uphill_acceptance)) { error = "--sa-final-uphill-acceptance must be finite"; return false; }
+    if (!(opt.solver.sa_final_uphill_acceptance > 0)) { error = "--sa-final-uphill-acceptance must be > 0"; return false; }
+    if (!(opt.solver.sa_final_uphill_acceptance < 1)) { error = "--sa-final-uphill-acceptance must be < 1"; return false; }
+    if (opt.solver.sa_candidate_trials < 1 || opt.solver.sa_candidate_trials > 64) { error = "--sa-candidate-trials must be in [1,64]"; return false; }
+    if (!std::isfinite(opt.solver.sa_multiple_try_random_probability)) { error = "--sa-multiple-try-random-probability must be finite"; return false; }
+    if (opt.solver.sa_multiple_try_random_probability < 0 || opt.solver.sa_multiple_try_random_probability > 1) { error = "--sa-multiple-try-random-probability must be in [0,1]"; return false; }
     if (opt.solver.restart_threads < 0) { error = "--restart-threads must be >= 0"; return false; }
     if (!std::isfinite(opt.solver.time_budget_per_p)) { error = "--time-budget-per-p must be finite"; return false; }
     if (opt.solver.time_budget_per_p < 0) { error = "--time-budget-per-p must be >= 0"; return false; }
@@ -314,6 +328,20 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     writer.number(opt.solver.sa_t0);
     out << ",\n" << indent << "  \"sa_t1\": ";
     writer.number(opt.solver.sa_t1);
+    out << ",\n" << indent << "  \"sa_auto_temperature\": ";
+    out << (opt.solver.sa_auto_temperature ? "true" : "false");
+    out << ",\n" << indent << "  \"sa_temperature_samples\": ";
+    out << opt.solver.sa_temperature_samples;
+    out << ",\n" << indent << "  \"sa_temperature_quantile\": ";
+    writer.number(opt.solver.sa_temperature_quantile);
+    out << ",\n" << indent << "  \"sa_initial_uphill_acceptance\": ";
+    writer.number(opt.solver.sa_initial_uphill_acceptance);
+    out << ",\n" << indent << "  \"sa_final_uphill_acceptance\": ";
+    writer.number(opt.solver.sa_final_uphill_acceptance);
+    out << ",\n" << indent << "  \"sa_candidate_trials\": ";
+    out << opt.solver.sa_candidate_trials;
+    out << ",\n" << indent << "  \"sa_multiple_try_random_probability\": ";
+    writer.number(opt.solver.sa_multiple_try_random_probability);
     out << ",\n" << indent << "  \"restart_threads\": ";
     out << opt.solver.restart_threads;
     out << ",\n" << indent << "  \"time_budget_per_p\": ";

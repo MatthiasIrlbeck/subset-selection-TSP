@@ -572,8 +572,6 @@ SolveResult solve_subset(const Instance& inst,
         std::chrono::duration<double>(Clock::now() - seed_pool_start).count();
     const int sa_iters_eff = effective_sa_iters(options, k, inst.N);
     const double time_budget = options.time_budget_per_p;
-    const double sa_t0 = options.sa_t0 > 0.0 ? options.sa_t0 : 1.4;
-    const double sa_t1 = options.sa_t1 > 0.0 ? options.sa_t1 : 0.00005;
     const int restart_threads = std::max(1, options.restart_threads);
     // One base draw, then a derived stream per restart: restart results are a
     // pure function of (options, instance, restart index), so the outcome is
@@ -719,10 +717,6 @@ SolveResult solve_subset(const Instance& inst,
         // Elite-seeded restarts (scheduled kicks and anytime ILS) anneal at the
         // reduced kick_t0: a full-melt t0 would erase the inherited structure
         // and reduce the kick to an independent restart with a biased seed.
-        const double restart_t0 = out.elite_seed
-            ? std::min(sa_t0, options.kick_t0 > 0.0 ? options.kick_t0 : 0.35)
-            : sa_t0;
-        const double restart_log_ratio = std::log(sa_t1 / restart_t0);
         const int restart_sa_iters = sa_iterations_override >= 0
             ? sa_iterations_override : sa_iters_eff;
         // Insertion policy is per seed kind. Windowed insertion only offers
@@ -786,6 +780,30 @@ SolveResult solve_subset(const Instance& inst,
         SubsetIndex sindex;
         if (use_spatial) { sindex.build(inst, tour); }
         const int spatial_neighbors = std::max(1, options.sa_spatial_neighbors);
+        const SaTemperatureSchedule schedule = resolve_sa_temperature_schedule(
+            inst, tour, rrng, options, out.elite_seed, restart_exact_insertion,
+            use_spatial ? &sindex : nullptr, spatial_neighbors, restart_sa_iters);
+        const double restart_log_ratio = std::log(schedule.t1 / schedule.t0);
+        if (restart_sa_iters > 0) {
+            ++out.stats.sa_temperature_schedules;
+            out.stats.sa_calibration_attempts += schedule.attempts;
+            out.stats.sa_calibration_uphill_samples += schedule.uphill_samples;
+            if (schedule.calibrated) {
+                ++out.stats.sa_temperature_calibrations;
+            } else if (options.sa_auto_temperature) {
+                ++out.stats.sa_temperature_fallbacks;
+            }
+            out.stats.sa_temperature_t0_sum += schedule.t0;
+            out.stats.sa_temperature_t1_sum += schedule.t1;
+            out.stats.sa_temperature_t0_min = std::min(
+                out.stats.sa_temperature_t0_min, schedule.t0);
+            out.stats.sa_temperature_t0_max = std::max(
+                out.stats.sa_temperature_t0_max, schedule.t0);
+            out.stats.sa_temperature_t1_min = std::min(
+                out.stats.sa_temperature_t1_min, schedule.t1);
+            out.stats.sa_temperature_t1_max = std::max(
+                out.stats.sa_temperature_t1_max, schedule.t1);
+        }
         {
             ScopedPhaseTimer sa_timer(out.stats.phases.sa_seconds);
             for (int it = 0; it < restart_sa_iters; ++it) {
@@ -794,37 +812,39 @@ SolveResult solve_subset(const Instance& inst,
                 const double frac = (sa_iters_eff <= 1)
                     ? 0.0
                     : static_cast<double>(it) / static_cast<double>(sa_iters_eff - 1);
-                const double temperature = restart_t0 * std::exp(restart_log_ratio * frac);
+                const double temperature = schedule.t0 * std::exp(restart_log_ratio * frac);
                 const bool timing_sample = (it & 63) == 0;
-                const Clock::time_point proposal_start = timing_sample ? Clock::now() : Clock::time_point{};
-                const int ri = rrng.randint(tour.k);
-                const int add = choose_swap_candidate(inst, tour, ri, rrng);
+                SaProposal proposal = propose_sa_move(
+                    inst, tour, rrng, options, restart_exact_insertion,
+                    use_spatial ? &sindex : nullptr, spatial_neighbors,
+                    timing_sample);
                 if (timing_sample) {
                     ++out.stats.phases.sa_proposal_samples;
                     out.stats.phases.sa_proposal_sample_seconds +=
-                        std::chrono::duration<double>(Clock::now() - proposal_start).count();
-                }
-                if (tour.in_set[static_cast<std::size_t>(add)] != 0U) { continue; }
-                const Clock::time_point insertion_start = timing_sample ? Clock::now() : Clock::time_point{};
-                SwapInsertionMove move =
-                    restart_exact_insertion
-                        ? find_best_insert_after_remove(inst, tour, ri, add)
-                        : (use_spatial
-                               ? find_best_insert_after_remove_spatial(inst, tour, sindex, ri, add,
-                                                                       spatial_neighbors,
-                                                                       std::max(1, options.sa_insertion_window))
-                               : find_best_insert_after_remove_windowed(inst, tour, ri, add,
-                                                                        std::max(1, options.sa_insertion_window)));
-                if (timing_sample) {
+                        proposal.proposal_seconds;
                     ++out.stats.phases.sa_insertion_samples;
                     out.stats.phases.sa_insertion_sample_seconds +=
-                        std::chrono::duration<double>(Clock::now() - insertion_start).count();
+                        proposal.insertion_seconds;
                 }
+                out.stats.sa_candidate_evaluations += proposal.candidate_evaluations;
+                if (options.sa_candidate_trials > 1) {
+                    ++out.stats.sa_multiple_try_iterations;
+                }
+                const SwapInsertionMove& move = proposal.move;
                 if (!move.valid) { continue; }
                 const double delta = move.delta;
                 ++out.stats.sa_moves;
+                const std::size_t temperature_bin = std::min<std::size_t>(
+                    kSaTemperatureBins - 1U,
+                    static_cast<std::size_t>(std::floor(
+                        frac * static_cast<double>(kSaTemperatureBins))));
+                ++out.stats.sa_decile_moves[temperature_bin];
                 const bool improving = delta < -kImprovementEps;
-                const bool accept = improving || rrng.uniform() < std::exp(-std::max(0.0, delta) / std::max(temperature, 1e-12));
+                const bool uphill = delta > kImprovementEps;
+                if (uphill) { ++out.stats.sa_decile_uphill_moves[temperature_bin]; }
+                const bool accept = improving
+                    || rrng.uniform() < std::exp(
+                        -std::max(0.0, delta) / std::max(temperature, 1e-12));
                 if (accept) {
                     const int removed_node = tour.nodes[static_cast<std::size_t>(move.remove_pos)];
                     tour.apply_swap_post_rem(move.remove_pos, move.post_pred, move.add_node, inst, move.delta);
@@ -833,6 +853,10 @@ SolveResult solve_subset(const Instance& inst,
                         sindex.add_member(inst, move.add_node);
                     }
                     ++out.stats.sa_accepted;
+                    ++out.stats.sa_decile_accepted[temperature_bin];
+                    if (uphill) {
+                        ++out.stats.sa_decile_uphill_accepted[temperature_bin];
+                    }
                     if (improving) { ++out.stats.sa_improving; }
                     if (!options.disable_two_opt && (it + 1) % 1000 == 0) {
                         ScopedPhaseTimer checkpoint_timer(out.stats.phases.sa_checkpoint_polish_seconds);
@@ -890,6 +914,10 @@ SolveResult solve_subset(const Instance& inst,
         out.record.seed_variant = seed_variant;
         out.record.promotion_stage = promotion_stage;
         out.record.sa_iterations = static_cast<std::uint64_t>(restart_sa_iters);
+        out.record.sa_t0 = schedule.t0;
+        out.record.sa_t1 = schedule.t1;
+        out.record.sa_temperature_samples = schedule.uphill_samples;
+        out.record.sa_temperature_calibrated = schedule.calibrated;
         out.record.strong_polished = run_strong_inline;
         out.rng_state = rrng;
         out.strong_eligible = !pilot_only;
@@ -1269,6 +1297,11 @@ SolveResult solve_subset(const Instance& inst,
             out.record.seed_variant = old_record.seed_variant;
             out.record.promotion_stage = old_record.promotion_stage;
             out.record.sa_iterations = old_record.sa_iterations;
+            out.record.sa_t0 = old_record.sa_t0;
+            out.record.sa_t1 = old_record.sa_t1;
+            out.record.sa_temperature_samples = old_record.sa_temperature_samples;
+            out.record.sa_temperature_calibrated =
+                old_record.sa_temperature_calibrated;
             out.record.strong_polished = true;
             out.stats.strong_polish_finalists = 1;
             if (tour.length < old_record.length - kImprovementEps) {

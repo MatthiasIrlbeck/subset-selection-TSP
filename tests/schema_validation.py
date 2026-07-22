@@ -88,6 +88,10 @@ def main() -> int:
             p_row["restart_variants"],
             p_row["restart_promotion_stages"],
             p_row["restart_sa_iterations"],
+            p_row["restart_sa_t0"],
+            p_row["restart_sa_t1"],
+            p_row["restart_sa_temperature_samples"],
+            p_row["restart_sa_temperature_calibrated"],
             p_row["restart_strong_polished"],
             p_row["restart_centroids_x"],
             p_row["restart_centroids_y"],
@@ -108,6 +112,11 @@ def main() -> int:
             assert all(code == 0 for code in p_row["restart_sweeps"][:-1]), p_row
             assert p_row["restart_roles"][-1] == 1, p_row
     assert all("p" in row and "key" in row for row in doc["summary_rows"]), doc["summary_rows"]
+    stats = doc["search_stats"]
+    assert sum(stats["sa_decile_moves"]) == stats["sa_moves"], stats
+    assert sum(stats["sa_decile_accepted"]) == stats["sa_accepted"], stats
+    assert stats["sa_temperature_schedules"] >= stats["sa_temperature_calibrations"], stats
+    assert stats["sa_temperature_schedules"] >= stats["sa_temperature_fallbacks"], stats
     assert "knn_build_seconds" in doc["search_stats"], doc["search_stats"]
     assert doc["search_stats"]["knn_requested_grid_instances"] == 1, doc["search_stats"]
     assert doc["search_stats"]["knn_effective_grid_instances"] + doc["search_stats"]["knn_effective_bruteforce_instances"] == 1, doc["search_stats"]
