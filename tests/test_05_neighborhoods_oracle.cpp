@@ -1,6 +1,48 @@
 #include "test_common.hpp"
 
+#include "sha256.hpp"
+
 namespace {
+
+
+ALDOUS_TEST(test_sha256_provenance_primitive) {
+    require(detail::sha256_hex("")
+                == "e3b0c44298fc1c149afbf4c8996fb924"
+                   "27ae41e4649b934ca495991b7852b855",
+            "SHA-256 empty-string test vector matches FIPS 180-4");
+    require(detail::sha256_hex("abc")
+                == "ba7816bf8f01cfea414140de5dae2223"
+                   "b00361a396177a9cb410ff61f20015ad",
+            "SHA-256 abc test vector matches FIPS 180-4");
+    require(detail::sha256_hex(
+                "abcdbcdecdefdefgefghfghighijhijk"
+                "ijkljklmklmnlmnomnopnopq")
+                == "248d6a61d20638b8e5c026930c3e6039"
+                   "a33ce45964ff2167f6ecedd419db06c1",
+            "SHA-256 multi-block test vector is correct");
+
+    const std::filesystem::path dir = std::filesystem::temp_directory_path()
+        / "aldous_tsp_sha256_test";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+    require(!ec, "create SHA-256 test directory");
+    const std::filesystem::path file = dir / "payload.bin";
+    {
+        std::ofstream out(file, std::ios::binary);
+        out << "abc";
+    }
+    std::string digest;
+    std::string error;
+    require(detail::sha256_file(file, digest, error),
+            "SHA-256 file helper reads an ordinary file");
+    require(digest == detail::sha256_hex("abc"),
+            "streaming file SHA-256 matches the byte helper");
+    require(!detail::sha256_file(dir / "missing", digest, error)
+                && !error.empty(),
+            "SHA-256 file helper reports missing files without throwing");
+    std::filesystem::remove_all(dir, ec);
+}
 
 ALDOUS_TEST(test_oracle_large_coordinates_precision) {
     // Regression: LKH stores costs in `int` and multiplies them by its PRECISION
@@ -726,6 +768,12 @@ ALDOUS_TEST(test_oracle_parser_and_fake_lkh) {
     require(build_oracle_context(cfg, ctx, error), "build fake oracle context");
     require(ctx.resolved == ResolvedOracleMode::Lkh, "fake oracle resolved as LKH");
     require(ctx.version == "fake-lkh-1.0", "fake oracle version captured");
+    std::string expected_hash;
+    std::string hash_error;
+    require(detail::sha256_file(script, expected_hash, hash_error),
+            "fake oracle executable can be hashed");
+    require(ctx.exec_sha256 == expected_hash && ctx.exec_sha256.size() == 64U,
+            "oracle context captures the executable SHA-256 identity");
     SearchStats stats;
     const bool improved = external_oracle_polish_tour(tour, inst, ctx, true, &stats);
     require(improved, "fake LKH improves zigzag tour");
@@ -735,6 +783,9 @@ ALDOUS_TEST(test_oracle_parser_and_fake_lkh) {
     require(stats.oracle_call_records.front().type == "tsp" && stats.oracle_call_records.front().status == "improved",
             "oracle call record has type and status");
     require(stats.oracle_call_records.front().gain > 0.0, "oracle call record captures gain");
+    require(stats.oracle_call_records.front().exec_sha256 == expected_hash
+                && stats.oracle_call_records.front().solver_version == ctx.version,
+            "oracle call record preserves executable and version provenance");
     std::filesystem::remove_all(dir, ec);
 }
 

@@ -1197,6 +1197,10 @@
           "type": "string",
           "description": "Resolved oracle executable path."
         },
+        "oracle_exec_sha256": {
+          "type": "string",
+          "description": "SHA-256 identity of the resolved oracle executable, or unknown when it could not be read."
+        },
         "oracle_version": {
           "type": "string",
           "description": "Resolved oracle version."
@@ -1783,6 +1787,14 @@
         },
         "exec_path": {
           "type": "string"
+        },
+        "exec_sha256": {
+          "type": "string",
+          "description": "SHA-256 identity of the executable used for this call, or unknown when it could not be read."
+        },
+        "solver_version": {
+          "type": "string",
+          "description": "Version probe captured when the oracle context was resolved."
         },
         "error": {
           "type": "string"

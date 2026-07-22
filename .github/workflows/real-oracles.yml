@@ -1,0 +1,77 @@
+name: Scheduled real-oracle integration
+
+on:
+  schedule:
+    - cron: "43 4 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lkh-concorde:
+    name: lkh-3.0.14-and-concorde
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl gzip libc6-i386 ninja-build \
+            python3 python3-jsonschema
+      - name: Check generated option surfaces
+        run: python3 scripts/generate_options.py --check
+      - name: Build aldous_tsp
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON
+          cmake --build build --target aldous_tsp --parallel 2
+      - name: Download and build LKH 3.0.14
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p external-solvers downloads
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://webhotel4.ruc.dk/~keld/research/LKH-3/LKH-3.0.14.tgz \
+            --output downloads/LKH-3.0.14.tgz
+          tar -xzf downloads/LKH-3.0.14.tgz -C external-solvers
+          make -C external-solvers/LKH-3.0.14 -j2
+          install -m 0755 external-solvers/LKH-3.0.14/LKH external-solvers/LKH
+      - name: Download official Concorde Linux executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            https://www.math.uwaterloo.ca/tsp/concorde/downloads/codes/linux24/concorde.gz \
+            --output downloads/concorde.gz
+          gzip -dc downloads/concorde.gz > external-solvers/concorde
+          chmod 0755 external-solvers/concorde
+          external-solvers/concorde -h >/dev/null 2>&1 || true
+      - name: Run provenance-checked integration matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/oracle_real_smoke.py \
+            --exe build/aldous_tsp \
+            --schema schema/results.schema.json \
+            --lkh-path external-solvers/LKH \
+            --concorde-path external-solvers/concorde \
+            --require-lkh \
+            --require-concorde \
+            --out-dir real-oracle-evidence
+      - name: Remove copied solver executables before artifact upload
+        if: always()
+        shell: bash
+        run: rm -rf "real-oracle-evidence/solver binaries with spaces"
+      - name: Upload provenance and integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-oracle-integration-evidence
+          if-no-files-found: warn
+          path: real-oracle-evidence

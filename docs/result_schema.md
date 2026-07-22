@@ -39,7 +39,7 @@ The optional diversity-aware subset archive is configured by `elite_diversity_sl
 
 Membership-chain configuration is recorded as `ejection_chain_starts`, `ejection_chain_depth`, `ejection_chain_candidates`, `ejection_chain_remove_cap`, and `ejection_chain_max_uphill`. Search telemetry separates attempted starts, nonempty feasible chains, applied steps, exact candidate scans, accepted improvements, and the sum of accepted prefix depths. `ejection_chain_seconds` is accumulated worker elapsed time, like the other neighborhood phase fields.
 
-The top-level `oracle_call_records` array contains one object per attempted external oracle polish. Each record includes the problem type (`tsp` or `subset`), `k`, solver, TSPLIB format, status, executable path, error detail, before/after length, gain, and elapsed seconds.
+The top-level `oracle_call_records` array contains one object per attempted external oracle polish. Each record includes the problem type (`tsp` or `subset`), `k`, solver, TSPLIB format, status, executable path, executable SHA-256 digest, captured solver version, error detail, before/after length, gain, and elapsed seconds. The same run-level identity is exposed as `config.oracle_exec_path`, `config.oracle_exec_sha256`, and `config.oracle_version`.
 
 `summary` is retained for compatibility as an object keyed by full-precision p-value strings. `summary_rows` is the preferred research/analysis shape: it is an array where every entry explicitly contains `p`, the legacy `key`, `k`, `mean`, `std`, `stderr`, `min`, `max`, `n`, and `values`.
 

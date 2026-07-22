@@ -155,6 +155,7 @@ configure_file(
 
 add_library(aldous_tsp_core
   src/geometry.cpp
+  src/sha256.cpp
   src/generated_options_core.cpp
   src/memory.cpp
   src/validation.cpp
@@ -486,6 +487,10 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       set_tests_properties(original_parity_compat_smoke PROPERTIES TIMEOUT 240)
       add_test(NAME real_oracle_smoke_optional COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/oracle_real_smoke.py --exe $<TARGET_FILE:aldous_tsp> --out-dir ${CMAKE_CURRENT_BINARY_DIR}/real-oracle-smoke)
       set_tests_properties(real_oracle_smoke_optional PROPERTIES TIMEOUT 240)
+      if(NOT WIN32)
+        add_test(NAME oracle_integration_harness_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/oracle_real_smoke.py --exe $<TARGET_FILE:aldous_tsp> --schema ${CMAKE_CURRENT_SOURCE_DIR}/schema/results.schema.json --lkh-path ${CMAKE_CURRENT_SOURCE_DIR}/tests/reference_lkh.py --require-lkh --out-dir ${CMAKE_CURRENT_BINARY_DIR}/oracle-integration-harness)
+        set_tests_properties(oracle_integration_harness_self_test PROPERTIES TIMEOUT 240)
+      endif()
       add_test(NAME cli_regressions COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_regressions.py $<TARGET_FILE:aldous_tsp> ${CMAKE_CURRENT_SOURCE_DIR})
       set_tests_properties(cli_regressions PROPERTIES TIMEOUT 240)
       add_test(NAME schema_validation COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/schema_validation.py $<TARGET_FILE:aldous_tsp> ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/schema-validation)
@@ -513,6 +518,7 @@ if(BUILD_TESTING AND ALDOUS_TSP_BUILD_TESTS)
       add_test(NAME convergence_study_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/convergence_study.py --self-test)
       add_test(NAME policy_tuning_self_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/tune_search_policy.py --self-test)
       set_tests_properties(convergence_study_self_test PROPERTIES TIMEOUT 60)
+      set_tests_properties(policy_tuning_self_test PROPERTIES TIMEOUT 60)
     endif()
   endif()
 endif()

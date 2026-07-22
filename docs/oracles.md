@@ -43,12 +43,13 @@ Oracle metadata is recorded in JSON:
 - `config.oracle_mode`
 - `config.oracle_resolved`
 - `config.oracle_exec_path`
+- `config.oracle_exec_sha256`
 - `config.oracle_version`
 - `config.oracle_format`
 - `config.oracle_time_limit_sec`
 - `config.oracle_scale`
 - `search_stats.oracle_*`
-- `oracle_call_records[]` with one status/error/timing/gain record per attempted call
+- `oracle_call_records[]` with one status/error/timing/gain record per attempted call, including the exact executable path, SHA-256 digest, and captured solver version
 
 ## Testing
 
@@ -59,8 +60,21 @@ The core unit test suite includes a fake LKH executable that:
 3. improves a deliberately bad circle tour,
 4. verifies oracle call, solve, and improvement statistics.
 
-The CTest CLI suite also includes a fake-oracle smoke test. These tests exercise the process-launching path without requiring a real LKH/Concorde installation.
+The CTest CLI suite also includes a fake-oracle smoke test. A provenance-checked integration-harness self-test copies the reference executable to a path containing spaces and a dollar sign, then exercises open explicit-matrix, periodic explicit-matrix, and open `EUC_2D` cases. Every case requires both subset and full-TSP call records and validates the result against the strict JSON schema. These tests exercise process launch, format generation, result parsing, and executable identity without requiring a real LKH/Concorde installation.
+
+A scheduled GitHub Actions workflow, `.github/workflows/real-oracles.yml`, downloads LKH 3.0.14 and the official Concorde Linux executable and runs the same matrix with both solvers required. The uploaded evidence contains JSON, logs, independently calculated binary identities, and per-call provenance; copied solver executables are deleted before artifact upload. Run the same gate locally with:
+
+```bash
+python3 scripts/oracle_real_smoke.py \
+  --exe build/aldous_tsp \
+  --lkh-path /path/to/LKH \
+  --concorde-path /path/to/concorde \
+  --require-lkh --require-concorde \
+  --out-dir real-oracle-evidence
+```
+
+Periodic geometry is tested only through the explicit matrix format because ordinary `EUC_2D` coordinates do not encode minimum-image torus distances.
 
 ## Caveats
 
-External solver output is trusted only after permutation validation. Duplicate nodes, out-of-range nodes, and missing output files are rejected. The JSON document records both aggregate oracle counters and detailed `oracle_call_records`, including solver status, executable path, elapsed time, gain, and per-call error text.
+External solver output is trusted only after permutation validation. Duplicate nodes, out-of-range nodes, and missing output files are rejected. The JSON document records both aggregate oracle counters and detailed `oracle_call_records`, including solver status, executable path, SHA-256 digest, captured version, elapsed time, gain, and per-call error text. The digest is calculated from the resolved binary before any call runs; a copied-path integration test independently confirms that the recorded identity follows the executable content rather than its filename.

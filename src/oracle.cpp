@@ -2,6 +2,8 @@
 
 #include "aldous_tsp/solver.hpp"
 
+#include "sha256.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -1122,11 +1124,16 @@ bool build_oracle_context(const ExternalOracleConfig& cfg, OracleContext& oracle
         oracle.exec_path = concorde;
     }
 
+    std::string hash_error;
+    if (!detail::sha256_file(oracle.exec_path, oracle.exec_sha256, hash_error)) {
+        oracle.exec_sha256 = "unknown";
+    }
     oracle.version = capture_process_first_line({oracle.exec_path, "--version"}, 2);
     std::ostringstream status;
     status << resolved_oracle_mode_name(oracle.resolved)
            << " @ " << oracle.exec_path
-           << " (version=" << oracle.version
+           << " (sha256=" << oracle.exec_sha256
+           << ", version=" << oracle.version
            << ", format=" << oracle_problem_format_name(cfg_copy.problem_format)
            << ", scale=" << cfg_copy.scale
            << ", tsp-top=" << cfg_copy.tsp_top
@@ -1151,6 +1158,8 @@ bool external_oracle_polish_tour(Tour& candidate, const Instance& inst, const Or
     record.solver = resolved_oracle_mode_name(oracle.resolved);
     record.format = oracle_problem_format_name(oracle.cfg.problem_format);
     record.exec_path = oracle.exec_path;
+    record.exec_sha256 = oracle.exec_sha256;
+    record.solver_version = oracle.version;
     record.status = "failed";
     record.error = "not run";
     record.before_length = candidate.length;

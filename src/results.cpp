@@ -523,6 +523,8 @@ void write_oracle_call_records(std::ostream& out, const std::vector<OracleCallRe
             << indent << "    \"format\": \"" << json_escape(r.format) << "\",\n"
             << indent << "    \"status\": \"" << json_escape(r.status) << "\",\n"
             << indent << "    \"exec_path\": \"" << json_escape(r.exec_path) << "\",\n"
+            << indent << "    \"exec_sha256\": \"" << json_escape(r.exec_sha256) << "\",\n"
+            << indent << "    \"solver_version\": \"" << json_escape(r.solver_version) << "\",\n"
             << indent << "    \"error\": \"" << json_escape(r.error) << "\",\n"
             << indent << "    \"before_length\": ";
         write_json_double(out, r.before_length);

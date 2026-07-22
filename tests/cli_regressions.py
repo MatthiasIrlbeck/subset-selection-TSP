@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import subprocess
@@ -533,9 +534,13 @@ def main() -> int:
             tmp / "oracle-top2.json",
         )
         calls = top2_doc["search_stats"]["oracle_tsp_calls"]
+        expected_oracle_hash = hashlib.sha256(fake_lkh.read_bytes()).hexdigest()
+        assert top2_doc["config"]["oracle_exec_sha256"] == expected_oracle_hash, top2_doc["config"]
         assert calls == 2, top2_doc["search_stats"]
         assert len(top2_doc["oracle_call_records"]) == 2, top2_doc["oracle_call_records"]
         assert {r["type"] for r in top2_doc["oracle_call_records"]} == {"tsp"}, top2_doc["oracle_call_records"]
+        assert all(r["exec_sha256"] == expected_oracle_hash for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
+        assert all(r["solver_version"] for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
     return 0
 
 

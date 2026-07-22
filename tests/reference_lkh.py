@@ -4,9 +4,9 @@
 It speaks the same CLI protocol the solver uses for LKH:
   * probed once as `reference_lkh.py --version`
   * invoked as `reference_lkh.py run.par`, where run.par names PROBLEM_FILE
-    (a TSPLIB EXPLICIT FULL_MATRIX) and TOUR_FILE (where to write the tour).
+    (a TSPLIB EXPLICIT FULL_MATRIX or EUC_2D problem) and TOUR_FILE.
 
-It reads the explicit distance matrix (which, under --periodic, already holds
+It reads the supplied distance representation (which, under --periodic, already holds
 the torus distances the solver serialized) and returns an optimal tour for
 small instances (Held-Karp) or a 2-opt tour for larger ones. Because it solves
 the matrix it is handed, comparing its result to the built-in exact torus
@@ -14,6 +14,7 @@ solver proves the oracle round-trip -- matrix serialization, tour parsing, and
 torus length scoring -- is correct. It is NOT a substitute for real LKH on
 large instances; it exists only for validation.
 """
+import math
 import os
 import re
 import sys
@@ -32,6 +33,29 @@ def read_par(par_path):
 def read_matrix(tsp_path):
     text = open(tsp_path).read()
     dim = int(re.search(r"DIMENSION\s*:\s*(\d+)", text).group(1))
+    if "EDGE_WEIGHT_TYPE : EUC_2D" in text:
+        marker = "NODE_COORD_SECTION"
+        idx = text.index(marker)
+        values = re.findall(
+            r"^\s*(\d+)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*$",
+            text[idx + len(marker):],
+            flags=re.MULTILINE,
+        )
+        coords = [(float(x), float(y)) for _, x, y in values[:dim]]
+        if len(coords) != dim:
+            raise ValueError("invalid EUC_2D coordinate section")
+        matrix = [[0] * dim for _ in range(dim)]
+        for i, (xi, yi) in enumerate(coords):
+            for j in range(i + 1, dim):
+                xj, yj = coords[j]
+                # TSPLIB EUC_2D uses nint(sqrt(dx^2 + dy^2)). Coordinates
+                # emitted by the C++ harness are integral, so half-away and
+                # half-even differ only on a measure-zero exact half case.
+                distance = int(math.floor(math.hypot(xi - xj, yi - yj) + 0.5))
+                matrix[i][j] = distance
+                matrix[j][i] = distance
+        return dim, matrix
+
     marker = "EDGE_WEIGHT_SECTION"
     idx = text.index(marker)
     nums = re.findall(r"-?\d+", text[idx + len(marker):])

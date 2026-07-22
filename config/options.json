@@ -2163,6 +2163,20 @@
       "json_expr": "opt.solver.oracle.exec_path"
     },
     {
+      "id": "oracle_exec_sha256",
+      "section": "oracle",
+      "json_key": "oracle_exec_sha256",
+      "help": "SHA-256 identity of the resolved oracle executable, or unknown when it could not be read.",
+      "constraints": {
+        "type": "string"
+      },
+      "emit_json": true,
+      "required": false,
+      "declare": false,
+      "cpp_type": "std::string",
+      "json_expr": "opt.solver.oracle.exec_sha256"
+    },
+    {
       "id": "oracle_version",
       "section": "oracle",
       "json_key": "oracle_version",

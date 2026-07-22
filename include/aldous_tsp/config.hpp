@@ -39,6 +39,8 @@ struct OracleCallRecord {
     double gain = 0.0;
     double seconds = 0.0;
     std::string exec_path;
+    std::string exec_sha256;
+    std::string solver_version;
     std::string error;
 };
 
@@ -271,6 +273,7 @@ struct OracleContext {
     ExternalOracleConfig cfg;
     ResolvedOracleMode resolved = ResolvedOracleMode::None;
     std::string exec_path;
+    std::string exec_sha256 = "unknown";
     std::string version = "unknown";
     std::string status = "disabled";
 };

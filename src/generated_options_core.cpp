@@ -454,6 +454,8 @@ void write_generated_config(std::ostream& out, const RunOptions& opt, const std:
     writer.string(resolved_oracle_mode_name(opt.solver.oracle.resolved));
     out << ",\n" << indent << "  \"oracle_exec_path\": ";
     writer.string(opt.solver.oracle.exec_path);
+    out << ",\n" << indent << "  \"oracle_exec_sha256\": ";
+    writer.string(opt.solver.oracle.exec_sha256);
     out << ",\n" << indent << "  \"oracle_version\": ";
     writer.string(opt.solver.oracle.version);
     out << "\n" << indent << "}";
