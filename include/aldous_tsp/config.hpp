@@ -4,11 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace aldous_tsp {
+
+class ConcurrencyLimiter;
 
 static_assert(__cplusplus >= 201703L,
     "aldous_tsp requires C++17 or newer. On MSVC, build with /Zc:__cplusplus "
@@ -285,6 +288,10 @@ struct OracleContext {
     std::string exec_sha256 = "unknown";
     std::string version = "unknown";
     std::string status = "disabled";
+    // Runtime-only phase gate. It is deliberately absent from generated
+    // configuration and serialization; the resolved capacity is recorded in
+    // MemoryPlan instead.
+    std::shared_ptr<ConcurrencyLimiter> concurrency_limiter;
 };
 
 struct SolverOptions {

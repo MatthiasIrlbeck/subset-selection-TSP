@@ -687,23 +687,33 @@ ALDOUS_TEST(test_memory_budget_planning) {
     options.solver.restart_threads = 2;
     options.solver.reverse_knn = true;
 
-    const MemoryPlan unlimited = estimate_experiment_memory(options, options.threads);
-    require(unlimited.resolved_threads == 8 && unlimited.effective_threads == 8
-                && !unlimited.limited_by_budget,
-            "unlimited memory planning preserves resolved instance concurrency");
-    require(unlimited.estimated_instance_bytes > 5000U * 40U * 12U,
+    const MemoryPlan automatic = estimate_experiment_memory(options, options.threads);
+    require(automatic.resolved_threads == 8
+                && automatic.effective_threads >= 1
+                && automatic.effective_threads <= automatic.resolved_threads,
+            "automatic memory planning preserves a valid bounded concurrency");
+    require(automatic.estimated_instance_bytes > 5000U * 40U * 12U,
             "memory planning includes KNN storage and solver scratch");
+    require(automatic.estimated_serialization_bytes > 0U
+                && automatic.ordinary_phase_peak_bytes > automatic.fixed_overhead_bytes,
+            "memory planning includes retained result and serialization storage");
+    if (automatic.detected_available_bytes > 0U) {
+        require(automatic.automatic_budget && automatic.budget_bytes > 0U
+                    && automatic.estimated_peak_bytes <= automatic.budget_bytes,
+                "zero memory budget derives a safe physical/container-aware limit");
+    }
 
     RunOptions without_reverse = options;
     without_reverse.solver.reverse_knn = false;
     const MemoryPlan lean = estimate_experiment_memory(without_reverse, without_reverse.threads);
-    require(lean.estimated_instance_bytes < unlimited.estimated_instance_bytes
+    require(lean.estimated_instance_bytes < automatic.estimated_instance_bytes
                 && !lean.reverse_knn_enabled,
             "disabling reverse KNN lowers the conservative per-instance estimate");
 
     RunOptions bounded = options;
-    const std::uint64_t target = unlimited.fixed_overhead_bytes
-        + 2U * unlimited.estimated_instance_bytes;
+    const std::uint64_t target = automatic.fixed_overhead_bytes
+        + automatic.estimated_serialization_bytes
+        + 2U * automatic.estimated_instance_bytes;
     bounded.memory_budget_mb = static_cast<int>((target + (1U << 20U) - 1U) >> 20U);
     const MemoryPlan limited = estimate_experiment_memory(bounded, bounded.threads);
     require(limited.effective_threads >= 1 && limited.effective_threads <= 2
@@ -711,6 +721,37 @@ ALDOUS_TEST(test_memory_budget_planning) {
             "memory budget reduces instance concurrency before allocation");
     require(limited.estimated_peak_bytes <= limited.budget_bytes,
             "planned peak stays within the configured budget");
+
+    RunOptions held_karp = options;
+    held_karp.N = 6000;
+    held_karp.instances = 4;
+    held_karp.threads = 4;
+    held_karp.p_values = {1.0};
+    held_karp.held_karp = true;
+    held_karp.memory_budget_mb = 512;
+    const MemoryPlan hk_plan = estimate_experiment_memory(held_karp, held_karp.threads);
+    require(hk_plan.estimated_held_karp_call_bytes > 270U * 1024U * 1024U,
+            "Held-Karp dense matrix is represented in the phase estimate");
+    require(hk_plan.held_karp_concurrency == 1
+                && hk_plan.held_karp_phase_peak_bytes <= hk_plan.budget_bytes,
+            "Held-Karp calls receive a phase-specific concurrency limit");
+
+    RunOptions oracle = options;
+    oracle.p_values = {1.0};
+    oracle.solver.oracle.cfg.mode = ExternalOracleMode::Lkh;
+    oracle.solver.oracle.cfg.max_k = oracle.N;
+    oracle.memory_budget_mb = 512;
+    const MemoryPlan oracle_plan = estimate_experiment_memory(oracle, oracle.threads);
+    require(oracle_plan.estimated_oracle_call_bytes > 64U * 1024U * 1024U
+                && oracle_plan.oracle_concurrency >= 1,
+            "external child-process and dense-oracle storage are phase planned");
+
+    RunOptions cv = options;
+    cv.control_variate = true;
+    const MemoryPlan cv_plan = estimate_experiment_memory(cv, cv.threads);
+    require(cv_plan.estimated_control_reference_bytes > 0U
+                && cv_plan.control_reference_phase_peak_bytes > cv_plan.fixed_overhead_bytes,
+            "control-reference generation has an explicit phase estimate");
 
     RunOptions impossible = options;
     impossible.memory_budget_mb = 1;
@@ -721,6 +762,27 @@ ALDOUS_TEST(test_memory_budget_planning) {
         rejected = true;
     }
     require(rejected, "a budget below one-instance demand is rejected before allocation");
+
+    ConcurrencyLimiter limiter(2);
+    std::atomic<int> active{0};
+    std::atomic<int> maximum_active{0};
+    std::vector<std::thread> limited_workers;
+    for (int worker = 0; worker < 8; ++worker) {
+        limited_workers.emplace_back([&] {
+            auto permit = limiter.acquire();
+            const int now = active.fetch_add(1) + 1;
+            int observed = maximum_active.load();
+            while (observed < now
+                   && !maximum_active.compare_exchange_weak(observed, now)) {}
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            active.fetch_sub(1);
+        });
+    }
+    for (std::thread& worker : limited_workers) {
+        worker.join();
+    }
+    require(maximum_active.load() <= 2 && limiter.capacity() == 2,
+            "phase concurrency permits enforce their resolved capacity");
 }
 
 ALDOUS_TEST(test_prepared_instance_contracts_and_metric_domain) {

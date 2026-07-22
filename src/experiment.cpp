@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -162,7 +164,9 @@ struct CoreInstanceRunResult {
     std::vector<double> held_karp_bounds;
 };
 
-CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
+CoreInstanceRunResult run_one_instance_core(
+    int index, const RunOptions& opt,
+    const std::shared_ptr<ConcurrencyLimiter>& held_karp_limiter) {
     const auto start = Clock::now();
     CoreInstanceRunResult out;
     out.index = index;
@@ -306,6 +310,10 @@ CoreInstanceRunResult run_one_instance_core(int index, const RunOptions& opt) {
         for (std::size_t pi = 0; pi < np; ++pi) {
             if (final_nodes[pi].size() >= 3U) {
                 const double ub = cycle_length(inst, final_nodes[pi]);
+                std::optional<ConcurrencyLimiter::Permit> permit;
+                if (held_karp_limiter != nullptr) {
+                    permit.emplace(held_karp_limiter->acquire());
+                }
                 const HeldKarpBound hk = held_karp_bound(
                     prepared, final_nodes[pi], ub, opt.hk_iterations);
                 if (hk.computed) {
@@ -330,6 +338,14 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
     RunOptions opt = options_;
     const MemoryPlan memory_plan = estimate_experiment_memory(opt, requested_threads_);
     opt.threads = memory_plan.effective_threads;
+    const std::shared_ptr<ConcurrencyLimiter> held_karp_limiter =
+        opt.held_karp
+            ? std::make_shared<ConcurrencyLimiter>(memory_plan.held_karp_concurrency)
+            : nullptr;
+    if (opt.solver.oracle.resolved != ResolvedOracleMode::None) {
+        opt.solver.oracle.concurrency_limiter =
+            std::make_shared<ConcurrencyLimiter>(memory_plan.oracle_concurrency);
+    }
 
     ResultsDocument doc;
     doc.N = opt.N;
@@ -348,7 +364,7 @@ ResultsDocument ExperimentRunner::run(const ExperimentProgressCallback& progress
             opt.threads,
             outcomes,
             [&](int index) {
-                return run_one_instance_core(index, opt);
+                return run_one_instance_core(index, opt, held_karp_limiter);
             },
             [&](int index, const CoreInstanceRunResult& result) {
                 ++progress_completed;

@@ -435,7 +435,7 @@
         "memory_budget_mb": {
           "type": "integer",
           "minimum": 0,
-          "description": "Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-concurrency limiting.",
+          "description": "Conservative peak-memory budget in MiB; zero derives a safe automatic budget from currently available physical/container memory.",
           "default": 0
         },
         "periodic": {
@@ -2590,11 +2590,50 @@
           "type": "integer",
           "minimum": 0
         },
+        "detected_available_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "automatic_budget": {
+          "type": "boolean"
+        },
         "fixed_overhead_bytes": {
           "type": "integer",
           "minimum": 0
         },
         "estimated_instance_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_serialization_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_held_karp_call_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_oracle_call_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_control_reference_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ordinary_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "held_karp_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "control_reference_phase_peak_bytes": {
           "type": "integer",
           "minimum": 0
         },
@@ -2611,6 +2650,14 @@
           "minimum": 1
         },
         "effective_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "held_karp_concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "oracle_concurrency": {
           "type": "integer",
           "minimum": 1
         },

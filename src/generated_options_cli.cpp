@@ -91,8 +91,8 @@ Simulation and campaign identity:
   --N <int>                               Number of random points. (default: 500)
   --instances <int>                       Monte Carlo point-set instances. (default: 15)
   --threads <int>                         Instance worker threads; zero selects an automatic bounded value. (default: 0)
-  --memory-budget-mb <MiB>                Conservative estimated peak-memory budget in MiB; zero disables budget-based
-                                          instance-concurrency limiting. (default: 0)
+  --memory-budget-mb <MiB>                Conservative peak-memory budget in MiB; zero derives a safe automatic budget from
+                                          currently available physical/container memory. (default: 0)
   --periodic[=bool]                       Use flat-torus periodic boundary conditions. (default: false)
   --campaign-id <text>                    Stable campaign identity. (default: default)
   --campaign-shard <int>                  Nonnegative campaign shard identity. (default: 0)

@@ -1,4 +1,5 @@
 #include "aldous_tsp/oracle.hpp"
+#include "aldous_tsp/memory.hpp"
 
 #include "aldous_tsp/solver.hpp"
 
@@ -15,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -1150,6 +1152,10 @@ bool external_oracle_polish_tour(Tour& candidate, const Instance& inst, const Or
     candidate.ensure_edges(inst);
     if (!external_oracle_applicable(oracle, candidate.k, full_tsp)) {
         return false;
+    }
+    std::optional<ConcurrencyLimiter::Permit> resource_permit;
+    if (oracle.concurrency_limiter != nullptr) {
+        resource_permit.emplace(oracle.concurrency_limiter->acquire());
     }
 
     OracleCallRecord record;

@@ -127,7 +127,7 @@
       "cli": "--memory-budget-mb",
       "json_key": "memory_budget_mb",
       "metavar": "<MiB>",
-      "help": "Conservative estimated peak-memory budget in MiB; zero disables budget-based instance-concurrency limiting.",
+      "help": "Conservative peak-memory budget in MiB; zero derives a safe automatic budget from currently available physical/container memory.",
       "constraints": {
         "type": "integer",
         "minimum": 0

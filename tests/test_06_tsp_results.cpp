@@ -464,8 +464,11 @@ ALDOUS_TEST(test_json_atomic) {
     require(text.find("\"build_metadata\"") != std::string::npos, "JSON includes build metadata");
     require(text.find("\"memory_plan\"") != std::string::npos
                 && text.find("\"estimated_instance_bytes\"") != std::string::npos
+                && text.find("\"estimated_held_karp_call_bytes\"") != std::string::npos
+                && text.find("\"estimated_oracle_call_bytes\"") != std::string::npos
+                && text.find("\"held_karp_concurrency\"") != std::string::npos
                 && text.find("\"limited_by_budget\"") != std::string::npos,
-            "JSON includes memory planning and effective-concurrency telemetry");
+            "JSON includes phase-aware memory and effective-concurrency telemetry");
     require(text.find("\"oracle_call_records\"") != std::string::npos, "JSON includes oracle call records");
     require(text.find("\"summary_rows\"") != std::string::npos, "JSON includes array-form summary rows");
     require(text.find("\"knn_build_seconds\"") != std::string::npos, "JSON includes KNN timing stats");

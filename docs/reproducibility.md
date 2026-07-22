@@ -57,3 +57,7 @@ Use the same `campaign_id`, `replicate_id`, and point seed across every `(p,k)` 
 ## Effective KNN/build metadata
 
 Schema version 14 records both requested and effective KNN behavior. This distinguishes a requested grid backend from a safe brute-force fallback on pathological tiny-coordinate inputs, and records forced grid-cell capping through `knn_grid_cell_capped_instances` plus per-instance `knn_build` details. Build metadata also records configured and effective C++ flags, target compile options, source-level low-memory overrides, and the optimization profile.
+
+## Phase-aware memory planning
+
+Before allocating point-set workers, the experiment runner estimates retained instance/search state, result and serialization storage, exact-subset storage, Held–Karp dense matrices, external-oracle child/matrix allowance, and control-reference generation. An explicit `--memory-budget-mb` is authoritative. With the default zero value, the runner derives a conservative budget from currently available physical and container memory when the platform exposes it. Ordinary instance concurrency is reduced before allocation, while Held–Karp and external-oracle calls use independent process-wide concurrency gates because their transient memory can be much larger than the base solver state. The complete phase estimates and resolved limits are serialized under `memory_plan`.
