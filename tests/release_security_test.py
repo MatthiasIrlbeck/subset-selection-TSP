@@ -154,8 +154,9 @@ def test_source_archive_fallback(root: Path) -> None:
         shutil.copytree(root, source, ignore=ignore)
         commit = "a" * 40
         tree = "b" * 40
+        archive_refnames = 'tag: v-test, tag: v"quoted'
         (source / "SOURCE_REVISION").write_text(
-            f"commit={commit}\ntree={tree}\nrefnames=tag: v-test\n", encoding="utf-8"
+            f"commit={commit}\ntree={tree}\nrefnames={archive_refnames}\n", encoding="utf-8"
         )
         build = temp / "build"
         subprocess.run(
@@ -175,6 +176,8 @@ def test_source_archive_fallback(root: Path) -> None:
         require(f'kGitTree = "{tree}"' in header, "source archive lost tree identity")
         require('kRevisionSource = "source-archive"' in header,
                 "source archive provenance source was not detected")
+        require('kSourceRefNames = "tag: v-test, tag: v\\"quoted";' in header,
+                "source archive ref names were not parsed and C++-escaped safely")
         require("kSourceDirty = false" in header, "source archive was incorrectly marked dirty")
 
 

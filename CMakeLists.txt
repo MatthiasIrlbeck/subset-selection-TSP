@@ -133,7 +133,7 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/SOURCE_REVISION")
   set(_archive_commit "${CMAKE_MATCH_1}")
   string(REGEX MATCH "tree=([0-9A-Fa-f]+)" _tree_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
   set(_archive_tree "${CMAKE_MATCH_1}")
-  string(REGEX MATCH "refnames=(.*)" _refnames_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
+  string(REGEX MATCH "refnames=([^\r\n]*)" _refnames_match "${ALDOUS_TSP_ARCHIVE_REVISION}")
   set(_archive_refnames "${CMAKE_MATCH_1}")
   string(LENGTH "${_archive_commit}" _archive_commit_length)
   string(LENGTH "${_archive_tree}" _archive_tree_length)
@@ -191,6 +191,15 @@ elseif(MSVC)
 endif()
 string(STRIP "${ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED}" ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED)
 string(STRIP "${ALDOUS_TSP_CLI_TARGET_COMPILE_OPTIONS_CONFIGURED}" ALDOUS_TSP_CLI_TARGET_COMPILE_OPTIONS_CONFIGURED)
+
+# SOURCE_REVISION is substituted by git archive and can contain ref names with
+# characters that need C++ string-literal escaping.  Keep the human-readable
+# value for result metadata while generating a safe header literal.
+set(ALDOUS_TSP_SOURCE_REFNAMES_CXX "${ALDOUS_TSP_SOURCE_REFNAMES}")
+string(REPLACE "\\" "\\\\" ALDOUS_TSP_SOURCE_REFNAMES_CXX "${ALDOUS_TSP_SOURCE_REFNAMES_CXX}")
+string(REPLACE "\"" "\\\"" ALDOUS_TSP_SOURCE_REFNAMES_CXX "${ALDOUS_TSP_SOURCE_REFNAMES_CXX}")
+string(REPLACE "\r" "\\r" ALDOUS_TSP_SOURCE_REFNAMES_CXX "${ALDOUS_TSP_SOURCE_REFNAMES_CXX}")
+string(REPLACE "\n" "\\n" ALDOUS_TSP_SOURCE_REFNAMES_CXX "${ALDOUS_TSP_SOURCE_REFNAMES_CXX}")
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in
