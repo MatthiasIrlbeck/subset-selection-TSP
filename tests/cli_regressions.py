@@ -491,6 +491,39 @@ def main() -> int:
         assert no_force.returncode != 0, (no_force.stdout, no_force.stderr)
         assert "Refusing to overwrite" in no_force.stderr, no_force.stderr
 
+        raced_output = tmp / "raced-no-clobber.json"
+        raced_command = [
+            str(exe),
+            "--N", "160",
+            "--instances", "1",
+            "--threads", "1",
+            "--restart-threads", "1",
+            "--p-values", "1.0",
+            "--tsp-candidate-starts", "3",
+            "--tsp-restarts", "2",
+            "--tsp-ils", "2",
+            "--output-durability", "none",
+            "--output", str(raced_output),
+            "--force=false",
+        ]
+        first = subprocess.Popen(
+            raced_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        second = subprocess.Popen(
+            raced_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        first_stdout, first_stderr = first.communicate(timeout=60)
+        second_stdout, second_stderr = second.communicate(timeout=60)
+        codes = sorted([first.returncode, second.returncode])
+        assert codes == [0, 1], (
+            first.returncode, first_stdout, first_stderr,
+            second.returncode, second_stdout, second_stderr,
+        )
+        losing_stderr = first_stderr if first.returncode != 0 else second_stderr
+        assert "Refusing to overwrite" in losing_stderr, losing_stderr
+        raced_doc = json.loads(raced_output.read_text())
+        assert raced_doc["done"] == 1, raced_doc
+
         quick_false = subprocess.run(
             [str(exe), "--quick=false", "--N", "30", "--instances", "1", "--p-values", "1.0", "--dry-run"],
             check=True,

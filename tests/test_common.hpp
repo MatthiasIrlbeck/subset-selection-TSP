@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <locale>
 #include <numeric>
 #include <set>
 #include <string>

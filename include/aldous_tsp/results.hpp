@@ -148,6 +148,52 @@ std::string json_escape(const std::string& input);
 std::string p_value_key(double p);
 PValueSummary summarize_p_values(int N, double p, const std::vector<double>& values);
 std::string results_to_json(const ResultsDocument& doc);
+
+enum class ReplacePolicy {
+    NoReplace,
+    ReplaceExisting,
+};
+
+enum class OutputCommitState {
+    NotCommitted,
+    Committed,
+    FileDurable,
+    FullyDurable,
+};
+
+struct AtomicWriteResult {
+    OutputCommitState state = OutputCommitState::NotCommitted;
+    std::string message;
+
+    bool committed() const noexcept {
+        return state != OutputCommitState::NotCommitted;
+    }
+    bool fully_durable() const noexcept {
+        return state == OutputCommitState::FullyDurable;
+    }
+    bool satisfies(OutputDurability durability) const noexcept {
+        if (!committed()) {
+            return false;
+        }
+        if (durability == OutputDurability::None) {
+            return true;
+        }
+        if (durability == OutputDurability::File) {
+            return state == OutputCommitState::FileDurable
+                || state == OutputCommitState::FullyDurable;
+        }
+        return state == OutputCommitState::FullyDurable;
+    }
+};
+
+AtomicWriteResult write_text_file_atomic(const std::string& path,
+                                         const std::string& text,
+                                         ReplacePolicy replace_policy,
+                                         OutputDurability durability);
+
+// Source-compatible convenience overloads. These intentionally retain the
+// historical replacement behavior; callers requiring no-clobber semantics
+// must pass ReplacePolicy::NoReplace explicitly.
 bool write_text_file_atomic(const std::string& path,
                             const std::string& text,
                             OutputDurability durability,

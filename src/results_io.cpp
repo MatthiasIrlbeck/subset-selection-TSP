@@ -26,10 +26,17 @@ namespace {
 
 std::atomic<std::uint64_t> g_temp_counter{0};
 
-void set_error(std::string* error, const std::string& message) {
-    if (error != nullptr) {
-        *error = message;
+AtomicWriteResult failure(const std::string& message) {
+    return {OutputCommitState::NotCommitted, message};
+}
+
+OutputCommitState committed_state(OutputDurability durability) {
+    switch (durability) {
+        case OutputDurability::None: return OutputCommitState::Committed;
+        case OutputDurability::File: return OutputCommitState::FileDurable;
+        case OutputDurability::Full: return OutputCommitState::FileDurable;
     }
+    return OutputCommitState::Committed;
 }
 
 std::filesystem::path parent_directory(const std::filesystem::path& target) {
@@ -57,8 +64,8 @@ std::filesystem::path unique_temp_candidate(const std::filesystem::path& target,
 
 std::string windows_error_message(DWORD code) {
     LPSTR buffer = nullptr;
-    const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                        FORMAT_MESSAGE_IGNORE_INSERTS;
+    const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
+        | FORMAT_MESSAGE_IGNORE_INSERTS;
     const DWORD size = FormatMessageA(flags, nullptr, code, 0,
                                       reinterpret_cast<LPSTR>(&buffer), 0, nullptr);
     std::string result = size != 0U && buffer != nullptr
@@ -70,10 +77,10 @@ std::string windows_error_message(DWORD code) {
     return result;
 }
 
-bool write_atomic_impl(const std::filesystem::path& target,
-                       const std::string& text,
-                       OutputDurability durability,
-                       std::string* error) {
+AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
+                                    const std::string& text,
+                                    ReplacePolicy replace_policy,
+                                    OutputDurability durability) {
     std::filesystem::path temp;
     HANDLE handle = INVALID_HANDLE_VALUE;
     for (std::uint64_t attempt = 0; attempt < 128U; ++attempt) {
@@ -85,15 +92,15 @@ bool write_atomic_impl(const std::filesystem::path& target,
         }
         const DWORD code = GetLastError();
         if (code != ERROR_FILE_EXISTS && code != ERROR_ALREADY_EXISTS) {
-            set_error(error, "failed to create temporary output file: " + windows_error_message(code));
-            return false;
+            return failure("failed to create temporary output file: "
+                           + windows_error_message(code));
         }
     }
     if (handle == INVALID_HANDLE_VALUE) {
-        set_error(error, "failed to allocate a unique temporary output file");
-        return false;
+        return failure("failed to allocate a unique temporary output file");
     }
 
+    std::string error;
     bool ok = true;
     std::size_t offset = 0;
     while (offset < text.size()) {
@@ -101,45 +108,54 @@ bool write_atomic_impl(const std::filesystem::path& target,
         const DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(
             remaining, static_cast<std::size_t>((std::numeric_limits<DWORD>::max)())));
         DWORD written = 0;
-        if (WriteFile(handle, text.data() + offset, chunk, &written, nullptr) == 0 || written == 0U) {
-            set_error(error, "failed to write temporary output file: " +
-                             windows_error_message(GetLastError()));
+        if (WriteFile(handle, text.data() + offset, chunk, &written, nullptr) == 0
+            || written == 0U) {
+            error = "failed to write temporary output file: "
+                + windows_error_message(GetLastError());
             ok = false;
             break;
         }
         offset += static_cast<std::size_t>(written);
     }
     if (ok && durability != OutputDurability::None && FlushFileBuffers(handle) == 0) {
-        set_error(error, "failed to flush temporary output file: " +
-                         windows_error_message(GetLastError()));
+        error = "failed to flush temporary output file: "
+            + windows_error_message(GetLastError());
         ok = false;
     }
     if (CloseHandle(handle) == 0 && ok) {
-        set_error(error, "failed to close temporary output file: " +
-                         windows_error_message(GetLastError()));
+        error = "failed to close temporary output file: "
+            + windows_error_message(GetLastError());
         ok = false;
     }
     if (!ok) {
         DeleteFileW(temp.wstring().c_str());
-        return false;
+        return failure(error);
     }
 
-    DWORD flags = MOVEFILE_REPLACE_EXISTING;
-    if (durability == OutputDurability::Full) {
-        flags |= MOVEFILE_WRITE_THROUGH;
+    DWORD flags = durability == OutputDurability::Full ? MOVEFILE_WRITE_THROUGH : 0U;
+    if (replace_policy == ReplacePolicy::ReplaceExisting) {
+        flags |= MOVEFILE_REPLACE_EXISTING;
     }
     if (MoveFileExW(temp.wstring().c_str(), target.wstring().c_str(), flags) == 0) {
         const DWORD code = GetLastError();
         DeleteFileW(temp.wstring().c_str());
-        set_error(error, "failed to replace output file atomically: " + windows_error_message(code));
-        return false;
+        if (replace_policy == ReplacePolicy::NoReplace
+            && (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS)) {
+            return failure("Refusing to overwrite existing output file "
+                           + target.string() + " (use --force or a different --output)");
+        }
+        return failure("failed to commit output file atomically: "
+                       + windows_error_message(code));
     }
-    return true;
+    if (durability == OutputDurability::Full) {
+        return {OutputCommitState::FullyDurable, {}};
+    }
+    return {committed_state(durability), {}};
 }
 
 #else
 
-bool write_all(int fd, const std::string& text, std::string* error) {
+bool write_all(int fd, const std::string& text, std::string& error) {
     std::size_t offset = 0;
     while (offset < text.size()) {
         const std::size_t remaining = text.size() - offset;
@@ -150,12 +166,12 @@ bool write_all(int fd, const std::string& text, std::string* error) {
             if (errno == EINTR) {
                 continue;
             }
-            set_error(error, std::string("failed to write temporary output file: ") +
-                             std::strerror(errno));
+            error = std::string("failed to write temporary output file: ")
+                + std::strerror(errno);
             return false;
         }
         if (written == 0) {
-            set_error(error, "failed to write temporary output file: zero-length write");
+            error = "failed to write temporary output file: zero-length write";
             return false;
         }
         offset += static_cast<std::size_t>(written);
@@ -163,7 +179,7 @@ bool write_all(int fd, const std::string& text, std::string* error) {
     return true;
 }
 
-bool sync_parent(const std::filesystem::path& target, std::string* error) {
+bool sync_parent(const std::filesystem::path& target, std::string& error) {
     const std::filesystem::path parent = parent_directory(target);
     int flags = O_RDONLY;
 #ifdef O_DIRECTORY
@@ -174,28 +190,28 @@ bool sync_parent(const std::filesystem::path& target, std::string* error) {
 #endif
     const int fd = ::open(parent.c_str(), flags);
     if (fd < 0) {
-        set_error(error, std::string("failed to open output directory for synchronization: ") +
-                         std::strerror(errno));
+        error = std::string("output was committed, but its directory could not be opened "
+                            "for synchronization: ") + std::strerror(errno);
         return false;
     }
     bool ok = true;
     if (::fsync(fd) != 0) {
-        set_error(error, std::string("failed to synchronize output directory: ") +
-                         std::strerror(errno));
+        error = std::string("output was committed, but its directory could not be "
+                            "synchronized: ") + std::strerror(errno);
         ok = false;
     }
     if (::close(fd) != 0 && ok) {
-        set_error(error, std::string("failed to close output directory: ") +
-                         std::strerror(errno));
+        error = std::string("output was committed, but its directory handle could not be "
+                            "closed: ") + std::strerror(errno);
         ok = false;
     }
     return ok;
 }
 
-bool write_atomic_impl(const std::filesystem::path& target,
-                       const std::string& text,
-                       OutputDurability durability,
-                       std::string* error) {
+AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
+                                    const std::string& text,
+                                    ReplacePolicy replace_policy,
+                                    OutputDurability durability) {
     std::filesystem::path temp;
     int fd = -1;
     for (std::uint64_t attempt = 0; attempt < 128U; ++attempt) {
@@ -209,63 +225,101 @@ bool write_atomic_impl(const std::filesystem::path& target,
             break;
         }
         if (errno != EEXIST) {
-            set_error(error, std::string("failed to create temporary output file: ") +
-                             std::strerror(errno));
-            return false;
+            return failure(std::string("failed to create temporary output file: ")
+                           + std::strerror(errno));
         }
     }
     if (fd < 0) {
-        set_error(error, "failed to allocate a unique temporary output file");
-        return false;
+        return failure("failed to allocate a unique temporary output file");
     }
 
+    std::string error;
     bool ok = write_all(fd, text, error);
     if (ok && durability != OutputDurability::None && ::fsync(fd) != 0) {
-        set_error(error, std::string("failed to synchronize temporary output file: ") +
-                         std::strerror(errno));
+        error = std::string("failed to synchronize temporary output file: ")
+            + std::strerror(errno);
         ok = false;
     }
     if (::close(fd) != 0 && ok) {
-        set_error(error, std::string("failed to close temporary output file: ") +
-                         std::strerror(errno));
+        error = std::string("failed to close temporary output file: ")
+            + std::strerror(errno);
         ok = false;
     }
     if (!ok) {
         (void)::unlink(temp.c_str());
-        return false;
+        return failure(error);
     }
 
-    if (::rename(temp.c_str(), target.c_str()) != 0) {
+    bool committed = false;
+    if (replace_policy == ReplacePolicy::ReplaceExisting) {
+        committed = ::rename(temp.c_str(), target.c_str()) == 0;
+    } else {
+        // POSIX link(2) is an atomic create-if-absent operation when source and
+        // target are on the same filesystem. The temporary file is deliberately
+        // created in the target directory, so this is a portable no-clobber
+        // commit without a time-of-check/time-of-use window.
+        committed = ::link(temp.c_str(), target.c_str()) == 0;
+    }
+    if (!committed) {
         const int code = errno;
         (void)::unlink(temp.c_str());
-        set_error(error, std::string("failed to replace output file atomically: ") +
-                         std::strerror(code));
-        return false;
+        if (replace_policy == ReplacePolicy::NoReplace && code == EEXIST) {
+            return failure("Refusing to overwrite existing output file "
+                           + target.string() + " (use --force or a different --output)");
+        }
+        return failure(std::string("failed to commit output file atomically: ")
+                       + std::strerror(code));
     }
-    if (durability == OutputDurability::Full && !sync_parent(target, error)) {
-        return false;
+
+    std::string warning;
+    if (replace_policy == ReplacePolicy::NoReplace && ::unlink(temp.c_str()) != 0) {
+        warning = std::string("output was committed, but temporary-file cleanup failed: ")
+            + std::strerror(errno);
     }
-    return true;
+
+    AtomicWriteResult result{committed_state(durability), warning};
+    if (durability == OutputDurability::Full) {
+        std::string sync_error;
+        if (!sync_parent(target, sync_error)) {
+            if (!result.message.empty()) {
+                result.message += "; ";
+            }
+            result.message += sync_error;
+            return result;
+        }
+        result.state = OutputCommitState::FullyDurable;
+    }
+    return result;
 }
 
 #endif
 
 } // namespace
 
+AtomicWriteResult write_text_file_atomic(const std::string& path,
+                                         const std::string& text,
+                                         ReplacePolicy replace_policy,
+                                         OutputDurability durability) {
+    if (path.empty()) {
+        return failure("output path must not be empty");
+    }
+    const std::filesystem::path target = std::filesystem::u8path(path);
+    if (target.filename().empty()) {
+        return failure("output path must name a file");
+    }
+    return write_atomic_impl(target, text, replace_policy, durability);
+}
+
 bool write_text_file_atomic(const std::string& path,
                             const std::string& text,
                             OutputDurability durability,
                             std::string* error) {
-    if (path.empty()) {
-        set_error(error, "output path must not be empty");
-        return false;
+    const AtomicWriteResult result = write_text_file_atomic(
+        path, text, ReplacePolicy::ReplaceExisting, durability);
+    if (error != nullptr) {
+        *error = result.message;
     }
-    const std::filesystem::path target(path);
-    if (target.filename().empty()) {
-        set_error(error, "output path must name a file");
-        return false;
-    }
-    return write_atomic_impl(target, text, durability, error);
+    return result.satisfies(durability);
 }
 
 bool write_text_file_atomic(const std::string& path,

@@ -60,9 +60,10 @@ std::string json_escape(const std::string& input) {
 }
 
 std::string p_value_key(double p) {
-    std::ostringstream out;
-    out << std::setprecision(17) << p;
-    return out.str();
+    if (!std::isfinite(p)) {
+        throw std::invalid_argument("p-value keys must be finite");
+    }
+    return json_number_text(p);
 }
 
 PValueSummary summarize_p_values(int N, double p, const std::vector<double>& values) {

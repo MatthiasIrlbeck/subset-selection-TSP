@@ -270,6 +270,47 @@ ALDOUS_TEST(test_json_escape_regression) {
     require(escaped.find("\\n") != std::string::npos, "JSON escaping handles newlines");
     require(escaped.find("\\t") != std::string::npos, "JSON escaping handles tabs");
     require(escaped.find("\\u0001") != std::string::npos, "JSON escaping handles control characters");
+
+    const std::string valid_utf8 = "caf\xc3\xa9 \xf0\x9f\x8c\x8d";
+    require(json_escape(valid_utf8) == valid_utf8,
+            "valid UTF-8 is preserved by JSON string serialization");
+    const std::string malformed = std::string("bad:") + static_cast<char>(0xc0)
+        + static_cast<char>(0xaf) + ":end";
+    const std::string repaired = json_escape(malformed);
+    require(repaired.find("\\ufffd") != std::string::npos
+                && repaired.find(static_cast<char>(0xc0)) == std::string::npos,
+            "malformed UTF-8 is deterministically replaced at the JSON boundary");
+}
+
+ALDOUS_TEST(test_json_numbers_ignore_global_locale) {
+    class CommaDecimal final : public std::numpunct<char> {
+    protected:
+        char do_decimal_point() const override { return ','; }
+    };
+
+    const std::locale previous = std::locale();
+    std::locale::global(std::locale(previous, new CommaDecimal));
+    ResultsDocument doc;
+    doc.N = 4;
+    doc.instances_done = 1;
+    doc.instances_target = 1;
+    doc.wall_seconds = 1.25;
+    doc.p_values = {0.5};
+    PValueSummary summary;
+    summary.k = 3;
+    summary.mean = 1.25;
+    summary.min = 1.25;
+    summary.max = 1.25;
+    summary.values = {1.25};
+    doc.summary[p_value_key(0.5)] = summary;
+    const std::string text = results_to_json(doc);
+    std::locale::global(previous);
+    require(text.find("1.25") != std::string::npos,
+            "JSON doubles use a locale-independent decimal point");
+    require(text.find("1,25") == std::string::npos,
+            "comma-decimal locales cannot corrupt JSON numbers");
+    require(p_value_key(0.5) == "0.5",
+            "probability keys are locale independent");
 }
 
 
@@ -357,9 +398,48 @@ ALDOUS_TEST(test_public_api_validation_and_concurrent_atomic_writers) {
         (std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     require(std::find(payloads.begin(), payloads.end(), final_payload) != payloads.end(),
             "concurrent atomic output is one complete writer payload");
+
+    const std::filesystem::path no_clobber_target = directory / "no-clobber.json";
+    std::atomic<int> ready{0};
+    std::atomic<bool> start{false};
+    std::atomic<int> committed{0};
+    std::atomic<int> refused{0};
+    std::vector<std::thread> no_clobber_threads;
+    for (int writer = 0; writer < writers; ++writer) {
+        no_clobber_threads.emplace_back([&, writer] {
+            ++ready;
+            while (!start.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            const AtomicWriteResult result = write_text_file_atomic(
+                no_clobber_target.string(), payloads[static_cast<std::size_t>(writer)],
+                ReplacePolicy::NoReplace, OutputDurability::None);
+            if (result.committed()) {
+                ++committed;
+            } else if (result.message.find("Refusing to overwrite") != std::string::npos) {
+                ++refused;
+            }
+        });
+    }
+    while (ready.load(std::memory_order_acquire) != writers) {
+        std::this_thread::yield();
+    }
+    start.store(true, std::memory_order_release);
+    for (std::thread& thread : no_clobber_threads) {
+        thread.join();
+    }
+    require(committed.load() == 1 && refused.load() == writers - 1,
+            "atomic no-clobber commits exactly one concurrent writer");
+    const AtomicWriteResult existing_result = write_text_file_atomic(
+        no_clobber_target.string(), "replacement", ReplacePolicy::NoReplace,
+        OutputDurability::Full);
+    require(!existing_result.committed()
+                && existing_result.state == OutputCommitState::NotCommitted,
+            "no-clobber reports an existing target as not committed");
+
     for (const std::filesystem::directory_entry& entry
          : std::filesystem::directory_iterator(directory)) {
-        require(entry.path() == target,
+        require(entry.path() == target || entry.path() == no_clobber_target,
                 "successful atomic writes leave no orphaned temporary files");
     }
     std::filesystem::remove_all(directory);

@@ -23,7 +23,7 @@ The project is organized as a reusable C++17 library plus a thin command-line ap
 - fixed simulated-annealing temperature schedule, plus opt-in held-out p-aware multiple-candidate search presets
 - optional exhaustive final 2-opt threshold for small tours; by default exhaustive 2-opt is final-only rather than used in every polishing pass
 - configurable p-grid via `--p-values`, `--p-range`, or `--p-file`
-- atomic JSON output with schema-versioned metadata, stable campaign/replicate identities, and search statistics
+- locale-independent UTF-8-safe JSON output with atomic no-clobber/replace policies, explicit durability status, schema-versioned metadata, stable campaign/replicate identities, and search statistics
 - CTest unit tests, CLI smoke tests, Python regression tests, sanitizer-compatible build, and strict JSON schema validation
 - plotting utility and CSV summary export
 - optional external LKH/Concorde oracle post-processing with timeout, tour validation, fake-oracle tests, and top-N elite polishing

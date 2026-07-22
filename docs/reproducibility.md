@@ -35,7 +35,9 @@ Use explicit seeds and p-grids for reproducible experiments:
 
 For strict reproducibility across machines, prefer `--threads 1`. Each instance uses deterministic stream seeds, so the numerical results should be stable for a given compiler and platform, but thread scheduling changes progress order and may change floating-point aggregation order in future extensions.
 
-The output writer uses an atomic temporary file + rename pattern to avoid half-written JSON files.
+The output writer uses a unique same-directory temporary file and an atomic commit operation to avoid half-written JSON files. Without `--force`, the final commit is an atomic create-if-absent operation, so concurrent processes cannot both win a no-overwrite race. With `--force`, replacement remains atomic. `--output-durability none|file|full` distinguishes a visible commit, a file-data-synchronized commit, and a file-plus-parent-directory-synchronized commit. The public writer reports whether a failure occurred before commit or after the target became visible, preventing unsafe blind retries.
+
+JSON numbers are formatted with locale-independent `to_chars` semantics. Valid UTF-8 strings are preserved; malformed byte sequences are replaced with the JSON `\uFFFD` replacement character rather than emitting invalid JSON text.
 
 
 ## Per-instance output
