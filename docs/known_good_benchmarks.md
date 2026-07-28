@@ -1,9 +1,9 @@
 # Known-good benchmark and validation commands
 
-This page combines reusable validation commands with compact tables rendered from the bundled `validation_runs/` manifests. Regenerate it with:
+This page combines reusable validation commands with compact tables rendered from the bundled current-release manifests in `validation_runs/current/`. Historical artifacts under `validation_archive/` are not included.
 
 ```bash
-python3 scripts/render_validation_report.py --validation-dir validation_runs --output docs/known_good_benchmarks.md
+python3 scripts/render_validation_report.py --validation-dir validation_runs/current --output docs/known_good_benchmarks.md
 ```
 
 The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence. Use them to check release health, deterministic parity, and output-schema stability before running larger experiments.
@@ -12,9 +12,9 @@ The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence.
 
 | Check | Observed result |
 | --- | --- |
-| Release/Python CTest | passed 11/11 |
+| Release/Python CTest inventory | 32 tests; run separately; see release validation and CI |
 | Backend parity | max_abs_mean_delta = 0.0 |
-| Benchmark suite | 9 scenarios, total wall 12.7343s |
+| Benchmark suite | 2 scenarios, total wall 0.7351s |
 | Real oracle smoke | skipped (No real LKH or Concorde executable found) |
 | Original-compatible routing | fake original CLI routing passed; not a solver-quality parity result |
 
@@ -22,41 +22,24 @@ The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence.
 
 | Scenario | Comparison | Matched p | Max \|Δmean\| | Grid wall (s) | Brute wall (s) |
 | --- | --- | --- | --- | --- | --- |
-| tiny-grid-parity | grid-vs-bruteforce | 3 | 0 | 0.1375 | 0.1406 |
-| small-hybrid-parity | grid-vs-bruteforce | 4 | 0 | 0.0081 | 0.0089 |
+| tiny-grid-parity | grid-vs-bruteforce | 3 | 0 | 0.062 | 0.0587 |
+| small-hybrid-parity | grid-vs-bruteforce | 4 | 0 | 0.011 | 0.0114 |
 
 ## Benchmark suite manifest excerpt
 
 | Scenario | Suite | N | Instances | Mode | Wall (s) | Best p | Best mean | 2-opt imp | High-p imp |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tiny-balanced | smoke | 60 | 2 | balanced | 0.7919 | 0.05 | 0.2408 | 394 | 9 |
-| small-hybrid | smoke | 120 | 2 | hybrid | 0.7548 | 0.02 | 0.256 | 1551 | 22 |
-| medium-balanced | larger | 180 | 2 | balanced | 1.941 | 0.02 | 0.2704 | 2869 | 23 |
-| medium-hybrid | larger | 180 | 2 | hybrid | 3.1904 | 0.02 | 0.2704 | 3219 | 23 |
-| ablation-baseline | ablation | 140 | 2 | hybrid | 1.423 | 0.05 | 0.4842 | 2186 | 12 |
-| ablation-no-two-opt | ablation | 140 | 2 | hybrid | 1.0711 | 0.05 | 0.4696 | 0 | 12 |
-| ablation-no-or-opt | ablation | 140 | 2 | hybrid | 0.996 | 0.05 | 0.4842 | 2208 | 12 |
-| ablation-no-lns | ablation | 140 | 2 | hybrid | 1.0697 | 0.05 | 0.4842 | 2234 | 12 |
-| ablation-no-relink | ablation | 140 | 2 | hybrid | 1.4963 | 0.05 | 0.4842 | 2142 | 12 |
-
-## Ablation manifest excerpt
-
-| Scenario | Disabled features | Wall (s) | Best mean | 2-opt imp | Or-opt imp | Pair imp | LNS imp | Relink feasible |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ablation-baseline | baseline | 1.423 | 0.4842 | 2186 | 298 | 20 | 31 | 24 |
-| ablation-no-two-opt | --disable-two-opt | 1.0711 | 0.4696 | 0 | 789 | 19 | 38 | 24 |
-| ablation-no-or-opt | --disable-or-opt | 0.996 | 0.4842 | 2208 | 0 | 21 | 39 | 24 |
-| ablation-no-lns | --disable-pair-exchange --disable-ruin-recreate | 1.0697 | 0.4842 | 2234 | 298 | 0 | 0 | 24 |
-| ablation-no-relink | --disable-path-relink | 1.4963 | 0.4842 | 2142 | 278 | 19 | 36 | 0 |
+| tiny-balanced | smoke | 60 | 2 | balanced | 0.5223 | 0.05 | 0.2648 | 952 | 3 |
+| small-hybrid | smoke | 120 | 2 | hybrid | 0.2127 | 0.02 | 0.256 | 2886 | 8 |
 
 ## Exhaustive 2-opt policy comparison
 
 | Policy | Wall (s) | Best mean | 2-opt scans | 2-opt imp | Or-opt scans | TSP s | Subset s |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| final-only | 0.0628 | 0.8427 | 4679 | 19 | 27038 | 0.0011 | 0.0284 |
-| all-polish | 0.0273 | 0.8427 | 101578 | 53 | 70128 | 9.401e-04 | 0.025 |
+| final-only | 0.0132 | 0.6688 | 23840 | 320 | 160148 | 0.0103 | 0.0026 |
+| all-polish | 0.0131 | 0.6688 | 472514 | 392 | 332123 | 0.0089 | 0.002 |
 
-`final-only` reduced two-opt scans by `96899` relative to `all-polish` in the bundled validation run.
+`final-only` reduced two-opt scans by `448674` relative to `all-polish` in the bundled validation run.
 
 ## Original-compatible parity routing
 
@@ -64,8 +47,8 @@ This table validates command routing only. It uses `tests/fake_original_cli.py` 
 
 | Scenario | Comparison | Baseline kind | Matched p | Current wall (s) | Baseline wall (s) | Baseline max \|Δmean\| |
 | --- | --- | --- | --- | --- | --- | --- |
-| original-compat-tiny | grid-vs-bruteforce | none | 2 | 0.0043 |  |  |
-| original-compat-tiny | current-vs-baseline | original | 14 | 0.0144 | 0.001 | 0.3464 |
+| original-compat-tiny | grid-vs-bruteforce | none | 2 | 0.004 |  |  |
+| original-compat-tiny | current-vs-baseline | original | 14 | 0.009 | 0.001 | 0.3464 |
 
 ## Local validation checklist
 

@@ -1,0 +1,31 @@
+{
+  "backend_parity": {
+    "max_abs_mean_delta": 0.0,
+    "rows": 2
+  },
+  "benchmark_summary": {
+    "scenarios": 2,
+    "total_wall_seconds": 0.735078432
+  },
+  "ctest_inventory": 32,
+  "ctest_status": "run separately; see release validation and CI",
+  "exhaustive_policy": {
+    "policies": [
+      "all-polish",
+      "final-only"
+    ],
+    "scan_reduction": 448674
+  },
+  "original_compatible_routing": "passed with tests/fake_original_cli.py",
+  "project_version": "2.0.0",
+  "real_oracle_smoke": {
+    "cases": [],
+    "reason": "No real LKH or Concorde executable found",
+    "solvers": {},
+    "status": "skipped"
+  },
+  "schema_version": 16,
+  "scope": "Compact release-health evidence only; not publication-scale Monte Carlo evidence and not a substitute for real LKH/Concorde runs.",
+  "source_commit": "65e0f94914170c023ad2ccc30312d3caca39d5e5",
+  "source_tree": "2e012cd8cf4a9fe6fe78bdae037c0c014d7f1bb2"
+}

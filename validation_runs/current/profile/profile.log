@@ -1,0 +1,76 @@
++ build-github-release/aldous_tsp --mode hybrid --N 120 --instances 1 --threads 1 --p-values 0.2,1.0 --output validation_runs/current/profile/profile.json --force --sa-iters 50 --restarts 1 --tsp-restarts 1 --tsp-ils 2 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=120, instances=1, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=50, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.20000000000000001,1
+========================================================================
+  [done 1/1] instance 1 in 0.01s  elapsed 0s  ETA 0s
+
+FINAL (N=120, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.2    24    0.70592    0.00000    0.70592    0.70592
+                   1   120    0.81155    0.00000    0.81155    0.81155
+Results written to validation_runs/current/profile/profile.json
+Timing receipt written to validation_runs/current/profile/profile.json.receipt (end-to-end 0.017s)
+
+Timing summary
+--------------
+wall_seconds      0.0132s
+knn_build_seconds 0.0005s
+tsp_seconds       0.0094s
+subset_seconds    0.0030s
+oracle_seconds    0.0000s
+
+Detailed aggregate worker-seconds
+--------------------------
+seed_construction_seconds            0.0001s
+tsp_construction_seconds             0.0004s
+initial_polish_seconds               0.0155s
+sa_seconds                           0.0001s
+sa_checkpoint_polish_seconds         0.0000s
+post_sa_polish_seconds               0.0001s
+subset_swap_seconds                  0.0003s
+highp_exchange_seconds               0.0000s
+pair_exchange_seconds                0.0015s
+ruin_recreate_seconds                0.0013s
+path_relink_seconds                  0.0000s
+tsp_ils_seconds                      0.0012s
+final_polish_seconds                 0.0004s
+oracle_seconds                       0.0000s
+sa_proposal_sample_latency_us      1.602 (2 samples)
+sa_insertion_sample_latency_us      1.432 (2 samples)
+
+Effective KNN
+-------------
+knn_requested_grid_instances         1
+knn_requested_bruteforce_instances   0
+knn_effective_grid_instances         1
+knn_effective_bruteforce_instances   0
+knn_bruteforce_fallback_instances    0
+knn_grid_cell_capped_instances       0
+knn_grid_cells_max                   9
+grid_cell_effective_min              3.69411477756367
+grid_cell_effective_max              3.69411477756367
+
+Move counters
+-------------
+two_opt_scans                    43321
+two_opt_improvements             521
+or_opt_scans                     266754
+or_opt_improvements              85
+sa_moves                         100
+sa_accepted                      8
+subset_swap_scans                18432
+subset_swap_improvements         8
+highp_exchange_scans             0
+highp_exchange_improvements      0
+pair_exchange_scans              46064
+pair_exchange_improvements       2
+ruin_recreate_attempts           16
+ruin_recreate_improvements       3
+path_relink_attempts             0
+path_relink_feasible             0
+path_relink_best_improvements    0
+oracle_calls                     0
+oracle_improved                  0
+
+Result JSON: validation_runs/current/profile/profile.json

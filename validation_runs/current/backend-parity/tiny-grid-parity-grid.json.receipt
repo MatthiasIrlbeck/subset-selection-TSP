@@ -1,0 +1,20 @@
+{
+  "receipt_schema_version": 1,
+  "result_path": "validation_runs/current/backend-parity/tiny-grid-parity-grid.json",
+  "result_sha256": "f65da43d2162c0be7e39581136585a805322e82000d1ad86c0be538779b6b7d9",
+  "result_bytes": 14781,
+  "requested_durability": "full",
+  "commit_state": "fully-durable",
+  "timing": {
+    "solver_wall_seconds": 0.062002145000000002,
+    "control_reference_seconds": 0,
+    "aggregation_seconds": 2.2923999999999999e-05,
+    "experiment_wall_seconds": 0.062025149000000002,
+    "serialization_seconds": 0.00022323199999999999,
+    "output_write_seconds": 2.022e-05,
+    "output_synchronization_seconds": 0.0031301369999999999,
+    "output_commit_seconds": 3.3519000000000002e-05,
+    "output_total_seconds": 0.0032448870000000001,
+    "process_end_to_end_seconds": 0.065711903000000002
+  }
+}

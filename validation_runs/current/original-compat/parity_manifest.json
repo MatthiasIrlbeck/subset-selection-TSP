@@ -1,0 +1,27 @@
+{
+  "baseline_kind": "original",
+  "rows": [
+    {
+      "baseline_kind": "none",
+      "baseline_max_abs_mean_delta": "",
+      "baseline_wall_seconds": "",
+      "bruteforce_wall_seconds": 0.003902559,
+      "comparison": "grid-vs-bruteforce",
+      "current_wall_seconds": 0.004039183,
+      "matched_p_values": 2,
+      "max_abs_mean_delta": 0.0,
+      "scenario": "original-compat-tiny"
+    },
+    {
+      "baseline_kind": "original",
+      "baseline_max_abs_mean_delta": 0.34644878500455223,
+      "baseline_wall_seconds": 0.001,
+      "bruteforce_wall_seconds": "",
+      "comparison": "current-vs-baseline",
+      "current_wall_seconds": 0.008997316,
+      "matched_p_values": 14,
+      "max_abs_mean_delta": "",
+      "scenario": "original-compat-tiny"
+    }
+  ]
+}

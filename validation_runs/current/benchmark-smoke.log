@@ -1,0 +1,38 @@
++ build-github-release/aldous_tsp --mode balanced --N 60 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 250 --tsp-restarts 2 --tsp-ils 8 --output validation_runs/current/benchmark-smoke/tiny-balanced.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=60, instances=2, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=balanced, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=2, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=250, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=2, pair_exchange_max_k=5000, path_relink_top=3, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.37s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.15s  elapsed 1s  ETA 0s
+
+FINAL (N=60, instances=2, wall=0.5s)
+                   p     k       mean     stderr        min        max
+                0.05     3    0.26476    0.14226    0.12250    0.40702
+                 0.1     6    0.42723    0.02232    0.40491    0.44955
+                0.25    15    0.61127    0.05740    0.55386    0.66867
+                 0.5    30    0.64619    0.03347    0.61272    0.67966
+                   1    60    0.82851    0.01772    0.81079    0.84624
+Results written to validation_runs/current/benchmark-smoke/tiny-balanced.json
+Timing receipt written to validation_runs/current/benchmark-smoke/tiny-balanced.json.receipt (end-to-end 0.525s)
++ build-github-release/aldous_tsp --mode hybrid --N 120 --instances 2 --threads 1 --p-values 0.02,0.05,0.10,0.25,0.50,0.80,1.0 --restarts 2 --sa-iters 900 --tsp-restarts 2 --tsp-ils 24 --output validation_runs/current/benchmark-smoke/small-hybrid.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=120, instances=2, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=2, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=900, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=2, pair_exchange_max_k=5000, path_relink_top=3, oracle=disabled, p_values=0.02,0.050000000000000003,0.10000000000000001,0.25,0.5,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 0.11s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.10s  elapsed 0s  ETA 0s
+
+FINAL (N=120, instances=2, wall=0.2s)
+                   p     k       mean     stderr        min        max
+                0.02     3    0.25602    0.08278    0.17324    0.33880
+                0.05     6    0.44457    0.00272    0.44185    0.44730
+                 0.1    12    0.54450    0.00293    0.54156    0.54743
+                0.25    30    0.64223    0.05654    0.58569    0.69877
+                 0.5    60    0.65161    0.01200    0.63960    0.66361
+                 0.8    96    0.71345    0.02103    0.69242    0.73449
+                   1   120    0.79150    0.01316    0.77834    0.80466
+Results written to validation_runs/current/benchmark-smoke/small-hybrid.json
+Timing receipt written to validation_runs/current/benchmark-smoke/small-hybrid.json.receipt (end-to-end 0.218s)
+Wrote validation_runs/current/benchmark-smoke/manifest.csv
+Wrote validation_runs/current/benchmark-smoke/manifest.json
