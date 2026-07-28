@@ -106,9 +106,13 @@ jobs:
           unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d source-archive-check
           source_dir="source-archive-check/subset-selection-TSP-${VERSION}"
           cmake -S "$source_dir" -B source-archive-build -G Ninja \
-            -DBUILD_TESTING=OFF \
-            -DALDOUS_TSP_BUILD_TESTS=OFF \
-            -DALDOUS_TSP_BUILD_CLI=OFF
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON \
+            -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
+          cmake --build source-archive-build --parallel 2
+          ctest --test-dir source-archive-build --output-on-failure
           grep -F "kGitCommit = \"${SOURCE_COMMIT}\"" \
             source-archive-build/generated/aldous_tsp/version.hpp
           grep -F "kGitTree = \"${SOURCE_TREE}\"" \
@@ -136,9 +140,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          dist/*
-          --verify-tag
-          --title "subset-selection-TSP ${VERSION}"
-          --generate-notes
+        run: |
+          set -euo pipefail
+          notes_file="docs/releases/${VERSION}.md"
+          test -f "$notes_file"
+          gh release create "$GITHUB_REF_NAME" \
+            dist/* \
+            --verify-tag \
+            --title "subset-selection-TSP ${VERSION}" \
+            --notes-file "$notes_file" \
+            --latest

@@ -1,6 +1,39 @@
 # Changelog
 
-## 0.12.0 -- trust-boundary and verifiable-release hardening
+## 2.0.0 -- public hardened release
+
+Version 2.0.0 is the first public release of the rebuilt library/CLI architecture. It
+is intended to preserve the existing public repository history while replacing the prototype release
+with the audited, reproducible solver developed through the internal 0.8--0.12 milestones.
+
+### Breaking and public-facing changes
+
+- Replaced the prototype-only executable layout with an installable C++17 library and a
+  thin CLI, namespaced under `aldous_tsp::`.
+- Introduced immutable prepared instances, strict public input contracts, mandatory solve
+  postconditions, strict schema-16 result output, and explicit migration tooling for
+  historical schemas 13--15.
+- Replaced the old default search controller with the compatibility-preserving
+  `legacy-balanced` policy and added held-out `heldout-balanced` and `heldout-quality`
+  policies as explicit opt-ins.
+- Added deterministic campaign identities, exact manifests, fail-closed resume semantics,
+  complete timing and uncertainty accounting, durable result receipts, SBOM/provenance
+  generation, and signed-tag release gates.
+
+### Migration from the public v1.0 prototype
+
+- Existing CLI commands should be reviewed against `./aldous_tsp --help`; option names,
+  defaults, validation, and JSON output are now generated from `config/options.json`.
+- Native output is schema 16. Use `scripts/migrate_schema13_to14.py`, then
+  `scripts/migrate_schema14_to15.py`, then `scripts/migrate_schema15_to16.py` for old
+  result documents.
+- Results remain heuristic upper bounds unless exact subset mode is explicitly enabled for
+  supported small instances. Conditional tour bounds do not certify global subset choice.
+
+The detailed internal milestones below document the individual correctness, performance,
+search-quality, statistical, and release-hardening changes incorporated into 2.0.0.
+
+## 0.12.0 -- trust-boundary and verifiable-release hardening (internal milestone)
 
 - Added immutable prepared-instance and checked lower-bound contracts, representable numerical-domain checks, and mandatory successful-solve postconditions.
 - Made JSON locale-independent and UTF-8-safe, enforced no-clobber atomically at commit, distinguished pre/post-commit durability outcomes, and installed a full CLI exception boundary.
@@ -37,7 +70,7 @@
 - Made AppleClang and MSVC portability jobs blocking, added Ruff correctness, clang-tidy, and GCC ThreadSanitizer jobs, enabled leak detection in ASan CI, and added a pinned historical hot-path performance gate.
 
 
-## Unreleased — correctness audit repair series
+## 0.9.7 -- correctness audit repair series (internal milestone)
 
 ### CLI and build gates
 
@@ -422,7 +455,7 @@ Motivated by profiling the 15.8 h overnight production run, which showed or-opt 
 
 - White-box regression tests: decomposed relink step selection matches brute-force best-pair evaluation; symmetric-difference cap skip/run/counter semantics; subset candidate tables match brute-force m-nearest-member reference on both KNN backends; effective SA budget linearity and overflow saturation; time budget launches additional restarts and never worsens the solution; table-driven 2-opt preserves tour invariants and incremental lengths; segment or-opt preserves permutation/invariants/length accounting; tiny-instance solve matches exhaustive subset enumeration.
 
-## CV/interview polish (source layout and public API)
+## 0.8.8 -- public API and source-layout polish (internal milestone)
 
 - Added object-oriented facade classes: `TspSolver`, `SubsetSolver`, and `ExperimentRunner`.
 - Moved the executable entry point to `apps/` so `src/` is implementation-focused.

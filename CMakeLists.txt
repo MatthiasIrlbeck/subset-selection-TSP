@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(aldous_tsp VERSION 0.12.0 LANGUAGES CXX)
+project(aldous_tsp VERSION 2.0.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
