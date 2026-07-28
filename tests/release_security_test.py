@@ -17,6 +17,7 @@ PINNED_ACTIONS = {
     "actions/setup-python": "8d9ed9ac5c53483de85588cdf95a591a75ab9f55",
     "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
     "actions/attest-build-provenance": "96278af6caaf10aea03fd8d33a09a777ca52d62f",
+    "github/codeql-action": "9e0d7b8d25671d64c341c19c0152d693099fb5ba",
 }
 
 
@@ -26,7 +27,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def test_workflow_pins(root: Path) -> None:
-    uses_re = re.compile(r"\buses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([0-9A-Fa-f]+)")
+    uses_re = re.compile(
+        r"\buses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
+        r"(?:/[A-Za-z0-9_.-]+)*@([0-9A-Fa-f]+)"
+    )
     seen: set[str] = set()
     for workflow in sorted((root / ".github" / "workflows").glob("*.yml")):
         text = workflow.read_text(encoding="utf-8")
@@ -42,12 +46,17 @@ def test_workflow_pins(root: Path) -> None:
             require(revision == expected, f"{workflow}:{line_number}: unexpected pin for {action}")
             seen.add(action)
     require("actions/attest-build-provenance" in seen, "release provenance action is absent")
+    require("github/codeql-action" in seen, "CodeQL workflow is absent")
     release = (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     require(".verification.verified" in release, "release tags are not signature-verified")
     require('--root "$source_dir"' in release,
             "SBOM is not generated from the archived source bytes")
     require("python3 scripts/create_source_archives.py" in release,
             "release archives do not use the mode-preserving generator")
+    require("--notes-file" in release and "--latest" in release,
+            "release publication does not use curated notes and explicit latest status")
+    require("scripts/verify_release_bundle.py" in release,
+            "release workflow does not verify its final artifact inventory")
 
 
 def test_oracle_lock(root: Path) -> None:

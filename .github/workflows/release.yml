@@ -98,6 +98,11 @@ jobs:
             --tree "$SOURCE_TREE" \
             --builder-id "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           (cd dist && sha256sum * > SHA256SUMS)
+          python3 scripts/verify_release_bundle.py \
+            --dist dist \
+            --expected-version "$VERSION" \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-tree "$SOURCE_TREE"
       - name: Verify source-archive revision fallback
         shell: bash
         run: |
