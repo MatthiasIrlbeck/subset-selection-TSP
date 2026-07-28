@@ -1,48 +1,54 @@
 # Aldous subset-selection TSP solver
 
-This repository estimates the curve in David Aldous's subset-selection traveling-salesperson problem. Given `N` random points in a square of area `N`, the solver estimates the normalized cycle length `L(k) / k` for `k = pN` across a grid of subset fractions `p`.
+[![CI](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml)
+[![Fuzzing](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml)
+[![CodeQL](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/codeql.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/codeql.yml)
+[![Latest release](https://img.shields.io/github/v/release/MatthiasIrlbeck/subset-selection-TSP)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The project is organized as a reusable C++17 library plus a thin command-line application. It keeps the high-performance heuristic layers from the earlier prototype while presenting a cleaner public API, installable CMake package, and validation workflow:
+This repository studies David Aldous's subset-selection traveling-salesperson problem.
+Given `N` random points in a square of area `N`, it estimates the normalized shortest-cycle
+length `L(k) / k` for `k = pN` over a grid of subset fractions `p`.
 
-- CMake core library + CLI split
-- conventional public-header/implementation split: `include/aldous_tsp/` for public API, `src/` for library implementation, and `apps/` for executables
-- namespaced public API under `aldous_tsp::`
-- object-oriented facade classes (`TspSolver`, `SubsetSolver`, and `ExperimentRunner`) over performance-oriented search kernels
-- deterministic xoshiro/splitmix RNG streams
-- exact grid KNN backend over arbitrary finite coordinate bounds, with brute-force backend and sampled verification hooks
-- reverse-KNN wakeups in candidate-set 2-opt with don't-look bits
-- batched distance scoring, including an AVX2 kernel behind `ALDOUS_TSP_ENABLE_NATIVE` (off by default) and a scalar fallback; the native build was measured *slower* than the default build on an AVX-512 host with GCC (downclocking/codegen effects), so benchmark on your target before enabling it
-- incremental tour mutation operations for 2-opt, node moves, and subset swaps
-- collision-safe elite-pool deduplication using canonical keys
-- full-TSP candidate screening with scalable nearest-neighbor starts, optional farthest insertion, deterministic diversity-aware promotion, parallel ILS, 3-cut perturbations, 2-opt, and Or-opt-1
-- subset simulated annealing with KNN-guided swap candidates
-- optional global exact cardinality-`k` subset-and-tour dynamic program for `N <= 18`, disabled by default
-- small-p spatial/dense seed pools
-- high-p deletion seeds and high-p reference-guided exchange descent
-- a staged subset-search funnel, deterministic subset swap descent, two-for-two pair exchange, ruin/recreate LNS, ejection chains, and budgeted elite path relinking
-- fixed simulated-annealing temperature schedule, plus opt-in held-out p-aware multiple-candidate search presets
-- optional exhaustive final 2-opt threshold for small tours; by default exhaustive 2-opt is final-only rather than used in every polishing pass
-- configurable p-grid via `--p-values`, `--p-range`, or `--p-file`
-- locale-independent UTF-8-safe JSON output with atomic no-clobber/replace policies, explicit durability status, schema-versioned metadata, stable campaign/replicate identities, and search statistics
-- CTest unit tests, CLI smoke tests, Python regression tests, sanitizer-compatible build, and strict JSON schema validation
-- plotting utility and CSV summary export
-- optional external LKH/Concorde oracle post-processing with timeout, tour validation, fake-oracle tests, and top-N elite polishing
-- exact ablation flags for solver-controlled local-search components
-- safe forced grid-cell handling for exact grid KNN
-- optional original-vs-current parity harness via `scripts/benchmark_parity.py --baseline-exe`, including original-CLI compatibility mode
-- build metadata in JSON, including build type, configured flags, CMake/compiler details, CPU model, and hardware threads
-- benchmark scenarios for smoke, larger, and ablation suites with manifest CSV output
-- split path-relink counters for attempts, feasible candidates, elite insertions, and best-solution improvements
-- per-oracle-call diagnostics in result JSON, including status, gain, runtime, and failure reason
-- normal Release builds are optimized by default; constrained builders can opt into `-DALDOUS_TSP_LOW_MEMORY_BUILD=ON`
-- array-form `summary_rows` result output in addition to the legacy p-keyed `summary` map
-- phase-level profiling support through `knn_build_seconds` and `scripts/profile_run.py`
-- optional real LKH/Concorde smoke script through `scripts/oracle_real_smoke.py`, with explicit skip/pass/fail manifests
+The project provides an installable C++17 library, a command-line solver, exact calibration
+for small instances, and reproducible campaign/analysis tooling. The production solver is
+heuristic: reported tour lengths are upper bounds on the unknown optimum unless exact subset
+mode is explicitly enabled for a supported small instance.
 
-The production solver is heuristic by default. For calibration and regression work,
-`--exact-subset-max-n` can instead prove the globally optimal size-`k` subset and
-its cycle for instances with `N <= 18`. The ordinary small-tour Held-Karp routine
-optimizes only the ordering of a fixed subset and is not a subset-optimality proof.
+## Quick start
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/aldous_tsp --quick --output results.json --force
+python3 scripts/plot_results.py results.json -o curve.png
+```
+
+The default `legacy-balanced` policy preserves the validated compatibility controller.
+Evidence-backed `heldout-balanced` and `heldout-quality` policies are opt-in; see
+[`docs/heldout_search_policy.md`](docs/heldout_search_policy.md).
+
+## What is included
+
+- Immutable, validated `PreparedInstance` inputs with exact grid or brute-force KNN construction.
+- Deterministic full-TSP and subset-search controllers with staged restarts, simulated annealing,
+  exact batched exchanges, adaptive ruin/recreate, ejection chains, and budgeted relinking.
+- Optional global exact cardinality-`k` subset-and-cycle dynamic programming for `N <= 18`.
+- Correct open-square and periodic/toroidal geometry with canonical minimum-image distances.
+- Strict schema-16, locale-independent UTF-8 JSON; atomic no-clobber/replace output and durable
+  receipts.
+- Stable point/search streams, campaign manifests, fail-closed resume, block bootstrap,
+  multifidelity correction, cross-fitted control variates, and model/range sensitivity analysis.
+- Optional LKH and Concorde post-processing with timeouts, output validation, and executable
+  provenance.
+- GCC/Clang, sanitizer, portability, fuzzing, schema, package-consumer, quality, and historical
+  performance gates.
+- Deterministic source archives with embedded source identity, SBOM, checksums, and provenance.
+
+For the algorithm and implementation details, see [`docs/algorithm.md`](docs/algorithm.md).
+For the public C++ API, see [`docs/public_api.md`](docs/public_api.md) and
+[`examples/library_usage.cpp`](examples/library_usage.cpp).
 
 ## Build
 
@@ -100,7 +106,7 @@ Dry-run resolved configuration:
 ./build/aldous_tsp --N 500 --p-range 0.02:1.0:12 --dry-run
 ```
 
-The published 0.10 controller remains the default. Evidence-backed search presets are opt-in:
+The `legacy-balanced` compatibility controller remains the default. Evidence-backed search presets are opt-in:
 
 ```bash
 # Matched-compute four-candidate SA through p=0.35
@@ -261,7 +267,7 @@ examples/                example p-grid files
 .github/workflows/       CI
 ```
 
-See `docs/known_good_benchmarks.md` for validation commands that have been run successfully and for manifest-derived benchmark tables. Regenerate that page with `scripts/render_validation_report.py`. This package includes current-version generated validation manifests and JSON outputs under `validation_runs/`; they are summarized in `docs/known_good_benchmarks.md` and checked by the optional Python CTest suite.
+See `docs/known_good_benchmarks.md` for the compact current-release validation evidence. Regenerate it with `scripts/regenerate_validation_artifacts.py` followed by `scripts/render_validation_report.py`. Current evidence lives in `validation_runs/current/`; explicitly historical evidence is retained under `validation_archive/` and is never presented as current-release validation.
 
 ## License
 

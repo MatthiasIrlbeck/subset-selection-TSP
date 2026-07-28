@@ -10,6 +10,8 @@ from pathlib import Path
 
 import jsonschema
 
+from validation_paths import iter_validation_json
+
 
 def load_migrator(root: Path):
     path = root / "scripts" / "migrate_schema13_to14.py"
@@ -21,7 +23,7 @@ def load_migrator(root: Path):
 
 
 def result_documents(root: Path):
-    for path in sorted((root / "validation_runs").rglob("*.json")):
+    for path in iter_validation_json(root):
         try:
             doc = json.loads(path.read_text())
         except json.JSONDecodeError:

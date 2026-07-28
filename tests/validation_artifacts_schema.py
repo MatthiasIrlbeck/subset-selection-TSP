@@ -12,13 +12,15 @@ except Exception as exc:
     print(f"jsonschema is required for validation_artifacts_schema.py: {exc}", file=sys.stderr)
     raise SystemExit(2) from exc
 
+from validation_paths import archived_validation_dirs, current_validation_dir
+
 
 def project_version(root: Path) -> str:
-    text = (root / "CMakeLists.txt").read_text()
-    m = re.search(r"project\(aldous_tsp VERSION ([^\s)]+)", text)
-    if not m:
+    text = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+    match = re.search(r"project\(aldous_tsp VERSION ([^\s)]+)", text)
+    if not match:
         raise RuntimeError("could not determine project version from CMakeLists.txt")
-    return m.group(1)
+    return match.group(1)
 
 
 def schema_version(schema: dict) -> int:
@@ -28,90 +30,132 @@ def schema_version(schema: dict) -> int:
     return value
 
 
+def is_native_result(document: dict) -> bool:
+    return all(
+        key in document
+        for key in ("schema_version", "run_metadata", "build_metadata", "summary_rows", "search_stats")
+    )
+
+
+def load_schemas(root: Path) -> dict[int, dict]:
+    schemas: dict[int, dict] = {}
+    for path in [root / "schema" / "results.schema.json", *sorted((root / "schema").glob("results-v*.schema.json"))]:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        schemas[schema_version(document)] = document
+    return schemas
+
+
+def validate_tree(
+    *,
+    root: Path,
+    validation_root: Path,
+    validators: dict[int, jsonschema.Draft202012Validator],
+    expected_project: str | None,
+    expected_schema: int | None,
+    label: str,
+) -> tuple[int, list[str]]:
+    errors: list[str] = []
+    count = 0
+    for path in sorted(validation_root.rglob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{path.relative_to(root)}: invalid JSON: {exc}")
+            continue
+        if not is_native_result(document):
+            continue
+        count += 1
+        version = document.get("schema_version")
+        validator = validators.get(version)
+        if validator is None:
+            errors.append(
+                f"{path.relative_to(root)}: unsupported schema_version {version}; "
+                f"available versions are {sorted(validators)}"
+            )
+            continue
+        if expected_schema is not None and version != expected_schema:
+            errors.append(
+                f"{path.relative_to(root)}: schema_version {version!r} != current {expected_schema!r}"
+            )
+        for error in sorted(validator.iter_errors(document), key=lambda value: list(value.path)):
+            location = "/".join(str(part) for part in error.path) or "<root>"
+            errors.append(f"{path.relative_to(root)} at {location}: {error.message}")
+        if expected_project is not None:
+            actual = document.get("run_metadata", {}).get("project_version")
+            if actual != expected_project:
+                errors.append(
+                    f"{path.relative_to(root)}: project_version {actual!r} != {expected_project!r}"
+                )
+
+    if count == 0:
+        errors.append(f"{label}: no native result JSON documents were found")
+
+    stale_patterns = ["/mnt/data/", "validate_work/", "audit_fix_", "0.8.5-cleanup"]
+    for path in sorted(validation_root.rglob("*")):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for needle in stale_patterns:
+            if needle in text:
+                errors.append(
+                    f"{path.relative_to(root)} contains environment-specific path fragment {needle!r}"
+                )
+                break
+    return count, errors
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: validation_artifacts_schema.py <repo_root>", file=sys.stderr)
         return 2
     root = Path(sys.argv[1]).resolve()
-    validation_dir = root / "validation_runs"
-    if not validation_dir.exists():
-        print(f"validation directory not found: {validation_dir}", file=sys.stderr)
+    current = current_validation_dir(root)
+    if not current.is_dir():
+        print(f"current validation directory not found: {current}", file=sys.stderr)
         return 1
 
-    current_schema = json.loads((root / "schema" / "results.schema.json").read_text())
-    current_version = schema_version(current_schema)
-    schemas = {current_version: current_schema}
-    for legacy_path in sorted((root / "schema").glob("results-v*.schema.json")):
-        legacy_schema = json.loads(legacy_path.read_text())
-        schemas[schema_version(legacy_schema)] = legacy_schema
+    schemas = load_schemas(root)
     validators = {
         version: jsonschema.Draft202012Validator(document)
         for version, document in schemas.items()
     }
-    # Artifacts declare their vintage in ARTIFACT_VERSION, and every artifact
-    # must match it (catches accidentally mixed vintages, which is the guard's
-    # real purpose). The pin is deliberately NOT required to equal the current
-    # project version: the real-oracle artifacts need an external LKH binary to
-    # regenerate, so tying them to the current version would block every version
-    # bump -- which is exactly how the project version froze at 0.8.7 while
-    # releases were being named 0.9.x, leaving misleading provenance in every
-    # newly produced result JSON. Drift from the current version is reported as
-    # a visible warning; regenerating the artifacts updates the pin.
     current_project = project_version(root)
-    pin_path = root / "validation_runs" / "ARTIFACT_VERSION"
-    expected_project = pin_path.read_text().strip() if pin_path.exists() else current_project
-    result_files: list[Path] = []
+    current_schema = max(schemas)
+
+    artifact_version_path = current / "ARTIFACT_VERSION"
+    artifact_schema_path = current / "ARTIFACT_SCHEMA"
     errors: list[str] = []
+    if not artifact_version_path.is_file():
+        errors.append("validation_runs/current/ARTIFACT_VERSION is missing")
+    elif artifact_version_path.read_text(encoding="utf-8").strip() != current_project:
+        errors.append("validation_runs/current/ARTIFACT_VERSION does not match the project version")
+    if not artifact_schema_path.is_file():
+        errors.append("validation_runs/current/ARTIFACT_SCHEMA is missing")
+    elif artifact_schema_path.read_text(encoding="utf-8").strip() != str(current_schema):
+        errors.append("validation_runs/current/ARTIFACT_SCHEMA does not match the current schema")
 
-    for path in sorted(validation_dir.rglob("*.json")):
-        try:
-            doc = json.loads(path.read_text())
-        except json.JSONDecodeError as exc:
-            errors.append(f"{path.relative_to(root)}: invalid JSON: {exc}")
-            continue
-        if "schema_version" not in doc:
-            continue
-        # Only current executable result JSONs are validated against the current
-        # result schema. The validation directory also contains tool manifests
-        # and fake-original outputs used to test original-compatible command
-        # routing; those are intentionally not current-schema result files.
-        if not all(key in doc for key in ("run_metadata", "build_metadata", "summary_rows", "search_stats")):
-            continue
-        result_files.append(path)
-        document_version = doc.get("schema_version")
-        validator = validators.get(document_version)
-        if validator is None:
-            errors.append(
-                f"{path.relative_to(root)}: unsupported schema_version {document_version}; "
-                f"available versions are {sorted(validators)}"
-            )
-            continue
-        for error in sorted(validator.iter_errors(doc), key=lambda e: list(e.path)):
-            location = "/".join(str(part) for part in error.path) or "<root>"
-            errors.append(f"{path.relative_to(root)} at {location}: {error.message}")
-        project = doc.get("run_metadata", {}).get("project_version")
-        if project != expected_project:
-            errors.append(f"{path.relative_to(root)}: project_version {project!r} != {expected_project!r}")
+    current_count, current_errors = validate_tree(
+        root=root,
+        validation_root=current,
+        validators=validators,
+        expected_project=current_project,
+        expected_schema=current_schema,
+        label="current validation",
+    )
+    errors.extend(current_errors)
 
-    if not result_files:
-        errors.append("no validation result JSON files with schema_version were found")
-
-    if expected_project != current_project:
-        print(f"NOTE: validation artifacts are from solver {expected_project}; current is "
-              f"{current_project}. They remain schema-valid; regenerate them (and update "
-              f"validation_runs/ARTIFACT_VERSION) when convenient.")
-
-    # Bundled source packages should not carry paths from the build sandbox that
-    # generated their validation artifacts. Paths make the evidence harder to
-    # compare across release hosts and have previously hidden stale artifacts.
-    stale_patterns = ["/mnt/data/", "validate_work/", "audit_fix_", "0.8.5-cleanup"]
-    for path in sorted(validation_dir.rglob("*")):
-        if path.is_file():
-            text = path.read_text(errors="ignore")
-            for needle in stale_patterns:
-                if needle in text:
-                    errors.append(f"{path.relative_to(root)} contains stale/environment-specific path fragment {needle!r}")
-                    break
+    archived_count = 0
+    for archived in archived_validation_dirs(root):
+        count, archive_errors = validate_tree(
+            root=root,
+            validation_root=archived,
+            validators=validators,
+            expected_project=None,
+            expected_schema=None,
+            label=str(archived.relative_to(root)),
+        )
+        archived_count += count
+        errors.extend(archive_errors)
 
     if errors:
         for line in errors[:200]:
@@ -119,10 +163,10 @@ def main() -> int:
         if len(errors) > 200:
             print(f"... {len(errors) - 200} more errors", file=sys.stderr)
         return 1
-    versions = sorted({json.loads(path.read_text()).get("schema_version") for path in result_files})
+
     print(
-        f"validated {len(result_files)} bundled validation result JSON files "
-        f"against archived/current schemas {versions} / project {expected_project}"
+        f"validated {current_count} current {current_project}/schema-{current_schema} results "
+        f"and {archived_count} explicitly archived historical results"
     )
     return 0
 

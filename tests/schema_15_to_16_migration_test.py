@@ -10,6 +10,8 @@ from pathlib import Path
 
 import jsonschema
 
+from validation_paths import iter_validation_json
+
 
 def load_module(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -31,7 +33,7 @@ def main() -> int:
     validator = jsonschema.Draft202012Validator(schema)
 
     source15 = None
-    for path in sorted((root / "validation_runs").rglob("*.json")):
+    for path in iter_validation_json(root):
         try:
             doc = json.loads(path.read_text())
         except json.JSONDecodeError:

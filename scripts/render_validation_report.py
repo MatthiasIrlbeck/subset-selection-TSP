@@ -2,8 +2,9 @@
 """Render docs/known_good_benchmarks.md from validation artifact manifests.
 
 The script is intentionally lightweight: it reads the bundled CSV/JSON manifests
-under validation_runs/ and produces a human-readable checklist plus compact
-observed-result tables. It is safe to rerun after a fresh validation pass.
+under validation_runs/current and produces a human-readable checklist plus compact
+observed-result tables. Historical evidence under validation_archive is intentionally
+excluded. It is safe to rerun after a fresh validation pass.
 """
 from __future__ import annotations
 
@@ -48,8 +49,11 @@ def render(validation_dir: Path) -> str:
     summary_path = validation_dir / "validation_summary.json"
     summary = json.loads(summary_path.read_text()) if summary_path.exists() else {}
     backend = read_csv(validation_dir / "backend-parity" / "parity_manifest.csv")
-    benchmark = read_csv(validation_dir / "benchmark-all" / "manifest.csv")
-    ablation = read_csv(validation_dir / "benchmark-all" / "ablation_manifest.csv")
+    benchmark_root = validation_dir / "benchmark-smoke"
+    if not benchmark_root.exists():
+        benchmark_root = validation_dir / "benchmark-all"
+    benchmark = read_csv(benchmark_root / "manifest.csv")
+    ablation = read_csv(benchmark_root / "ablation_manifest.csv")
     policy = read_csv(validation_dir / "exhaustive-policy" / "manifest.csv")
     original_compat = read_csv(validation_dir / "original-compat" / "parity_manifest.csv")
     oracle_manifest_path = validation_dir / "real-oracle-smoke" / "real_oracle_manifest.json"
@@ -58,10 +62,10 @@ def render(validation_dir: Path) -> str:
     lines: list[str] = []
     lines.append("# Known-good benchmark and validation commands")
     lines.append("")
-    lines.append("This page combines reusable validation commands with compact tables rendered from the bundled `validation_runs/` manifests. Regenerate it with:")
+    lines.append("This page combines reusable validation commands with compact tables rendered from the bundled current-release manifests in `validation_runs/current/`. Historical artifacts under `validation_archive/` are not included.")
     lines.append("")
     lines.append("```bash")
-    lines.append("python3 scripts/render_validation_report.py --validation-dir validation_runs --output docs/known_good_benchmarks.md")
+    lines.append("python3 scripts/render_validation_report.py --validation-dir validation_runs/current --output docs/known_good_benchmarks.md")
     lines.append("```")
     lines.append("")
     lines.append("The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence. Use them to check release health, deterministic parity, and output-schema stability before running larger experiments.")
@@ -74,9 +78,13 @@ def render(validation_dir: Path) -> str:
         lines.append(md_table(
             ["Check", "Observed result"],
             [
-                ["Release/Python CTest", "passed 11/11"],
-                ["Backend parity", "max_abs_mean_delta = 0.0"],
-                ["Benchmark suite", f"{bsum.get('scenarios', 'n/a')} scenarios, total wall {fmt_float(bsum.get('total_wall', ''))}s"],
+                [
+                    "Release/Python CTest inventory",
+                    (f"{summary.get('ctest_inventory')} tests; {summary.get('ctest_status', 'see CI')}"
+                     if summary.get("ctest_inventory") is not None else summary.get("ctest_status", "see CI")),
+                ],
+                ["Backend parity", f"max_abs_mean_delta = {summary.get('backend_parity', {}).get('max_abs_mean_delta', 'n/a')}"],
+                ["Benchmark suite", f"{bsum.get('scenarios', 'n/a')} scenarios, total wall {fmt_float(bsum.get('total_wall_seconds', bsum.get('total_wall', '')))}s"],
                 ["Real oracle smoke", oracle_manifest.get("status", "unknown") + (f" ({oracle_manifest.get('reason')})" if oracle_manifest.get("reason") else "")],
                 ["Original-compatible routing", "fake original CLI routing passed; not a solver-quality parity result"],
             ],
@@ -213,7 +221,7 @@ def render(validation_dir: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render known-good benchmark documentation from validation manifests.")
-    parser.add_argument("--validation-dir", default="validation_runs", help="Directory containing validation manifests")
+    parser.add_argument("--validation-dir", default="validation_runs/current", help="Directory containing current-release validation manifests")
     parser.add_argument("--output", default="docs/known_good_benchmarks.md", help="Markdown output path")
     args = parser.parse_args()
     validation_dir = Path(args.validation_dir)

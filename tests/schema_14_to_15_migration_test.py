@@ -10,6 +10,8 @@ from pathlib import Path
 
 import jsonschema
 
+from validation_paths import iter_validation_json
+
 
 def load_migrator(root: Path):
     path = root / "scripts" / "migrate_schema14_to15.py"
@@ -21,7 +23,7 @@ def load_migrator(root: Path):
 
 
 def schema14_documents(root: Path):
-    for path in sorted((root / "validation_runs").rglob("*.json")):
+    for path in iter_validation_json(root):
         try:
             document = json.loads(path.read_text())
         except json.JSONDecodeError:
@@ -67,7 +69,7 @@ def main() -> int:
     if first_path is None:
         old_test = root / "tests" / "schema_migration_test.py"
         assert old_test.exists()
-        for path in sorted((root / "validation_runs").rglob("*.json")):
+        for path in iter_validation_json(root):
             document = json.loads(path.read_text())
             if document.get("schema_version") == 13 and "run_metadata" in document:
                 old_spec = importlib.util.spec_from_file_location(
@@ -97,7 +99,7 @@ def main() -> int:
         break
     if source_document is None:
         # Chain one bundled v13 artifact again for CLI testing.
-        for path in sorted((root / "validation_runs").rglob("*.json")):
+        for path in iter_validation_json(root):
             document = json.loads(path.read_text())
             if document.get("schema_version") == 13 and "run_metadata" in document:
                 old_spec = importlib.util.spec_from_file_location(
