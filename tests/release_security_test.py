@@ -143,6 +143,16 @@ def test_sbom_and_provenance(root: Path) -> None:
         require(len(statement["subject"]) == 2, "provenance subjects are incomplete")
 
 
+def is_git_worktree(root: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
 
 def test_source_archive_modes(root: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="aldous-tsp-archive-mode-") as tmp:
@@ -243,7 +253,10 @@ def main() -> int:
     test_workflow_pins(root)
     test_oracle_lock(root)
     test_sbom_and_provenance(root)
-    test_source_archive_modes(root)
+    if is_git_worktree(root):
+        test_source_archive_modes(root)
+    else:
+        print("release security self-test: source-archive regeneration skipped (no .git metadata)")
     test_source_archive_fallback(root)
     print("release security self-test passed")
     return 0
