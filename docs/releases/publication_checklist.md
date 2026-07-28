@@ -22,6 +22,10 @@ the ancestry. Push `release/v2.0.0`, open a pull request, and run every blocking
 merging. If `origin/main` has changed, inspect the new commits and update the expected head rather
 than bypassing the check.
 
+The same guarded merge is automated by `scripts/prepare_public_release_branch.sh`. Run it while
+checked out at the hardened `release/v2.0.0-prep` tip; it refuses a dirty tree, an unexpected public
+head, or an existing destination branch.
+
 After merge, create a signed annotated tag:
 
 ```bash
