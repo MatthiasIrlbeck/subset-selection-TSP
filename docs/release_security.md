@@ -6,14 +6,14 @@ Native builds record the source commit, Git tree, dirty state, and how that iden
 
 Every reusable GitHub Action is referenced by a reviewed 40-character commit SHA. `tests/release_security_test.py` rejects mutable tags and unreviewed actions.
 
-The scheduled real-oracle workflow keeps the official LKH and Concorde URLs in `config/oracle_sources.json`, imposes maximum download sizes, and requires independently approved SHA-256 values through repository variables:
+The real-oracle workflow keeps the official LKH and Concorde URLs in `config/oracle_sources.json`, imposes maximum download sizes, and requires independently approved SHA-256 values through repository variables:
 
 ```text
 LKH_3_0_14_SHA256
 CONCORDE_LINUX24_SHA256
 ```
 
-A manual dispatch may supply the same digests explicitly. Missing or malformed digests fail the workflow before download; mismatches fail before extraction or execution. The solver hashes an oracle when resolving it and re-hashes the exact executable immediately before every launch. A changed executable is refused. Captured console output and tour files have fixed read-size limits.
+The release candidate intentionally keeps this workflow manual-only until both repository variables have been configured and reviewed. A manual dispatch may supply the same digests explicitly. Missing or malformed digests fail the workflow before download; mismatches fail before extraction or execution. Re-enable a schedule only in a reviewed follow-up change after the repository variables are present. The solver hashes an oracle when resolving it and re-hashes the exact executable immediately before every launch. A changed executable is refused. Captured console output and tour files have fixed read-size limits.
 
 ## Release artifacts
 

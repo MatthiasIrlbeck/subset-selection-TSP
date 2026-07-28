@@ -35,6 +35,10 @@ git tag -s v2.0.0 -m "subset-selection-TSP 2.0.0"
 git push origin v2.0.0
 ```
 
+`CITATION.cff` intentionally omits the optional `date-released` field while the
+release is still a candidate. The signed tag and GitHub release metadata are the
+authoritative publication date; do not commit a guessed date merely to prepare the PR.
+
 The verified-release workflow creates a **draft** and explicitly leaves it non-latest. Review the
 attached archives, SBOM, checksum manifest, provenance statement, and GitHub attestations. Then
 publish and mark it latest explicitly:
@@ -58,8 +62,9 @@ Before the release pull request is merged:
    an up-to-date branch, and no force-push or deletion.
 5. Protect `v*` tags from update and deletion. Require a signed annotated release tag.
 6. Configure the independently verified `LKH_3_0_14_SHA256` and
-   `CONCORDE_LINUX24_SHA256` repository variables before enabling the scheduled real-oracle
-   workflow; otherwise keep that workflow manual-only.
+   `CONCORDE_LINUX24_SHA256` repository variables. The release candidate intentionally keeps
+   the real-oracle workflow manual-only; restore its schedule only in a reviewed follow-up after
+   both variables are present.
 7. Review Dependabot's first GitHub Actions and Python dependency pull requests before merging.
 
 The repository files cannot enforce these account-level settings. Record the final ruleset names

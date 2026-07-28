@@ -76,9 +76,30 @@ def test_oracle_lock(root: Path) -> None:
         require(re.fullmatch(r"[A-Z0-9_]+", str(source.get("digest_variable", ""))) is not None,
                 f"oracle source {name} has no digest-variable contract")
     workflow = (root / ".github" / "workflows" / "real-oracles.yml").read_text(encoding="utf-8")
+    require("workflow_dispatch:" in workflow, "oracle workflow is not manually dispatchable")
+    require(
+        re.search(r"(?m)^\s*schedule:\s*$", workflow) is None,
+        "real-oracle schedule must remain disabled until approved digest variables exist",
+    )
     require("scripts/verified_download.py" in workflow, "oracle workflow bypasses verified downloader")
     require("sha256sum" not in workflow or "--check" in workflow,
             "oracle workflow contains an unchecked checksum command")
+
+
+def test_release_metadata(root: Path) -> None:
+    cmake = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+    match = re.search(r"project\(aldous_tsp VERSION ([^\s)]+)", cmake)
+    require(match is not None, "CMake project version is missing")
+    version = match.group(1)
+
+    citation = (root / "CITATION.cff").read_text(encoding="utf-8")
+    citation_match = re.search(r'(?m)^version:\s*["\']?([^"\'\s]+)', citation)
+    require(citation_match is not None, "CITATION.cff version is missing")
+    require(citation_match.group(1) == version, "CITATION.cff and CMake versions differ")
+    require(
+        re.search(r"(?m)^date-released:", citation) is None,
+        "release candidate must not claim a speculative publication date",
+    )
 
 
 def test_sbom_and_provenance(root: Path) -> None:
@@ -413,6 +434,7 @@ def main() -> int:
     root = Path(sys.argv[1]).resolve()
     test_workflow_pins(root)
     test_oracle_lock(root)
+    test_release_metadata(root)
     test_sbom_and_provenance(root)
     test_release_bundle_verifier(root)
     test_source_archive_modes(root)

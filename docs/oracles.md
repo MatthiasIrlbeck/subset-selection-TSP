@@ -62,7 +62,7 @@ The core unit test suite includes a fake LKH executable that:
 
 The CTest CLI suite also includes a fake-oracle smoke test. A provenance-checked integration-harness self-test copies the reference executable to a path containing spaces and a dollar sign, then exercises open explicit-matrix, periodic explicit-matrix, and open `EUC_2D` cases. Every case requires both subset and full-TSP call records and validates the result against the strict JSON schema. These tests exercise process launch, format generation, result parsing, and executable identity without requiring a real LKH/Concorde installation.
 
-A scheduled GitHub Actions workflow, `.github/workflows/real-oracles.yml`, downloads LKH 3.0.14 and the official Concorde Linux executable and runs the same matrix with both solvers required. The uploaded evidence contains JSON, logs, independently calculated binary identities, and per-call provenance; copied solver executables are deleted before artifact upload. Run the same gate locally with:
+A manual GitHub Actions workflow, `.github/workflows/real-oracles.yml`, downloads LKH 3.0.14 and the official Concorde Linux executable and runs the same matrix with both solvers required. It is intentionally manual-only until the independently verified digest variables are configured; a reviewed follow-up may then restore a schedule. The uploaded evidence contains JSON, logs, independently calculated binary identities, and per-call provenance; copied solver executables are deleted before artifact upload. Run the same gate locally with:
 
 ```bash
 python3 scripts/oracle_real_smoke.py \

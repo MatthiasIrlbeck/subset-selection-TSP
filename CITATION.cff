@@ -5,6 +5,5 @@ authors:
   - family-names: "Irlbeck"
     given-names: "Matthias"
 version: "2.0.0"
-date-released: 2026-07-28
 repository-code: "https://github.com/MatthiasIrlbeck/subset-selection-TSP"
 license: MIT

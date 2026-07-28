@@ -1,8 +1,8 @@
-name: Scheduled real-oracle integration
+name: Real-oracle integration
 
+# Deliberately manual-only until the independently verified oracle digests are
+# configured as repository variables. See docs/releases/publication_checklist.md.
 on:
-  schedule:
-    - cron: "43 4 1 * *"
   workflow_dispatch:
     inputs:
       lkh_sha256:
