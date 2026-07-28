@@ -142,6 +142,96 @@ def validate_current_receipts(root: Path, current: Path) -> list[str]:
     return errors
 
 
+def validate_current_provenance(root: Path, current: Path) -> list[str]:
+    errors: list[str] = []
+    records: set[tuple[object, ...]] = set()
+    for path in sorted(current.rglob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not is_native_result(document):
+            continue
+        metadata = document.get("run_metadata", {})
+        records.add(
+            (
+                metadata.get("project_version"),
+                document.get("schema_version"),
+                metadata.get("git_commit"),
+                metadata.get("git_tree"),
+                metadata.get("source_dirty"),
+                metadata.get("revision_source"),
+            )
+        )
+
+    if len(records) != 1:
+        errors.append(
+            "validation_runs/current must contain exactly one native source provenance; "
+            f"found {sorted(records, key=repr)!r}"
+        )
+        return errors
+
+    project, schema, commit, tree, dirty, revision_source = next(iter(records))
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        errors.append(f"validation_runs/current has invalid source commit {commit!r}")
+    if not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        errors.append(f"validation_runs/current has invalid source tree {tree!r}")
+    if dirty is not False:
+        errors.append("validation_runs/current must be generated from a clean source tree")
+    if revision_source not in {"git", "source-archive"}:
+        errors.append(
+            f"validation_runs/current has invalid revision source {revision_source!r}"
+        )
+
+    summary_path = current / "validation_summary.json"
+    if not summary_path.is_file():
+        errors.append("validation_runs/current/validation_summary.json is missing")
+    else:
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{summary_path.relative_to(root)}: invalid JSON: {exc}")
+        else:
+            expected = {
+                "project_version": project,
+                "schema_version": schema,
+                "source_commit": commit,
+                "source_tree": tree,
+            }
+            for key, value in expected.items():
+                if summary.get(key) != value:
+                    errors.append(
+                        f"{summary_path.relative_to(root)}: {key} {summary.get(key)!r} "
+                        f"!= native evidence {value!r}"
+                    )
+            if summary.get("source_dirty", False) is not False:
+                errors.append(
+                    f"{summary_path.relative_to(root)}: source_dirty must be false"
+                )
+            if summary.get("revision_source", revision_source) != revision_source:
+                errors.append(
+                    f"{summary_path.relative_to(root)}: revision_source does not match "
+                    "native evidence"
+                )
+
+    readme_path = current / "README.md"
+    if not readme_path.is_file():
+        errors.append("validation_runs/current/README.md is missing")
+    else:
+        readme = readme_path.read_text(encoding="utf-8")
+        for label, value in (("solver commit", commit), ("source tree", tree)):
+            if isinstance(value, str) and f"{label}: `{value}`" not in readme:
+                errors.append(
+                    f"{readme_path.relative_to(root)} does not state its exact {label}"
+                )
+        if "not publication-scale Monte Carlo evidence" not in readme:
+            errors.append(
+                f"{readme_path.relative_to(root)} does not state the evidence scope"
+            )
+
+    return errors
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: validation_artifacts_schema.py <repo_root>", file=sys.stderr)
@@ -182,6 +272,7 @@ def main() -> int:
     )
     errors.extend(current_errors)
     errors.extend(validate_current_receipts(root, current))
+    errors.extend(validate_current_provenance(root, current))
 
     archived_count = 0
     for archived in archived_validation_dirs(root):
