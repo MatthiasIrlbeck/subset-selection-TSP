@@ -1,0 +1,23 @@
+name: Research result or reproducibility question
+description: Ask about campaign manifests, numerical claims, analysis, or reproduction
+labels: [reproducibility]
+body:
+  - type: textarea
+    id: claim
+    attributes:
+      label: Result or claim
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance
+      description: Include result schema, configuration/method fingerprints, source commit/tree, campaign manifest, and oracle hashes.
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Reproduction problem or question
+    validations:
+      required: true

@@ -1,0 +1,3 @@
+# Optional dependencies for plotting, result-schema validation, and campaign analysis.
+jsonschema>=4.23,<5
+matplotlib>=3.9,<4
