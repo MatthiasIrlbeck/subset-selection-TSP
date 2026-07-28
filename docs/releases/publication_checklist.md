@@ -31,5 +31,13 @@ git tag -s v2.0.0 -m "subset-selection-TSP 2.0.0"
 git push origin v2.0.0
 ```
 
-Create the GitHub release as a draft first, verify all checksums/attestations, mark it as latest,
-and only then publish or enable release immutability.
+The verified-release workflow creates a **draft** and explicitly leaves it non-latest. Review the
+attached archives, SBOM, checksum manifest, provenance statement, and GitHub attestations. Then
+publish and mark it latest explicitly:
+
+```bash
+gh release edit v2.0.0 --draft=false --latest
+```
+
+Enable release immutability only after that review. Draft releases cannot be marked latest by the
+GitHub Releases API, so these are intentionally separate steps.

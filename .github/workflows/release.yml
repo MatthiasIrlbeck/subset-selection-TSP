@@ -154,4 +154,6 @@ jobs:
             --verify-tag \
             --title "subset-selection-TSP ${VERSION}" \
             --notes-file "$notes_file" \
-            --latest
+            --draft \
+            --latest=false \
+            --fail-on-no-commits

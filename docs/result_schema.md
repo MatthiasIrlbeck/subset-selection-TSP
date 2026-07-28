@@ -117,8 +117,8 @@ Restart-kind codes are:
 | 5 | `kick` | scheduled elite kick |
 | 6 | `region` | local region seed |
 | 7 | `dense` | dense compact seed |
-| 8 | `tsp-farthest-insertion` | first full-TSP restart |
-| 9 | `tsp-nearest-neighbor` | later full-TSP restarts |
+| 8 | `tsp-farthest-insertion` | optional explicit farthest-insertion TSP pilot |
+| 9 | `tsp-nearest-neighbor` | default screened full-TSP candidate starts |
 
 For an ordinary solve, records are all primary and retain restart-index order. Independent records are generated from streams keyed by instance, cardinality, seed kind, and variant, so their values do not change when other `p` points are added to or reordered in the campaign grid. Under the default `supplemental` continuation policy, warm records are appended without removing an independent draw; `fixed-budget` reserves the configured warm quota inside `--restarts`. Optional deterministic racing is also supplemental: every race candidate receives a fixed pilot, a stable quality-and-diversity rule promotes a fixed number, and promoted candidates are rerun from exactly the same seed and RNG stream at full depth. Each candidate contributes one final record—pilot-only or promoted-full—and role `4` keeps the selected population out of the default independent EVT sample. With `--second-sweep`, the primary records are serialized first and continuation-only secondary records are appended; `best_restart` is then recomputed over that combined sequence. A `p = 1` row contains the full-TSP restart population, so its executed count and arrays are no longer zero/empty when TSP restarts ran.
 

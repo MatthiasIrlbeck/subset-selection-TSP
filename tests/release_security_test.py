@@ -53,8 +53,12 @@ def test_workflow_pins(root: Path) -> None:
             "SBOM is not generated from the archived source bytes")
     require("python3 scripts/create_source_archives.py" in release,
             "release archives do not use the mode-preserving generator")
-    require("--notes-file" in release and "--latest" in release,
-            "release publication does not use curated notes and explicit latest status")
+    require("--notes-file" in release,
+            "release publication does not use curated release notes")
+    require("--draft" in release and "--latest=false" in release,
+            "release workflow does not stage a reviewable draft release")
+    require("--fail-on-no-commits" in release,
+            "release workflow can publish an accidental duplicate release")
     require("scripts/verify_release_bundle.py" in release,
             "release workflow does not verify its final artifact inventory")
 
