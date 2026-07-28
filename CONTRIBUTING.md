@@ -58,4 +58,5 @@ git diff --check
 ```
 
 For sanitizer and fuzzing instructions, see `docs/fuzzing.md`. For release and provenance
-requirements, see `docs/release_security.md`.
+requirements, see `docs/release_security.md`; maintainers should also follow
+`docs/releases/publication_checklist.md`.

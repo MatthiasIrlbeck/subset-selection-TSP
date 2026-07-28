@@ -41,3 +41,35 @@ gh release edit v2.0.0 --draft=false --latest
 
 Enable release immutability only after that review. Draft releases cannot be marked latest by the
 GitHub Releases API, so these are intentionally separate steps.
+
+## GitHub repository settings
+
+Before the release pull request is merged:
+
+1. Enable private vulnerability reporting and verify that the Security issue-template link opens
+   the repository's private advisory form.
+2. Enable secret scanning and push protection when the repository settings make them available.
+3. Run the release branch once so GitHub registers the new status-check names.
+4. Protect `main` with a ruleset that requires a pull request, all blocking CI/CodeQL checks,
+   an up-to-date branch, and no force-push or deletion.
+5. Protect `v*` tags from update and deletion. Require a signed annotated release tag.
+6. Configure the independently verified `LKH_3_0_14_SHA256` and
+   `CONCORDE_LINUX24_SHA256` repository variables before enabling the scheduled real-oracle
+   workflow; otherwise keep that workflow manual-only.
+7. Review Dependabot's first GitHub Actions and Python dependency pull requests before merging.
+
+The repository files cannot enforce these account-level settings. Record the final ruleset names
+and required checks in the release issue or pull request.
+
+## Release-candidate checks
+
+- Confirm the source-archive CTest inventory is completely green, not only the Git checkout.
+- Run `python3 scripts/verify_release_bundle.py` against the final `dist/` directory.
+- Confirm `validation_runs/current/ARTIFACT_VERSION` and every native current result match 2.0.0
+  and schema 16.
+- Confirm the current validation receipts match the normalized result bytes.
+- Confirm the public API example builds through the installed CMake package.
+- Confirm the release notes explain that production results are heuristic upper bounds unless the
+  exact small-instance solver is explicitly used.
+- Confirm the draft release contains exactly the ZIP, tarball, SPDX SBOM, provenance statement,
+  and checksum manifest produced by the verified workflow.

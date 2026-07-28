@@ -156,6 +156,122 @@ def test_sbom_and_provenance(root: Path) -> None:
         require(len(statement["subject"]) == 2, "provenance subjects are incomplete")
 
 
+def test_release_bundle_verifier(root: Path) -> None:
+    with tempfile.TemporaryDirectory(prefix="aldous-release-bundle-") as raw:
+        temp = Path(raw)
+        repository = temp / "repository"
+        repository.mkdir()
+        (repository / ".gitattributes").write_text(
+            "SOURCE_REVISION export-subst\n", encoding="utf-8"
+        )
+        (repository / "SOURCE_REVISION").write_text(
+            "commit=$Format:%H$\n"
+            "tree=$Format:%T$\n"
+            "refnames=$Format:%D$\n",
+            encoding="utf-8",
+        )
+        (repository / "README.md").write_text("release fixture\n", encoding="utf-8")
+        subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
+        subprocess.run(
+            ["git", "-C", str(repository), "config", "user.name", "release-test"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repository), "config", "user.email",
+             "release-test@example.invalid"],
+            check=True,
+        )
+        subprocess.run(["git", "-C", str(repository), "add", "--all"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repository), "commit", "--quiet", "-m", "release fixture"],
+            check=True,
+        )
+        commit = subprocess.check_output(
+            ["git", "-C", str(repository), "rev-parse", "HEAD"], text=True
+        ).strip()
+        tree = subprocess.check_output(
+            ["git", "-C", str(repository), "rev-parse", "HEAD^{tree}"], text=True
+        ).strip()
+
+        version = "2.0.0-test.1"
+        base = f"subset-selection-TSP-{version}"
+        dist = temp / "dist"
+        dist.mkdir()
+        zip_path = dist / f"{base}.zip"
+        tar_path = dist / f"{base}.tar.gz"
+        sbom_path = dist / f"{base}.spdx.json"
+        provenance_path = dist / f"{base}-provenance.json"
+        subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "create_source_archives.py"),
+                "--repo", str(repository),
+                "--ref", "HEAD",
+                "--prefix", f"{base}/",
+                "--zip", str(zip_path),
+                "--tar-gz", str(tar_path),
+            ],
+            check=True,
+        )
+        source = temp / "source"
+        import zipfile
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(source)
+        subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "generate_sbom.py"),
+                "--root", str(source / base),
+                "--output", str(sbom_path),
+                "--version", version,
+                "--commit", commit,
+                "--tree", tree,
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                sys.executable,
+                str(root / "scripts" / "generate_provenance.py"),
+                "--output", str(provenance_path),
+                "--artifact", str(zip_path),
+                "--artifact", str(tar_path),
+                "--artifact", str(sbom_path),
+                "--version", version,
+                "--commit", commit,
+                "--tree", tree,
+            ],
+            check=True,
+        )
+        artifacts = sorted((zip_path, tar_path, sbom_path, provenance_path),
+                           key=lambda item: item.name)
+        (dist / "SHA256SUMS").write_text(
+            "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+                    for path in artifacts),
+            encoding="utf-8",
+        )
+        command = [
+            sys.executable,
+            str(root / "scripts" / "verify_release_bundle.py"),
+            "--dist", str(dist),
+            "--expected-version", version,
+            "--expected-commit", commit,
+            "--expected-tree", tree,
+        ]
+        subprocess.run(command, check=True)
+
+        zip_path.write_bytes(zip_path.read_bytes() + b"tampered")
+        failed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        require(failed.returncode != 0,
+                "release bundle verifier accepted a checksum-invalid archive")
+
+
 def is_git_worktree(root: Path) -> bool:
     completed = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
@@ -298,6 +414,7 @@ def main() -> int:
     test_workflow_pins(root)
     test_oracle_lock(root)
     test_sbom_and_provenance(root)
+    test_release_bundle_verifier(root)
     test_source_archive_modes(root)
     test_source_archive_fallback(root)
     print("release security self-test passed")
