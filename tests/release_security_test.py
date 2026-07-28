@@ -154,9 +154,41 @@ def is_git_worktree(root: Path) -> bool:
     return completed.returncode == 0 and completed.stdout.strip() == "true"
 
 
+def archive_test_repository(root: Path, temp: Path) -> Path:
+    if is_git_worktree(root):
+        return root
+
+    # A downloaded source archive deliberately has no .git directory.  Build a
+    # tiny temporary repository so the mode-preserving archive generator is
+    # still tested rather than silently skipped.
+    repository = temp / "synthetic-repository"
+    (repository / "scripts").mkdir(parents=True)
+    for relative in (
+        Path(".clang-format"),
+        Path(".gitattributes"),
+        Path("SOURCE_REVISION"),
+        Path("scripts/generate_options.py"),
+    ):
+        source = root / relative
+        destination = repository / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+    subprocess.run(["git", "init", "--quiet", str(repository)], check=True)
+    subprocess.run(["git", "-C", str(repository), "config", "user.name", "archive-test"], check=True)
+    subprocess.run(["git", "-C", str(repository), "config", "user.email", "archive-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repository), "add", "--all"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "--quiet", "-m", "synthetic archive fixture"],
+        check=True,
+    )
+    return repository
+
+
 def test_source_archive_modes(root: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="aldous-tsp-archive-mode-") as tmp:
         temp = Path(tmp)
+        repository = archive_test_repository(root, temp)
         first_zip = temp / "first.zip"
         first_tar = temp / "first.tar.gz"
         second_zip = temp / "second.zip"
@@ -165,7 +197,7 @@ def test_source_archive_modes(root: Path) -> None:
             sys.executable,
             str(root / "scripts" / "create_source_archives.py"),
             "--repo",
-            str(root),
+            str(repository),
             "--ref",
             "HEAD",
             "--prefix",
@@ -253,10 +285,7 @@ def main() -> int:
     test_workflow_pins(root)
     test_oracle_lock(root)
     test_sbom_and_provenance(root)
-    if is_git_worktree(root):
-        test_source_archive_modes(root)
-    else:
-        print("release security self-test: source-archive regeneration skipped (no .git metadata)")
+    test_source_archive_modes(root)
     test_source_archive_fallback(root)
     print("release security self-test passed")
     return 0
