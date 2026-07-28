@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/exhaustive-policy/final-only.json",
-  "result_sha256": "2f777395145b3a4bb5387cd014cd358ec26aecd4bb72f5f8f56c3cac78135c24",
-  "result_bytes": 13713,
+  "result_sha256": "41872fdbc1ee62f555ba102bc92ff5b1e950228aec1f8fb3e6cd99107700dbd7",
+  "result_bytes": 13678,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
-    "solver_wall_seconds": 0.013165784999999999,
+    "solver_wall_seconds": 0.013165785,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 1.6875999999999999e-05,
+    "aggregation_seconds": 1.6876e-05,
     "experiment_wall_seconds": 0.013182721,
-    "serialization_seconds": 0.00018996200000000001,
-    "output_write_seconds": 1.7836999999999999e-05,
-    "output_synchronization_seconds": 0.0099538420000000009,
+    "serialization_seconds": 0.000189962,
+    "output_write_seconds": 1.7837e-05,
+    "output_synchronization_seconds": 0.009953842000000001,
     "output_commit_seconds": 2.4457e-05,
     "output_total_seconds": 0.010046029,
-    "process_end_to_end_seconds": 0.023676015000000002
+    "process_end_to_end_seconds": 0.023676015
   }
 }

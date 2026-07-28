@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/original-compat/original-compat-tiny-grid.json",
-  "result_sha256": "5051e2db8a4f55473fd98a0d50cbcf47986786f6da499736cf39bd85bef51cbe",
-  "result_bytes": 13623,
+  "result_sha256": "008b22433b3b3e14a367ad4d23fdc5fc526c856f64a0868dfb80ce959978faa7",
+  "result_bytes": 13588,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
-    "solver_wall_seconds": 0.0040223079999999996,
+    "solver_wall_seconds": 0.004022308,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 1.6784999999999999e-05,
+    "aggregation_seconds": 1.6785e-05,
     "experiment_wall_seconds": 0.004039183,
-    "serialization_seconds": 0.00018533499999999999,
-    "output_write_seconds": 1.5903999999999999e-05,
+    "serialization_seconds": 0.000185335,
+    "output_write_seconds": 1.5904e-05,
     "output_synchronization_seconds": 0.001933534,
-    "output_commit_seconds": 1.6393999999999999e-05,
+    "output_commit_seconds": 1.6394e-05,
     "output_total_seconds": 0.002010057,
-    "process_end_to_end_seconds": 0.0064448769999999999
+    "process_end_to_end_seconds": 0.006444877
   }
 }

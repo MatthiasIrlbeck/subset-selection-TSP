@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -110,6 +111,24 @@ def normalize_staging_paths(stage: Path, output: Path) -> None:
             normalized = normalized.replace(source, destination)
         if normalized != text:
             path.write_text(normalized, encoding="utf-8")
+
+    # Path normalization changes result bytes. Rebind every adjacent timing receipt
+    # to the exact normalized document rather than leaving a stale digest behind.
+    for receipt_path in sorted(stage.rglob("*.json.receipt")):
+        result_path = Path(str(receipt_path)[: -len(".receipt")])
+        if not result_path.is_file():
+            raise RuntimeError(f"receipt has no result document: {receipt_path}")
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        payload = result_path.read_bytes()
+        receipt["result_path"] = (
+            output.relative_to(ROOT) / result_path.relative_to(stage)
+        ).as_posix()
+        receipt["result_sha256"] = hashlib.sha256(payload).hexdigest()
+        receipt["result_bytes"] = len(payload)
+        receipt_path.write_text(
+            json.dumps(receipt, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
 
 def compact_summary(stage: Path, build_dir: Path | None) -> dict[str, Any]:
     parity_rows = read_csv(stage / "backend-parity" / "parity_manifest.csv")

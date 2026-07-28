@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -104,6 +105,43 @@ def validate_tree(
     return count, errors
 
 
+def validate_current_receipts(root: Path, current: Path) -> list[str]:
+    errors: list[str] = []
+    native_results: list[Path] = []
+    for path in sorted(current.rglob("*.json")):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if is_native_result(document):
+            native_results.append(path)
+
+    for result_path in native_results:
+        receipt_path = Path(str(result_path) + ".receipt")
+        if not receipt_path.is_file():
+            errors.append(f"{result_path.relative_to(root)} has no adjacent timing receipt")
+            continue
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"{receipt_path.relative_to(root)}: invalid JSON: {exc}")
+            continue
+        payload = result_path.read_bytes()
+        expected_path = result_path.relative_to(root).as_posix()
+        if receipt.get("result_path") != expected_path:
+            errors.append(
+                f"{receipt_path.relative_to(root)}: result_path {receipt.get('result_path')!r} "
+                f"!= {expected_path!r}"
+            )
+        expected_digest = hashlib.sha256(payload).hexdigest()
+        if receipt.get("result_sha256") != expected_digest:
+            errors.append(f"{receipt_path.relative_to(root)}: result_sha256 does not match result")
+        if receipt.get("result_bytes") != len(payload):
+            errors.append(f"{receipt_path.relative_to(root)}: result_bytes does not match result")
+
+    return errors
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: validation_artifacts_schema.py <repo_root>", file=sys.stderr)
@@ -143,6 +181,7 @@ def main() -> int:
         label="current validation",
     )
     errors.extend(current_errors)
+    errors.extend(validate_current_receipts(root, current))
 
     archived_count = 0
     for archived in archived_validation_dirs(root):

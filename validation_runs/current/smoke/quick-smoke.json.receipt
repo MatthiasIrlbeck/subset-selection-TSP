@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/smoke/quick-smoke.json",
-  "result_sha256": "b10b5a6d797135934c64ac93cf228edd2fb8bf431ab0f0ad1087cb06a946e21c",
-  "result_bytes": 14995,
+  "result_sha256": "8d84fe6d5f8fc99cac727c9dd53f42e471fec299ca33ba4c6919470065a42d6f",
+  "result_bytes": 14960,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
-    "solver_wall_seconds": 0.028631107999999999,
+    "solver_wall_seconds": 0.028631108,
     "control_reference_seconds": 0,
     "aggregation_seconds": 2.001e-05,
-    "experiment_wall_seconds": 0.028651177999999999,
-    "serialization_seconds": 0.00055489500000000002,
+    "experiment_wall_seconds": 0.028651178,
+    "serialization_seconds": 0.000554895,
     "output_write_seconds": 1.7907e-05,
     "output_synchronization_seconds": 0.003702061,
     "output_commit_seconds": 2.3264e-05,
-    "output_total_seconds": 0.0037907230000000002,
-    "process_end_to_end_seconds": 0.033199037000000001
+    "output_total_seconds": 0.003790723,
+    "process_end_to_end_seconds": 0.033199037
   }
 }

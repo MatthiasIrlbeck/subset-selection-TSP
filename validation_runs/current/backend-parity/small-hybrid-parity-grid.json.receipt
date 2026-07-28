@@ -1,19 +1,19 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/backend-parity/small-hybrid-parity-grid.json",
-  "result_sha256": "555399eb5a30add0abef8157345e858723307e62248a579df5d898dd3b7c6977",
-  "result_bytes": 15843,
+  "result_sha256": "ec7d4a42f71001f80f4ce1a916941c4e188f4049e022a2fd6b87ab50dce8652e",
+  "result_bytes": 15808,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
     "solver_wall_seconds": 0.010945481,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 1.5302999999999999e-05,
-    "experiment_wall_seconds": 0.010960874000000001,
-    "serialization_seconds": 0.00019709299999999999,
-    "output_write_seconds": 1.6062999999999999e-05,
+    "aggregation_seconds": 1.5303e-05,
+    "experiment_wall_seconds": 0.010960874,
+    "serialization_seconds": 0.000197093,
+    "output_write_seconds": 1.6063e-05,
     "output_synchronization_seconds": 0.001524966,
-    "output_commit_seconds": 1.5874000000000001e-05,
+    "output_commit_seconds": 1.5874e-05,
     "output_total_seconds": 0.001598906,
     "process_end_to_end_seconds": 0.012944542
   }

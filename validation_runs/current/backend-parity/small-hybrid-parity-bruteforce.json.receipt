@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/backend-parity/small-hybrid-parity-bruteforce.json",
-  "result_sha256": "197c6319cc598b1c8dca9de73981aab76ee6c7b7e44d7559f52b8831456ae17f",
-  "result_bytes": 15851,
+  "result_sha256": "0113f947aecacf35c35e8b3837162411d1ac9a8fc3b4ac6f151d8223f540d298",
+  "result_bytes": 15816,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
     "solver_wall_seconds": 0.011359401,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 1.5492999999999999e-05,
-    "experiment_wall_seconds": 0.011374985000000001,
-    "serialization_seconds": 0.00019309700000000001,
+    "aggregation_seconds": 1.5493e-05,
+    "experiment_wall_seconds": 0.011374985,
+    "serialization_seconds": 0.000193097,
     "output_write_seconds": 1.4401e-05,
     "output_synchronization_seconds": 0.001511346,
-    "output_commit_seconds": 1.8516999999999999e-05,
-    "output_total_seconds": 0.0015839339999999999,
+    "output_commit_seconds": 1.8517e-05,
+    "output_total_seconds": 0.001583934,
     "process_end_to_end_seconds": 0.01329666
   }
 }
