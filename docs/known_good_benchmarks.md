@@ -14,7 +14,7 @@ The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence.
 | --- | --- |
 | Release/Python CTest inventory | 32 tests; run separately; see release validation and CI |
 | Backend parity | max_abs_mean_delta = 0.0 |
-| Benchmark suite | 2 scenarios, total wall 0.7351s |
+| Benchmark suite | 2 scenarios, total wall 0.6578s |
 | Real oracle smoke | skipped (No real LKH or Concorde executable found) |
 | Original-compatible routing | fake original CLI routing passed; not a solver-quality parity result |
 
@@ -22,22 +22,22 @@ The bundled artifacts are smoke/validation runs, not large Monte Carlo evidence.
 
 | Scenario | Comparison | Matched p | Max \|Δmean\| | Grid wall (s) | Brute wall (s) |
 | --- | --- | --- | --- | --- | --- |
-| tiny-grid-parity | grid-vs-bruteforce | 3 | 0 | 0.062 | 0.0587 |
-| small-hybrid-parity | grid-vs-bruteforce | 4 | 0 | 0.011 | 0.0114 |
+| tiny-grid-parity | grid-vs-bruteforce | 3 | 0 | 0.0619 | 0.0643 |
+| small-hybrid-parity | grid-vs-bruteforce | 4 | 0 | 0.0103 | 0.0103 |
 
 ## Benchmark suite manifest excerpt
 
 | Scenario | Suite | N | Instances | Mode | Wall (s) | Best p | Best mean | 2-opt imp | High-p imp |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tiny-balanced | smoke | 60 | 2 | balanced | 0.5223 | 0.05 | 0.2648 | 952 | 3 |
-| small-hybrid | smoke | 120 | 2 | hybrid | 0.2127 | 0.02 | 0.256 | 2886 | 8 |
+| tiny-balanced | smoke | 60 | 2 | balanced | 0.4526 | 0.05 | 0.2648 | 952 | 3 |
+| small-hybrid | smoke | 120 | 2 | hybrid | 0.2052 | 0.02 | 0.256 | 2886 | 8 |
 
 ## Exhaustive 2-opt policy comparison
 
 | Policy | Wall (s) | Best mean | 2-opt scans | 2-opt imp | Or-opt scans | TSP s | Subset s |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| final-only | 0.0132 | 0.6688 | 23840 | 320 | 160148 | 0.0103 | 0.0026 |
-| all-polish | 0.0131 | 0.6688 | 472514 | 392 | 332123 | 0.0089 | 0.002 |
+| final-only | 0.0632 | 0.6688 | 23840 | 320 | 160148 | 0.0036 | 0.0025 |
+| all-polish | 0.0061 | 0.6688 | 472514 | 392 | 332123 | 0.0038 | 0.002 |
 
 `final-only` reduced two-opt scans by `448674` relative to `all-polish` in the bundled validation run.
 
@@ -47,8 +47,8 @@ This table validates command routing only. It uses `tests/fake_original_cli.py` 
 
 | Scenario | Comparison | Baseline kind | Matched p | Current wall (s) | Baseline wall (s) | Baseline max \|Δmean\| |
 | --- | --- | --- | --- | --- | --- | --- |
-| original-compat-tiny | grid-vs-bruteforce | none | 2 | 0.004 |  |  |
-| original-compat-tiny | current-vs-baseline | original | 14 | 0.009 | 0.001 | 0.3464 |
+| original-compat-tiny | grid-vs-bruteforce | none | 2 | 0.0039 |  |  |
+| original-compat-tiny | current-vs-baseline | original | 14 | 0.0063 | 0.001 | 0.3464 |
 
 ## Local validation checklist
 

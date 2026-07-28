@@ -13,7 +13,7 @@
       "instances": 2,
       "json": "tiny-balanced.json",
       "knn_bruteforce_fallback_instances": 0,
-      "knn_build_seconds": 0.000301959,
+      "knn_build_seconds": 0.000231153,
       "knn_effective_bruteforce_instances": 0,
       "knn_effective_grid_instances": 2,
       "knn_grid_cell_capped_instances": 0,
@@ -28,12 +28,12 @@
       "path_relink_feasible": 12,
       "ruin_recreate_improvements": 27,
       "scenario": "tiny-balanced",
-      "subset_seconds": 0.489292744,
+      "subset_seconds": 0.4446689709999999,
       "subset_swap_improvements": 38,
       "suite": "smoke",
-      "tsp_seconds": 0.03015358,
+      "tsp_seconds": 0.007334223999999999,
       "two_opt_improvements": 952,
-      "wall_seconds": 0.522346795
+      "wall_seconds": 0.452595829
     },
     {
       "N": 120,
@@ -46,7 +46,7 @@
       "instances": 2,
       "json": "small-hybrid.json",
       "knn_bruteforce_fallback_instances": 0,
-      "knn_build_seconds": 0.000484631,
+      "knn_build_seconds": 0.000493704,
       "knn_effective_bruteforce_instances": 0,
       "knn_effective_grid_instances": 2,
       "knn_grid_cell_capped_instances": 0,
@@ -61,12 +61,12 @@
       "path_relink_feasible": 27,
       "ruin_recreate_improvements": 60,
       "scenario": "small-hybrid",
-      "subset_seconds": 0.167765184,
+      "subset_seconds": 0.170464234,
       "subset_swap_improvements": 73,
       "suite": "smoke",
-      "tsp_seconds": 0.043940229,
+      "tsp_seconds": 0.033929341,
       "two_opt_improvements": 2886,
-      "wall_seconds": 0.212731637
+      "wall_seconds": 0.205240329
     }
   ],
   "suite": "smoke",

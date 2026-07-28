@@ -1,3 +1,3 @@
 scenario,comparison,baseline_kind,matched_p_values,max_abs_mean_delta,current_wall_seconds,bruteforce_wall_seconds,baseline_wall_seconds,baseline_max_abs_mean_delta
-original-compat-tiny,grid-vs-bruteforce,none,2,0.0,0.004039183,0.003902559,,
-original-compat-tiny,current-vs-baseline,original,14,,0.008997316,,0.001,0.34644878500455223
+original-compat-tiny,grid-vs-bruteforce,none,2,0.0,0.003897337,0.004141866,,
+original-compat-tiny,current-vs-baseline,original,14,,0.006303132,,0.001,0.34644878500455223

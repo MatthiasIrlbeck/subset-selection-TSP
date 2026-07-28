@@ -10,34 +10,34 @@ FINAL (N=120, instances=1, wall=0.0s)
                  0.2    24    0.70592    0.00000    0.70592    0.70592
                    1   120    0.81155    0.00000    0.81155    0.81155
 Results written to validation_runs/current/profile/profile.json
-Timing receipt written to validation_runs/current/profile/profile.json.receipt (end-to-end 0.017s)
+Timing receipt written to validation_runs/current/profile/profile.json.receipt (end-to-end 0.011s)
 
 Timing summary
 --------------
-wall_seconds      0.0132s
-knn_build_seconds 0.0005s
-tsp_seconds       0.0094s
+wall_seconds      0.0088s
+knn_build_seconds 0.0002s
+tsp_seconds       0.0053s
 subset_seconds    0.0030s
 oracle_seconds    0.0000s
 
 Detailed aggregate worker-seconds
 --------------------------
 seed_construction_seconds            0.0001s
-tsp_construction_seconds             0.0004s
-initial_polish_seconds               0.0155s
+tsp_construction_seconds             0.0002s
+initial_polish_seconds               0.0110s
 sa_seconds                           0.0001s
 sa_checkpoint_polish_seconds         0.0000s
 post_sa_polish_seconds               0.0001s
 subset_swap_seconds                  0.0003s
 highp_exchange_seconds               0.0000s
-pair_exchange_seconds                0.0015s
+pair_exchange_seconds                0.0013s
 ruin_recreate_seconds                0.0013s
 path_relink_seconds                  0.0000s
 tsp_ils_seconds                      0.0012s
-final_polish_seconds                 0.0004s
+final_polish_seconds                 0.0005s
 oracle_seconds                       0.0000s
-sa_proposal_sample_latency_us      1.602 (2 samples)
-sa_insertion_sample_latency_us      1.432 (2 samples)
+sa_proposal_sample_latency_us      1.548 (2 samples)
+sa_insertion_sample_latency_us      1.351 (2 samples)
 
 Effective KNN
 -------------

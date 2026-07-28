@@ -5,9 +5,9 @@
       "baseline_kind": "none",
       "baseline_max_abs_mean_delta": "",
       "baseline_wall_seconds": "",
-      "bruteforce_wall_seconds": 0.003902559,
+      "bruteforce_wall_seconds": 0.004141866,
       "comparison": "grid-vs-bruteforce",
-      "current_wall_seconds": 0.004039183,
+      "current_wall_seconds": 0.003897337,
       "matched_p_values": 2,
       "max_abs_mean_delta": 0.0,
       "scenario": "original-compat-tiny"
@@ -18,7 +18,7 @@
       "baseline_wall_seconds": 0.001,
       "bruteforce_wall_seconds": "",
       "comparison": "current-vs-baseline",
-      "current_wall_seconds": 0.008997316,
+      "current_wall_seconds": 0.006303132,
       "matched_p_values": 14,
       "max_abs_mean_delta": "",
       "scenario": "original-compat-tiny"

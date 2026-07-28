@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/exhaustive-policy/final-only.json",
-  "result_sha256": "41872fdbc1ee62f555ba102bc92ff5b1e950228aec1f8fb3e6cd99107700dbd7",
-  "result_bytes": 13678,
+  "result_sha256": "229ad95fb60caefff2ff9b2a743952a6852d5f6050dae6312d0ed2c1240561e2",
+  "result_bytes": 13720,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
-    "solver_wall_seconds": 0.013165785,
+    "solver_wall_seconds": 0.063208133,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 1.6876e-05,
-    "experiment_wall_seconds": 0.013182721,
-    "serialization_seconds": 0.000189962,
-    "output_write_seconds": 1.7837e-05,
-    "output_synchronization_seconds": 0.009953842000000001,
-    "output_commit_seconds": 2.4457e-05,
-    "output_total_seconds": 0.010046029,
-    "process_end_to_end_seconds": 0.023676015
+    "aggregation_seconds": 2.2634e-05,
+    "experiment_wall_seconds": 0.063230827,
+    "serialization_seconds": 0.000215671,
+    "output_write_seconds": 1.971e-05,
+    "output_synchronization_seconds": 0.001898782,
+    "output_commit_seconds": 2.0881e-05,
+    "output_total_seconds": 0.001999281,
+    "process_end_to_end_seconds": 0.065759124
   }
 }

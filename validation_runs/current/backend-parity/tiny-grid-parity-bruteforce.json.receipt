@@ -1,20 +1,20 @@
 {
   "receipt_schema_version": 1,
   "result_path": "validation_runs/current/backend-parity/tiny-grid-parity-bruteforce.json",
-  "result_sha256": "28317eca904cf5fa79cfb277b278a2d5384ab3035fc7499f67a48864b22f6cce",
-  "result_bytes": 14744,
+  "result_sha256": "2e00acf59914f346a17f7a7aaa7a69406a732824382086791ffc43c2c446a279",
+  "result_bytes": 14749,
   "requested_durability": "full",
   "commit_state": "fully-durable",
   "timing": {
-    "solver_wall_seconds": 0.058697219,
+    "solver_wall_seconds": 0.064244863,
     "control_reference_seconds": 0,
-    "aggregation_seconds": 2.2854e-05,
-    "experiment_wall_seconds": 0.058720173,
-    "serialization_seconds": 0.000267337,
-    "output_write_seconds": 1.8838e-05,
-    "output_synchronization_seconds": 0.002815163,
-    "output_commit_seconds": 2.4216e-05,
-    "output_total_seconds": 0.002918156,
-    "process_end_to_end_seconds": 0.062087117
+    "aggregation_seconds": 2.3695e-05,
+    "experiment_wall_seconds": 0.064268628,
+    "serialization_seconds": 0.000212506,
+    "output_write_seconds": 2.0741e-05,
+    "output_synchronization_seconds": 0.002418458,
+    "output_commit_seconds": 4.8862e-05,
+    "output_total_seconds": 0.00255346,
+    "process_end_to_end_seconds": 0.067216924
   }
 }

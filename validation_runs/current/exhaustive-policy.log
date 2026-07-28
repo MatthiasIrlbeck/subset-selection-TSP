@@ -5,12 +5,12 @@
 ========================================================================
   [done 1/1] instance 1 in 0.01s  elapsed 0s  ETA 0s
 
-FINAL (N=72, instances=1, wall=0.0s)
+FINAL (N=72, instances=1, wall=0.1s)
                    p     k       mean     stderr        min        max
                 0.25    18    0.66879    0.00000    0.66879    0.66879
                    1    72    0.80966    0.00000    0.80966    0.80966
 Results written to validation_runs/current/exhaustive-policy/final-only.json
-Timing receipt written to validation_runs/current/exhaustive-policy/final-only.json.receipt (end-to-end 0.024s)
+Timing receipt written to validation_runs/current/exhaustive-policy/final-only.json.receipt (end-to-end 0.066s)
 + build-github-release/aldous_tsp --mode hybrid --N 72 --instances 1 --threads 1 --p-values 0.25,1.0 --seed 2024 --restarts 1 --sa-iters 20 --tsp-restarts 1 --tsp-ils 4 --tsp-patience 8 --final-exhaustive-k 96 --exhaustive-two-opt-policy all-polish --output validation_runs/current/exhaustive-policy/all-polish.json --force
 ========================================================================
   ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
@@ -23,7 +23,7 @@ FINAL (N=72, instances=1, wall=0.0s)
                 0.25    18    0.66879    0.00000    0.66879    0.66879
                    1    72    0.80966    0.00000    0.80966    0.80966
 Results written to validation_runs/current/exhaustive-policy/all-polish.json
-Timing receipt written to validation_runs/current/exhaustive-policy/all-polish.json.receipt (end-to-end 0.016s)
+Timing receipt written to validation_runs/current/exhaustive-policy/all-polish.json.receipt (end-to-end 0.009s)
 
 Policy comparison
 -----------------

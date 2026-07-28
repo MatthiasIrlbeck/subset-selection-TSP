@@ -11,7 +11,7 @@ FINAL (N=12, instances=1, wall=0.0s)
                  0.5     6    0.66046    0.00000    0.66046    0.66046
                    1    12    0.94645    0.00000    0.94645    0.94645
 Results written to validation_runs/current/original-compat/original-compat-tiny-grid.json
-Timing receipt written to validation_runs/current/original-compat/original-compat-tiny-grid.json.receipt (end-to-end 0.006s)
+Timing receipt written to validation_runs/current/original-compat/original-compat-tiny-grid.json.receipt (end-to-end 0.007s)
 + build-github-release/aldous_tsp --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/current/original-compat/original-compat-tiny-bruteforce.json --force --p-values 0.5,1.0 --knn-backend bruteforce --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
 ========================================================================
   ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
@@ -49,6 +49,6 @@ FINAL (N=12, instances=1, wall=0.0s)
                  0.8    10    0.91716    0.00000    0.91716    0.91716
                    1    12    0.94645    0.00000    0.94645    0.94645
 Results written to validation_runs/current/original-compat/original-compat-tiny-current-original-compatible.json
-Timing receipt written to validation_runs/current/original-compat/original-compat-tiny-current-original-compatible.json.receipt (end-to-end 0.011s)
+Timing receipt written to validation_runs/current/original-compat/original-compat-tiny-current-original-compatible.json.receipt (end-to-end 0.008s)
 + tests/fake_original_cli.py --mode balanced --N 12 --instances 1 --threads 1 --seed 303 --restarts 1 --sa-iters 0 --tsp-restarts 1 --tsp-ils 0 --output validation_runs/current/original-compat/original-compat-tiny-baseline-original.json --force
 Wrote validation_runs/current/original-compat/parity_manifest.csv

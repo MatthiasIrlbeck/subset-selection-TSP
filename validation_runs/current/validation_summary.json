@@ -5,7 +5,7 @@
   },
   "benchmark_summary": {
     "scenarios": 2,
-    "total_wall_seconds": 0.735078432
+    "total_wall_seconds": 0.6578361580000001
   },
   "ctest_inventory": 32,
   "ctest_status": "run separately; see release validation and CI",
@@ -26,6 +26,6 @@
   },
   "schema_version": 16,
   "scope": "Compact release-health evidence only; not publication-scale Monte Carlo evidence and not a substitute for real LKH/Concorde runs.",
-  "source_commit": "65e0f94914170c023ad2ccc30312d3caca39d5e5",
-  "source_tree": "2e012cd8cf4a9fe6fe78bdae037c0c014d7f1bb2"
+  "source_commit": "1b9518e3860289d2f48a45a38ec7b2d088381ec6",
+  "source_tree": "4475aa13488fc10a4fee6db58fdfad3d86ed58ac"
 }
