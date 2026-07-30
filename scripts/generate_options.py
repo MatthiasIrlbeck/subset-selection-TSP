@@ -126,7 +126,7 @@ def access(option: dict[str, Any]) -> str:
 def default_text(option: dict[str, Any]) -> str | None:
     if option.get("show_default", True) is False:
         return None
-    if option.get("action") in {"help", "self_test", "quick", "p_values", "p_range", "p_file"}:
+    if option.get("action") in {"help", "version", "self_test", "quick", "p_values", "p_range", "p_file"}:
         return None
     if option.get("id") in {"point_seed", "search_seed"}:
         return "--seed"
@@ -174,7 +174,7 @@ enum class GeneratedCliParseResult {
 };
 
 // Generated CLI parser. It is side-effect free except for mutating `opt`,
-// setting `self_test`, and writing generated help for --help.
+// setting `self_test`, and writing generated help/version output.
 GeneratedCliParseResult parse_generated_cli_option(
     int& index,
     int argc,
@@ -439,6 +439,18 @@ const char kGeneratedHelp[] = R"ALDOUSHELP('''.splitlines())
         cpp_type = option.get("cpp_type")
         aliases = [cli] + list(option.get("aliases", []))
         cond = " || ".join(f'flag == "{name}"' for name in aliases)
+        if action == "version":
+            lines.append(f"    if ({cond}) {{")
+            lines.append("        if (arg != flag) { error = flag + \" does not take a value\"; return GeneratedCliParseResult::Error; }")
+            lines.append("        std::fprintf(stdout, \"aldous_tsp %s\\n\", kProjectVersion);")
+            lines.append("        std::fprintf(stdout, \"commit: %s\\n\", kGitCommit);")
+            lines.append("        std::fprintf(stdout, \"tree: %s\\n\", kGitTree);")
+            lines.append("        std::fprintf(stdout, \"revision source: %s\\n\", kRevisionSource);")
+            lines.append("        std::fprintf(stdout, \"source state: %s\\n\", kSourceDirty ? \"dirty\" : \"clean\");")
+            lines.append("        std::fprintf(stdout, \"build type: %s\\n\", kConfiguredBuildType);")
+            lines.append("        return GeneratedCliParseResult::ExitSuccess;")
+            lines.append("    }")
+            continue
         # bool-like actions and fields parse against the actual alias spelling.
         if action in {"help", "self_test", "quick"} or cpp_type == "bool":
             lines.append(f"    if ({cond}) {{")

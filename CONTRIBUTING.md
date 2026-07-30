@@ -1,7 +1,8 @@
 # Contributing
 
 Contributions are welcome, especially reproducible correctness fixes, performance work,
-analysis improvements, and documentation clarifications.
+analysis improvements, and documentation clarifications. The repository's AI-assisted
+development history and maintainer-responsibility policy are documented in `DEVELOPMENT.md`.
 
 ## Development setup
 
@@ -60,3 +61,6 @@ git diff --check
 For sanitizer and fuzzing instructions, see `docs/fuzzing.md`. For release and provenance
 requirements, see `docs/release_security.md`; maintainers should also follow
 `docs/releases/publication_checklist.md`.
+
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) for the project policy on automated development assistance,
+attribution, preserved provenance, and human responsibility.

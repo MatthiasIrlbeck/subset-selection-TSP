@@ -7,6 +7,7 @@ This file is generated from `config/options.json`. Do not edit it directly.
 | CLI option | JSON key | Default | Constraints | Description |
 |---|---|---:|---|---|
 | `--help` | — | `—` | — | Show this generated help text and exit. |
+| `--version` | — | `—` | — | Print the project version and embedded source provenance, then exit. |
 | `--self-test` | — | `—` | — | Run built-in smoke and self tests. |
 | `--quick` | — | `—` | — | Apply the small fast-run preset; explicit flags override it regardless of order. |
 | `--verbose-p` | `verbose` | `false` | boolean | Print per-instance and per-p progress. |

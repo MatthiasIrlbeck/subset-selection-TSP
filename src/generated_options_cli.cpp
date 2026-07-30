@@ -77,6 +77,7 @@ bool value_argument(int& index,
 const char kGeneratedHelp[] = R"ALDOUSHELP(
 General:
   --help[=bool]                           Show this generated help text and exit.
+  --version                               Print the project version and embedded source provenance, then exit.
   --self-test[=bool]                      Run built-in smoke and self tests.
   --quick[=bool]                          Apply the small fast-run preset; explicit flags override it regardless of order.
   --verbose-p[=bool]                      Print per-instance and per-p progress. (default: false)
@@ -284,6 +285,16 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
         if (!bool_argument(arg, flag, matched, value, error)) { return GeneratedCliParseResult::Error; }
         if (value) { print_generated_help(stdout, argc > 0 ? argv[0] : nullptr); return GeneratedCliParseResult::ExitSuccess; }
         return GeneratedCliParseResult::Matched;
+    }
+    if (flag == "--version") {
+        if (arg != flag) { error = flag + " does not take a value"; return GeneratedCliParseResult::Error; }
+        std::fprintf(stdout, "aldous_tsp %s\n", kProjectVersion);
+        std::fprintf(stdout, "commit: %s\n", kGitCommit);
+        std::fprintf(stdout, "tree: %s\n", kGitTree);
+        std::fprintf(stdout, "revision source: %s\n", kRevisionSource);
+        std::fprintf(stdout, "source state: %s\n", kSourceDirty ? "dirty" : "clean");
+        std::fprintf(stdout, "build type: %s\n", kConfiguredBuildType);
+        return GeneratedCliParseResult::ExitSuccess;
     }
     if (flag == "--self-test") {
         bool matched = false;

@@ -38,6 +38,7 @@ def main() -> int:
     assert help_run.stderr == "", help_run.stderr
     assert len(help_run.stdout) > 8000, len(help_run.stdout)
     for marker in (
+        "--version",
         "--dense-exact-insertion",
         "--oracle-inline-feedback",
         "--disable-path-relink",
@@ -56,6 +57,35 @@ def main() -> int:
     assert "quality conditional on that subset" in help_run.stdout, help_run.stdout
     assert "~99% of optimal" not in help_run.stdout, help_run.stdout
     assert "live spatial index (default: false)" in help_run.stdout, help_run.stdout
+
+    version_run = subprocess.run(
+        [str(exe), "--version"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert version_run.stderr == "", version_run.stderr
+    version_lines = version_run.stdout.strip().splitlines()
+    assert version_lines[0] == "aldous_tsp 2.0.0", version_lines
+    assert version_lines[1].startswith("commit: "), version_lines
+    assert version_lines[2].startswith("tree: "), version_lines
+    assert version_lines[3] in {
+        "revision source: git",
+        "revision source: source-archive",
+        "revision source: unknown",
+    }, version_lines
+    assert version_lines[4] in {"source state: clean", "source state: dirty"}, version_lines
+    assert version_lines[5].startswith("build type: "), version_lines
+
+    bad_version = subprocess.run(
+        [str(exe), "--version=true"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert bad_version.returncode != 0, bad_version
+    assert "--version does not take a value" in bad_version.stderr, bad_version.stderr
 
     with tempfile.TemporaryDirectory(prefix="aldous_cli_regressions_") as td:
         tmp = Path(td)

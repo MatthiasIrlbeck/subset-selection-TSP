@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -428,6 +429,186 @@ def test_source_archive_fallback(root: Path) -> None:
         require("kSourceDirty = false" in header, "source archive was incorrectly marked dirty")
 
 
+def test_public_release_preparation_contract(root: Path) -> None:
+    helper_path = root / "scripts" / "prepare_public_release_branch.sh"
+    helper = helper_path.read_text(encoding="utf-8")
+    checklist = (root / "docs" / "releases" / "publication_checklist.md").read_text(
+        encoding="utf-8"
+    )
+    development = (root / "DEVELOPMENT.md").read_text(encoding="utf-8")
+    pr_template = (root / ".github" / "pull_request_template.md").read_text(
+        encoding="utf-8"
+    )
+
+    require("expected_hardened_branch=release/v2.0.0-prep" in helper,
+            "public-history helper does not require the reviewed candidate branch")
+    require("expected_hardened_parent=4045b8b7f8ebb7ca52eca9445828f4bb753da035"
+            in helper,
+            "public-history helper does not bind the candidate to its audited parent")
+    require("@{upstream}" in helper and "local hardened head differs" in helper,
+            "public-history helper does not reject local candidate drift")
+    require("git rev-list --parents -n 1 HEAD" in helper
+            and "unexpected hardened parent" in helper,
+            "public-history helper does not verify the candidate ancestry")
+    require("performance_baseline_commit.txt" in helper,
+            "public-history helper does not protect the historical performance baseline")
+    require("Create a merge commit" in helper and "Squash and merge" in helper
+            and "Rebase and merge" in helper,
+            "public-history helper does not print the mandatory merge-method warning")
+    require("Mandatory pull-request merge method" in checklist,
+            "publication checklist lacks the mandatory merge-method section")
+    require("Create a merge commit" in checklist and "linear-history" in checklist,
+            "publication checklist does not prohibit ancestry-rewriting merge modes")
+    require("Create a merge commit" in pr_template and "never squash/rebase" in pr_template,
+            "pull-request template does not flag the release-history merge contract")
+    require("OpenAI Repair" in development and "They do not imply" in development,
+            "development attribution note is missing or ambiguous")
+
+    if os.name == "nt":
+        return
+
+    with tempfile.TemporaryDirectory(prefix="aldous-public-history-") as raw:
+        temp = Path(raw)
+        candidate_bare = temp / "candidate.git"
+        public_bare = temp / "public.git"
+        candidate = temp / "candidate"
+        public = temp / "public"
+
+        subprocess.run(["git", "init", "--bare", "--quiet", str(candidate_bare)], check=True)
+        subprocess.run(["git", "init", "--bare", "--quiet", str(public_bare)], check=True)
+        subprocess.run(
+            ["git", "init", "--quiet", "-b", "release/v2.0.0-prep", str(candidate)],
+            check=True,
+        )
+        for repository in (candidate, public):
+            repository.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "-C", str(candidate), "config", "user.name", "release-test"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(candidate), "config", "user.email",
+             "release-test@example.invalid"],
+            check=True,
+        )
+
+        (candidate / "candidate.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(candidate), "add", "candidate.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(candidate), "commit", "--quiet", "-m", "candidate base"],
+            check=True,
+        )
+        candidate_parent = subprocess.check_output(
+            ["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True
+        ).strip()
+
+        (candidate / "candidate.txt").write_text("reviewed\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(candidate), "add", "candidate.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(candidate), "commit", "--quiet", "-m", "reviewed candidate"],
+            check=True,
+        )
+        candidate_head = subprocess.check_output(
+            ["git", "-C", str(candidate), "rev-parse", "HEAD"], text=True
+        ).strip()
+        candidate_tree = subprocess.check_output(
+            ["git", "-C", str(candidate), "rev-parse", "HEAD^{tree}"], text=True
+        ).strip()
+
+        subprocess.run(
+            ["git", "-C", str(candidate), "remote", "add", "bundle", str(candidate_bare)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(candidate), "push", "--quiet", "-u", "bundle",
+             "release/v2.0.0-prep"],
+            check=True,
+        )
+
+        subprocess.run(["git", "init", "--quiet", "-b", "main", str(public)], check=True)
+        subprocess.run(
+            ["git", "-C", str(public), "config", "user.name", "release-test"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(public), "config", "user.email",
+             "release-test@example.invalid"],
+            check=True,
+        )
+        (public / "legacy.txt").write_text("legacy\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(public), "add", "legacy.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(public), "commit", "--quiet", "-m", "legacy"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(public), "remote", "add", "origin", str(public_bare)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(public), "push", "--quiet", "-u", "origin", "main"],
+            check=True,
+        )
+        public_head = subprocess.check_output(
+            ["git", "-C", str(public), "rev-parse", "HEAD"], text=True
+        ).strip()
+        subprocess.run(
+            ["git", "-C", str(candidate), "remote", "add", "origin", str(public_bare)],
+            check=True,
+        )
+
+        common_args = [
+            "bash", str(helper_path),
+            "--public-remote", "origin",
+            "--release-branch", "release/v2.0.0-test",
+            "--expected-public-head", public_head,
+            "--expected-hardened-parent", candidate_parent,
+        ]
+
+        (candidate / "local-only.txt").write_text("drift\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(candidate), "add", "local-only.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(candidate), "commit", "--quiet", "-m", "local drift"],
+            check=True,
+        )
+        drift = subprocess.run(
+            common_args,
+            cwd=candidate,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        require(drift.returncode != 0 and "local hardened head differs" in drift.stderr,
+                "public-history helper accepted an unreviewed local candidate commit")
+
+        subprocess.run(
+            ["git", "-C", str(candidate), "reset", "--hard", "--quiet", candidate_head],
+            check=True,
+        )
+        merged = subprocess.run(
+            common_args,
+            cwd=candidate,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        require("Create a merge commit" in merged.stdout,
+                "public-history helper did not print the merge-method contract")
+        merged_tree = subprocess.check_output(
+            ["git", "-C", str(candidate), "rev-parse", "HEAD^{tree}"], text=True
+        ).strip()
+        parents = subprocess.check_output(
+            ["git", "-C", str(candidate), "show", "-s", "--format=%P", "HEAD"],
+            text=True,
+        ).split()
+        require(merged_tree == candidate_tree,
+                "history integration changed the hardened source tree")
+        require(len(parents) == 2 and parents[0] == candidate_head and public_head in parents,
+                "history integration did not produce the required two-parent merge")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {sys.argv[0]} REPOSITORY_ROOT")
@@ -435,6 +616,7 @@ def main() -> int:
     test_workflow_pins(root)
     test_oracle_lock(root)
     test_release_metadata(root)
+    test_public_release_preparation_contract(root)
     test_sbom_and_provenance(root)
     test_release_bundle_verifier(root)
     test_source_archive_modes(root)

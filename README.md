@@ -21,6 +21,7 @@ mode is explicitly enabled for a supported small instance.
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
+./build/aldous_tsp --version
 ./build/aldous_tsp --quick --output results.json --force
 python3 scripts/plot_results.py results.json -o curve.png
 ```
@@ -138,6 +139,7 @@ python3 scripts/profile_run.py --exe build/aldous_tsp --N 240 --instances 2
 
 Important flags:
 
+- `--version`
 - `--quick[=true|false]`
 - `--dry-run[=true|false]`
 - `--force[=true|false]`
@@ -268,6 +270,12 @@ examples/                example p-grid files
 ```
 
 See `docs/known_good_benchmarks.md` for the compact current-release validation evidence. Regenerate it with `scripts/regenerate_validation_artifacts.py` followed by `scripts/render_validation_report.py`. Current evidence lives in `validation_runs/current/`; explicitly historical evidence is retained under `validation_archive/` and is never presented as current-release validation.
+
+## Development provenance
+
+Development of version 2.0.0 used extensive AI-assisted implementation and review under the
+maintainer's direction. The public commit identities and validation policy are explained in
+[`DEVELOPMENT.md`](DEVELOPMENT.md). They do not imply sponsorship or endorsement by OpenAI.
 
 ## License
 

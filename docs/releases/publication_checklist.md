@@ -22,9 +22,23 @@ the ancestry. Push `release/v2.0.0`, open a pull request, and run every blocking
 merging. If `origin/main` has changed, inspect the new commits and update the expected head rather
 than bypassing the check.
 
-The same guarded merge is automated by `scripts/prepare_public_release_branch.sh`. Run it while
-checked out at the hardened `release/v2.0.0-prep` tip; it refuses a dirty tree, an unexpected public
-head, or an existing destination branch.
+The same guarded merge is automated by `scripts/prepare_public_release_branch.sh`. Run it from the
+bundle-cloned `release/v2.0.0-prep` branch while that branch still tracks the bundle remote. The
+helper fetches the tracked bundle branch and refuses a dirty tree, detached HEAD, the wrong branch,
+any local commit drift from the reviewed bundle tip, an unexpected audited parent, an unexpected
+public head, an unreachable historical performance baseline, or an existing destination branch.
+It verifies that the merge preserves the exact hardened source tree.
+
+## Mandatory pull-request merge method
+
+Merge the release pull request with GitHub's **Create a merge commit** option. Do not use
+**Squash and merge**, **Rebase and merge**, or a linear-history rewrite for this import. The
+hardened development ancestry contains validation provenance and the pinned commit in
+`config/performance_baseline_commit.txt`; rewriting or discarding that ancestry can make the
+historical-performance gate fail in a fresh checkout.
+
+Temporarily keep merge commits enabled and linear-history enforcement disabled for this pull
+request. After 2.0.0 is merged, the repository's ordinary merge settings may be reconsidered.
 
 After merge, create a signed annotated tag:
 
@@ -59,7 +73,8 @@ Before the release pull request is merged:
 2. Enable secret scanning and push protection when the repository settings make them available.
 3. Run the release branch once so GitHub registers the new status-check names.
 4. Protect `main` with a ruleset that requires a pull request, all blocking CI/CodeQL checks,
-   an up-to-date branch, and no force-push or deletion.
+   an up-to-date branch, and no force-push or deletion. Do not require linear history until the
+   2.0.0 history-import pull request has been merged with a true merge commit.
 5. Protect `v*` tags from update and deletion. Require a signed annotated release tag.
 6. Configure the independently verified `LKH_3_0_14_SHA256` and
    `CONCORDE_LINUX24_SHA256` repository variables. The release candidate intentionally keeps

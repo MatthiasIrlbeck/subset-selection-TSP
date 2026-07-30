@@ -17,7 +17,7 @@ enum class GeneratedCliParseResult {
 };
 
 // Generated CLI parser. It is side-effect free except for mutating `opt`,
-// setting `self_test`, and writing generated help for --help.
+// setting `self_test`, and writing generated help/version output.
 GeneratedCliParseResult parse_generated_cli_option(
     int& index,
     int argc,

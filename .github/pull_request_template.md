@@ -21,3 +21,8 @@ Provide paired commands, quality deltas, worker/wall cost, seeds, and artifacts.
 - Public API/CLI impact:
 - Result-schema impact:
 - Campaign fingerprint/migration impact:
+
+## Release-history import (only when applicable)
+
+- [ ] This PR is not the 2.0.0 unrelated-history import, or it will be merged using
+      **Create a merge commit** (never squash/rebase).

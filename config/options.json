@@ -50,6 +50,15 @@
       "action": "help"
     },
     {
+      "id": "version",
+      "section": "general",
+      "cli": "--version",
+      "help": "Print the project version and embedded source provenance, then exit.",
+      "emit_json": false,
+      "declare": false,
+      "action": "version"
+    },
+    {
       "id": "self_test",
       "section": "general",
       "cli": "--self-test",
