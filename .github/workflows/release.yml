@@ -148,6 +148,13 @@ jobs:
             --expected-tree "$SOURCE_TREE"
       - name: Verify source-archive revision fallback
         shell: bash
+        env:
+          # The extracted archive deliberately has no .git directory, so its
+          # release-security test creates a temporary fixture repository. Keep
+          # runner-level Git ignore rules from changing which fixture files are
+          # staged; only repository-local attributes should affect the archive.
+          GIT_CONFIG_NOSYSTEM: "1"
+          GIT_CONFIG_GLOBAL: /dev/null
         run: |
           set -euo pipefail
           rm -rf source-archive-check source-archive-build
