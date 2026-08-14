@@ -772,7 +772,7 @@ void apply_elite_kick(const Instance& inst, std::vector<int>& seed, Rng& rng, do
 
     // Keep the failure mode local and diagnosable if this routine is modified
     // later: no invalid seed may reach Tour::set_tour().
-    std::fill(in_set.begin(), in_set.end(), 0U);
+    std::fill(in_set.begin(), in_set.end(), static_cast<unsigned char>(0));
     for (const int node : seed) {
         if (node < 0 || node >= inst.N
             || in_set[static_cast<std::size_t>(node)] != 0U) {

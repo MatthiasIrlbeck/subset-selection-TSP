@@ -18,6 +18,7 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -46,6 +47,9 @@
 
 #if !defined(_WIN32)
 extern char** environ;
+#ifndef ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR
+#define ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR 0
+#endif
 #ifndef ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
 #define ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP 0
 #endif
@@ -67,41 +71,138 @@ std::string trim_ascii(std::string text) {
     return text;
 }
 
-// Portable unique temporary working directory (no POSIX mkdtemp), used to stage
-// the problem/parameter/tour files handed to the external solver. Works on both
-// POSIX and Windows via std::filesystem.
+std::optional<std::string> environment_value(const char* name) {
+    if (name == nullptr || *name == '\0') {
+        return std::nullopt;
+    }
+#if defined(_WIN32)
+    char* raw = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&raw, &length, name) != 0 || raw == nullptr) {
+        return std::nullopt;
+    }
+    std::string value(raw);
+    std::free(raw);
+    return value;
+#else
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+        return std::nullopt;
+    }
+    return std::string(raw);
+#endif
+}
+
+std::filesystem::path canonical_executable_path(
+    const std::filesystem::path& candidate) {
+    namespace fs = std::filesystem;
+    if (candidate.empty()) {
+        return {};
+    }
+    std::error_code ec;
+    const fs::path resolved = fs::canonical(candidate, ec);
+    if (ec || !resolved.is_absolute() || !fs::is_regular_file(resolved, ec) || ec) {
+        return {};
+    }
+#if !defined(_WIN32)
+    if (access(resolved.c_str(), X_OK) != 0) {
+        return {};
+    }
+#endif
+    return resolved;
+}
+
+std::optional<std::filesystem::path> fixed_child_path(
+    const std::filesystem::path& root,
+    std::string_view leaf_name) {
+    namespace fs = std::filesystem;
+    if (root.empty() || leaf_name.empty()) {
+        return std::nullopt;
+    }
+    const fs::path leaf(leaf_name);
+    if (leaf.is_absolute() || leaf.has_parent_path() || leaf.filename() != leaf) {
+        return std::nullopt;
+    }
+    const fs::path normalized_root = root.lexically_normal();
+    const fs::path candidate = (normalized_root / leaf).lexically_normal();
+    if (candidate.parent_path() != normalized_root) {
+        return std::nullopt;
+    }
+    return candidate;
+}
+
+// Private, uniquely named working directory used to stage the fixed-name files
+// handed to an external solver. The platform temp-directory API is used rather
+// than reading TMPDIR directly; the created directory is canonicalized and its
+// permissions are restricted before any child path is returned.
 struct TempWorkDir {
     std::filesystem::path path;
     bool ok = false;
 
     explicit TempWorkDir(const char* prefix) {
         namespace fs = std::filesystem;
-        fs::path base;
-        const char* tmpdir = std::getenv("TMPDIR");
-        if (tmpdir != nullptr && *tmpdir != '\0') {
-            base = tmpdir;
-        } else {
-            std::error_code ec;
-            base = fs::temp_directory_path(ec);
-            if (ec) { base = fs::path("."); }
+        if (prefix == nullptr || *prefix == '\0') {
+            return;
         }
+        std::error_code ec;
+        fs::path base = fs::temp_directory_path(ec);
+        if (ec || base.empty()) {
+            return;
+        }
+        base = fs::canonical(base, ec);
+        if (ec || !base.is_absolute() || !fs::is_directory(base, ec) || ec) {
+            return;
+        }
+
         std::mt19937_64 gen(std::random_device{}() ^ static_cast<std::uint64_t>(
             std::chrono::steady_clock::now().time_since_epoch().count()));
         for (int attempt = 0; attempt < 64; ++attempt) {
             std::ostringstream name;
             name << prefix << '_' << std::hex << gen();
-            const fs::path candidate = base / name.str();
-            std::error_code ec;
-            if (fs::create_directory(candidate, ec) && !ec) {
-                path = candidate;
-                ok = true;
+            const auto candidate = fixed_child_path(base, name.str());
+            if (!candidate.has_value()) {
                 return;
             }
+            ec.clear();
+            if (!fs::create_directory(*candidate, ec) || ec) {
+                continue;
+            }
+#if !defined(_WIN32)
+            ec.clear();
+            fs::permissions(
+                *candidate,
+                fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec,
+                fs::perm_options::replace,
+                ec);
+            if (ec) {
+                std::error_code remove_error;
+                fs::remove_all(*candidate, remove_error);
+                continue;
+            }
+#endif
+            ec.clear();
+            const fs::path resolved = fs::canonical(*candidate, ec);
+            if (ec || resolved.parent_path() != base) {
+                std::error_code remove_error;
+                fs::remove_all(*candidate, remove_error);
+                continue;
+            }
+            path = resolved;
+            ok = true;
+            return;
         }
     }
 
     TempWorkDir(const TempWorkDir&) = delete;
     TempWorkDir& operator=(const TempWorkDir&) = delete;
+
+    std::filesystem::path file(std::string_view leaf_name) const {
+        if (!ok) {
+            return {};
+        }
+        const auto candidate = fixed_child_path(path, leaf_name);
+        return candidate.has_value() ? *candidate : std::filesystem::path{};
+    }
 
     ~TempWorkDir() {
         if (ok) {
@@ -115,15 +216,36 @@ constexpr std::uintmax_t kMaxOracleConsoleBytes = 16U * 1024U * 1024U;
 constexpr std::uintmax_t kMaxOracleTourBytes = 16U * 1024U * 1024U;
 constexpr std::size_t kOracleConsoleReadBytes = 64U * 1024U;
 
+bool bounded_regular_file(const std::filesystem::path& path,
+                          std::uintmax_t limit,
+                          std::uintmax_t& bytes) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::file_status status = fs::symlink_status(path, ec);
+    if (ec || fs::is_symlink(status) || !fs::is_regular_file(status)) {
+        return false;
+    }
+    bytes = fs::file_size(path, ec);
+    return !ec && bytes <= limit;
+}
+
 // Reads a bounded tail of the external solver's captured console output and
 // returns the part worth reporting. A malicious or broken solver must not make
 // the parent allocate according to an untrusted output-file size.
 std::string summarize_child_output(const std::filesystem::path& path) {
+    namespace fs = std::filesystem;
+    std::error_code status_error;
+    const fs::file_status status = fs::symlink_status(path, status_error);
+    if (status_error || fs::is_symlink(status) || !fs::is_regular_file(status)) {
+        return {};
+    }
     std::error_code size_error;
-    const std::uintmax_t file_bytes = std::filesystem::file_size(path, size_error);
+    const std::uintmax_t file_bytes = fs::file_size(path, size_error);
     if (size_error) {
         return {};
     }
+    // The caller supplies a fixed child of a freshly created private workspace.
+    // codeql[cpp/path-injection]
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return {};
@@ -180,28 +302,25 @@ std::string resolve_exec_in_path(const std::string& program) {
         return {};
     }
     if (program.find('/') != std::string::npos) {
-        if (access(program.c_str(), X_OK) != 0) {
-            return {};
-        }
-        std::error_code ec;
-        const std::filesystem::path resolved = std::filesystem::weakly_canonical(program, ec);
-        return ec ? std::filesystem::absolute(program).string() : resolved.string();
+        return canonical_executable_path(program).string();
     }
-    const char* path_env = std::getenv("PATH");
-    if (path_env == nullptr) {
+    const std::optional<std::string> path_env = environment_value("PATH");
+    if (!path_env.has_value()) {
         return {};
     }
-    const std::string path(path_env);
     std::size_t start = 0;
-    while (start <= path.size()) {
-        const std::size_t end = path.find(':', start);
-        std::string dir = (end == std::string::npos) ? path.substr(start) : path.substr(start, end - start);
+    while (start <= path_env->size()) {
+        const std::size_t end = path_env->find(':', start);
+        std::string dir = (end == std::string::npos)
+            ? path_env->substr(start)
+            : path_env->substr(start, end - start);
         if (dir.empty()) {
             dir = ".";
         }
-        const std::string candidate = dir + "/" + program;
-        if (access(candidate.c_str(), X_OK) == 0) {
-            return candidate;
+        const std::filesystem::path resolved =
+            canonical_executable_path(std::filesystem::path(dir) / program);
+        if (!resolved.empty()) {
+            return resolved.string();
         }
         if (end == std::string::npos) {
             break;
@@ -395,7 +514,7 @@ int spawn_in_new_process_group(const std::vector<std::string>& argv,
     return error;
 }
 
-#if !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+#if !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR && !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
 std::vector<std::string> process_arguments_in_directory(
     const std::vector<std::string>& argv,
     const std::filesystem::path& cwd) {
@@ -430,11 +549,16 @@ int run_external_process(const std::vector<std::string>& argv,
     if (argv.empty()) {
         return -1;
     }
-    const std::filesystem::path log_path = cwd.empty()
-        ? std::filesystem::path("oracle_output.txt")
-        : (cwd / "oracle_output.txt");
+    const auto log_path_value = fixed_child_path(cwd, "oracle_output.txt");
+    if (!log_path_value.has_value()) {
+        if (captured != nullptr) {
+            *captured = "oracle working directory is invalid";
+        }
+        return -1;
+    }
+    const std::filesystem::path& log_path = *log_path_value;
     const std::string log_str = log_path.string();
-#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR || ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
     const std::vector<std::string>& spawn_argv = argv;
 #else
     const std::vector<std::string> spawn_argv =
@@ -466,7 +590,11 @@ int run_external_process(const std::vector<std::string>& argv,
         error = posix_spawn_file_actions_adddup2(
             &actions, STDOUT_FILENO, STDERR_FILENO);
     }
-#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR
+    if (error == 0 && !cwd_str.empty()) {
+        error = posix_spawn_file_actions_addchdir(&actions, cwd_str.c_str());
+    }
+#elif ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
     if (error == 0 && !cwd_str.empty()) {
         error = posix_spawn_file_actions_addchdir_np(&actions, cwd_str.c_str());
     }
@@ -488,6 +616,8 @@ int run_external_process(const std::vector<std::string>& argv,
     SpawnedProcess process(pid);
     const int rc = wait_for_process_until(pid, process_deadline(timeout_sec));
     process.mark_reaped();
+    // log_path is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
     const std::string output = summarize_child_output(log_path);
     if (captured != nullptr) {
         *captured = output;
@@ -662,33 +792,32 @@ std::string resolve_exec_in_path(const std::string& program) {
         return {};
     }
     namespace fs = std::filesystem;
-    std::error_code ec;
     auto resolve_variants = [&](const fs::path& base) -> std::string {
-        if (fs::is_regular_file(base, ec)) {
-            return fs::absolute(base, ec).string();
+        fs::path resolved = canonical_executable_path(base);
+        if (!resolved.empty()) {
+            return resolved.string();
         }
         fs::path with_exe = base;
         with_exe += ".exe";
-        if (fs::is_regular_file(with_exe, ec)) {
-            return fs::absolute(with_exe, ec).string();
-        }
-        return {};
+        resolved = canonical_executable_path(with_exe);
+        return resolved.string();
     };
     const bool looks_like_path = program.find('/') != std::string::npos
         || program.find('\\') != std::string::npos
-        || (program.size() >= 2 && program[1] == ':');
+        || (program.size() >= 2U && program[1] == ':');
     if (looks_like_path) {
         return resolve_variants(fs::path(program));
     }
-    const char* path_env = std::getenv("PATH");
-    if (path_env == nullptr) {
+    const std::optional<std::string> path_env = environment_value("PATH");
+    if (!path_env.has_value()) {
         return {};
     }
-    const std::string path(path_env);
     std::size_t start = 0;
-    while (start <= path.size()) {
-        const std::size_t end = path.find(';', start);  // Windows PATH separator
-        std::string dir = (end == std::string::npos) ? path.substr(start) : path.substr(start, end - start);
+    while (start <= path_env->size()) {
+        const std::size_t end = path_env->find(';', start);  // Windows PATH separator
+        const std::string dir = (end == std::string::npos)
+            ? path_env->substr(start)
+            : path_env->substr(start, end - start);
         if (!dir.empty()) {
             const std::string resolved = resolve_variants(fs::path(dir) / program);
             if (!resolved.empty()) {
@@ -745,9 +874,14 @@ int run_external_process(const std::vector<std::string>& argv, const std::filesy
     std::vector<char> mutable_cmd(command_line.begin(), command_line.end());
     mutable_cmd.push_back('\0');
 
-    const std::filesystem::path log_path = cwd.empty()
-        ? std::filesystem::path("oracle_output.txt")
-        : (cwd / "oracle_output.txt");
+    const auto log_path_value = fixed_child_path(cwd, "oracle_output.txt");
+    if (!log_path_value.has_value()) {
+        if (captured != nullptr) {
+            *captured = "oracle working directory is invalid";
+        }
+        return -1;
+    }
+    const std::filesystem::path& log_path = *log_path_value;
     const std::string log_str = log_path.string();
 
     SECURITY_ATTRIBUTES sa;
@@ -810,6 +944,8 @@ int run_external_process(const std::vector<std::string>& argv, const std::filesy
     }
     CloseHandle(proc.hProcess);
     CloseHandle(proc.hThread);
+    // log_path is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
     const std::string output = summarize_child_output(log_path);
     if (captured != nullptr) {
         *captured = output;
@@ -959,22 +1095,29 @@ bool parse_window(const std::vector<long long>& values, std::size_t start, int k
     return true;
 }
 
-bool parse_external_tour_file(const std::filesystem::path& path, int k, std::vector<int>& permutation) {
-    std::error_code size_error;
-    const std::uintmax_t file_bytes = std::filesystem::file_size(path, size_error);
-    if (size_error || file_bytes > kMaxOracleTourBytes) {
+bool parse_external_tour_file(const std::filesystem::path& path,
+                              int k,
+                              std::vector<int>& permutation) {
+    std::uintmax_t file_bytes = 0U;
+    if (!bounded_regular_file(path, kMaxOracleTourBytes, file_bytes)) {
         return false;
     }
+    // The caller supplies a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return false;
     }
     std::string text(static_cast<std::size_t>(file_bytes), '\0');
     in.read(text.data(), static_cast<std::streamsize>(text.size()));
-    if (!in && !in.eof()) {
+    if (in.bad()) {
         return false;
     }
     text.resize(static_cast<std::size_t>(in.gcount()));
+    char extra = '\0';
+    if (in.get(extra)) {
+        return false;
+    }
     return parse_external_tour_text(text, k, permutation);
 }
 
@@ -995,9 +1138,17 @@ bool external_oracle_polish_nodes(const Instance& inst,
     if (k < 3) {
         return fail("tour has fewer than 3 nodes");
     }
+    const std::filesystem::path launch_executable =
+        canonical_executable_path(oracle.exec_path);
+    if (launch_executable.empty()
+        || launch_executable.string() != oracle.exec_path) {
+        return fail("oracle executable path changed or is no longer a runnable regular file");
+    }
     std::string launch_hash;
     std::string hash_error;
-    if (!detail::sha256_file(oracle.exec_path, launch_hash, hash_error)) {
+    // launch_executable was canonicalized and restricted to a runnable regular file.
+    // codeql[cpp/path-injection]
+    if (!detail::sha256_file(launch_executable, launch_hash, hash_error)) {
         return fail("oracle executable identity could not be verified before launch: " + hash_error);
     }
     if (launch_hash != oracle.exec_sha256) {
@@ -1008,23 +1159,39 @@ bool external_oracle_polish_nodes(const Instance& inst,
     if (!tmp.ok) {
         return fail("failed to create temporary working directory");
     }
-    const std::filesystem::path problem = tmp.path / "problem.tsp";
-    const std::filesystem::path init = tmp.path / "init.tour";
-    const std::filesystem::path params = tmp.path / "run.par";
-    const std::filesystem::path out_tour = tmp.path / "out.tour";
+    const std::filesystem::path problem = tmp.file("problem.tsp");
+    const std::filesystem::path init = tmp.file("init.tour");
+    const std::filesystem::path params = tmp.file("run.par");
+    const std::filesystem::path out_tour = tmp.file("out.tour");
+    const std::filesystem::path concorde_fallback = tmp.file("problem.sol");
+    if (problem.empty() || init.empty() || params.empty() || out_tour.empty()
+        || concorde_fallback.empty()) {
+        return fail("failed to derive fixed oracle workspace paths");
+    }
     const int safe_scale = effective_oracle_scale(inst, input_nodes, oracle.cfg.scale);
-    const bool wrote_problem = oracle.cfg.problem_format == OracleProblemFormat::Matrix
-        ? write_tsplib_matrix(problem, inst, input_nodes, safe_scale)
-        : write_tsplib_euc2d(problem, inst, input_nodes, safe_scale);
+    bool wrote_problem = false;
+    if (oracle.cfg.problem_format == OracleProblemFormat::Matrix) {
+        // problem is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        wrote_problem = write_tsplib_matrix(problem, inst, input_nodes, safe_scale);
+    } else {
+        // problem is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        wrote_problem = write_tsplib_euc2d(problem, inst, input_nodes, safe_scale);
+    }
     if (!wrote_problem) {
         return fail("failed to write TSPLIB problem file");
     }
 
     std::vector<std::string> argv;
     if (oracle.resolved == ResolvedOracleMode::Lkh) {
+        // init is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
         if (!write_identity_tour(init, k)) {
             return fail("failed to write initial tour file");
         }
+        // params is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
         std::ofstream par(params);
         if (!par) {
             return fail("failed to write LKH parameter file");
@@ -1045,9 +1212,12 @@ bool external_oracle_polish_nodes(const Instance& inst,
             par << "TIME_LIMIT = " << oracle.cfg.time_limit_sec << "\n";
         }
         par.close();
-        argv = {oracle.exec_path, params.filename().string()};
+        argv = {launch_executable.string(), params.filename().string()};
     } else if (oracle.resolved == ResolvedOracleMode::Concorde) {
-        argv = {oracle.exec_path, "-o", out_tour.filename().string(), problem.filename().string()};
+        argv = {launch_executable.string(),
+                "-o",
+                out_tour.filename().string(),
+                problem.filename().string()};
     } else {
         return fail("no resolved external oracle executable");
     }
@@ -1062,9 +1232,12 @@ bool external_oracle_polish_nodes(const Instance& inst,
     // no usable tour comes back do we treat the call as failed -- and then we
     // report the solver's own diagnostics, which is what makes failures debuggable.
     std::vector<int> permutation;
+    // out_tour is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
     bool parsed = parse_external_tour_file(out_tour, k, permutation);
     if (!parsed) {
-        const std::filesystem::path concorde_fallback = tmp.path / "problem.sol";
+        // concorde_fallback is the only alternative fixed output name accepted.
+        // codeql[cpp/path-injection]
         parsed = parse_external_tour_file(concorde_fallback, k, permutation);
     }
     if (!parsed) {
@@ -1169,14 +1342,24 @@ bool build_oracle_context(const ExternalOracleConfig& cfg, OracleContext& oracle
         oracle.exec_path = concorde;
     }
 
+    const std::filesystem::path canonical_exec =
+        canonical_executable_path(oracle.exec_path);
+    if (canonical_exec.empty() || canonical_exec.string() != oracle.exec_path) {
+        error = "resolved oracle executable is not a canonical runnable regular file";
+        oracle = OracleContext();
+        oracle.cfg = cfg_copy;
+        return false;
+    }
     std::string hash_error;
-    if (!detail::sha256_file(oracle.exec_path, oracle.exec_sha256, hash_error)) {
+    // canonical_exec was canonicalized and restricted to a runnable regular file.
+    // codeql[cpp/path-injection]
+    if (!detail::sha256_file(canonical_exec, oracle.exec_sha256, hash_error)) {
         error = "failed to hash requested oracle executable: " + hash_error;
         oracle = OracleContext();
         oracle.cfg = cfg_copy;
         return false;
     }
-    oracle.version = capture_process_first_line({oracle.exec_path, "--version"}, 2);
+    oracle.version = capture_process_first_line({canonical_exec.string(), "--version"}, 2);
     std::ostringstream status;
     status << resolved_oracle_mode_name(oracle.resolved)
            << " @ " << oracle.exec_path

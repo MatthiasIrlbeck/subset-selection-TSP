@@ -39,7 +39,7 @@ public:
             return 0;
         }
         const auto bound = static_cast<std::uint64_t>(exclusive_upper);
-        const auto threshold = static_cast<std::uint64_t>(-bound) % bound;
+        const auto threshold = (std::uint64_t{0} - bound) % bound;
         for (;;) {
             const std::uint64_t x = next_u64();
             if (x >= threshold) {

@@ -52,6 +52,7 @@ def atomic_write_json(path: Path, value: object) -> None:
         try:
             temporary.unlink()
         except FileNotFoundError:
+            # Cleanup is idempotent when the temporary file was never created.
             pass
         raise
 

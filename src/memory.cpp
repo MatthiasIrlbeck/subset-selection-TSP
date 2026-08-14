@@ -275,7 +275,7 @@ std::uint64_t estimate_instance_memory_bytes(const RunOptions& options) noexcept
     const auto k = static_cast<std::uint64_t>(
         std::max(0, std::min(options.solver.knn_k, std::max(options.N - 1, 0))));
     const auto nk = saturating_multiply(n, k);
-    std::uint64_t bytes = 1U << 20U;
+    std::uint64_t bytes = std::uint64_t{1} << 20U;
 
     bytes = saturating_add(bytes, saturating_multiply(n, sizeof(Point)));
     bytes = saturating_add(bytes, saturating_multiply(nk, sizeof(int)));

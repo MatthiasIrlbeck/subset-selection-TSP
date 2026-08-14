@@ -600,9 +600,12 @@ def analyze(
             if propagate_reference_uncertainty else {}
         )
 
-        def reference_shift(weights: dict[str, float]) -> float:
+        def reference_shift(
+            weights: dict[str, float],
+            draws: dict[str, float] = reference_draws,
+        ) -> float:
             return sum(
-                coefficient * reference_draws.get(source, 0.0)
+                coefficient * draws.get(source, 0.0)
                 for source, coefficient in weights.items()
             )
 
@@ -1627,7 +1630,10 @@ def run_self_test() -> int:
         and bool(json.dumps(zero_bootstrap_report, allow_nan=False))
     )
 
-    semantics_ok = 10.0 > 9.0 and 10.0 <= 11.0
+    interval_lower = 9.0
+    interval_estimate = 10.0
+    interval_upper = 11.0
+    semantics_ok = interval_lower < interval_estimate <= interval_upper
     checks = {
         "two-stage fit": fit_ok,
         "replicate-block correlation": correlation_ok,

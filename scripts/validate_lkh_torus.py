@@ -34,8 +34,8 @@ def run_point(exe, lkh, N, instances, runs, out):
         "--output", out, "--force",
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-    row = json.load(open(out))["summary_rows"][0]
-    return row
+    with open(out, encoding="utf-8") as result_file:
+        return json.load(result_file)["summary_rows"][0]
 
 
 def main():
@@ -81,7 +81,8 @@ def main():
             try:
                 fp = float(parts[1].split()[0])
             except (ValueError, IndexError):
-                pass
+                # Keep scanning: unrelated table rows are intentionally ignored.
+                continue
     if fp is None:
         print("\ncould not parse extrapolated f(1); inspect the table above", file=sys.stderr)
         return 2

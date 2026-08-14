@@ -480,6 +480,8 @@ const char kGeneratedHelp[] = R"ALDOUSHELP('''.splitlines())
         elif action == "p_range":
             lines.append("        if (!parse_p_range(value, opt.p_values)) { error = \"invalid --p-range: \" + value; return GeneratedCliParseResult::Error; }")
         elif action == "p_file":
+            lines.append("        // --p-file intentionally grants bounded read access to the named local file.")
+            lines.append("        // codeql[cpp/path-injection]")
             lines.append("        if (!read_p_file(value, opt.p_values, error)) { return GeneratedCliParseResult::Error; }")
         else:
             expr = access(option)

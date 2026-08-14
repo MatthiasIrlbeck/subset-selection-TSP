@@ -90,6 +90,37 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="aldous_cli_regressions_") as td:
         tmp = Path(td)
 
+        p_file = tmp / "p values.txt"
+        p_file.write_text("1.0, 0.25\n0.5\n", encoding="utf-8")
+        p_file_doc = run_case(
+            exe,
+            [
+                "--N", "18",
+                "--instances", "1",
+                "--threads", "1",
+                "--p-file", str(p_file),
+                "--sa-iters", "0",
+                "--restarts", "1",
+                "--tsp-restarts", "1",
+                "--tsp-ils", "0",
+            ],
+            tmp / "p-file.json",
+        )
+        assert p_file_doc["p_values"] == [0.25, 0.5, 1.0], p_file_doc["p_values"]
+
+        oversized_p_file = tmp / "oversized-p-values.txt"
+        with oversized_p_file.open("wb") as output:
+            output.seek(8 * 1024 * 1024)
+            output.write(b"x")
+        oversized_run = subprocess.run(
+            [str(exe), "--p-file", str(oversized_p_file), "--dry-run"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        assert oversized_run.returncode != 0, oversized_run
+        assert "8 MiB safety limit" in oversized_run.stderr, oversized_run.stderr
+
         disable_doc = run_case(
             exe,
             [
@@ -606,59 +637,60 @@ def main() -> int:
         assert highp_doc["search_stats"]["subset_swap_scans"] == 0, highp_doc["search_stats"]
         assert highp_doc["search_stats"]["highp_exchange_scans"] > 0, highp_doc["search_stats"]
 
-        top0_doc = run_case(
-            exe,
-            [
-                "--N", "30",
-                "--instances", "1",
-                "--threads", "1",
-                "--p-values", "1.0",
-                "--sa-iters", "0",
-                "--restarts", "1",
-                "--tsp-restarts", "4",
-                "--tsp-ils", "0",
-                "--disable-two-opt",
-                "--disable-or-opt",
-                "--oracle", "lkh",
-                "--lkh-path", str(fake_lkh),
-                "--oracle-min-k", "17",
-                "--oracle-max-k", "50",
-                "--oracle-tsp-top", "0",
-            ],
-            tmp / "oracle-top0.json",
-        )
-        assert top0_doc["search_stats"]["oracle_tsp_calls"] == 0, top0_doc["search_stats"]
-        assert top0_doc["oracle_call_records"] == [], top0_doc["oracle_call_records"]
+        if os.name != "nt":
+            top0_doc = run_case(
+                exe,
+                [
+                    "--N", "30",
+                    "--instances", "1",
+                    "--threads", "1",
+                    "--p-values", "1.0",
+                    "--sa-iters", "0",
+                    "--restarts", "1",
+                    "--tsp-restarts", "4",
+                    "--tsp-ils", "0",
+                    "--disable-two-opt",
+                    "--disable-or-opt",
+                    "--oracle", "lkh",
+                    "--lkh-path", str(fake_lkh),
+                    "--oracle-min-k", "17",
+                    "--oracle-max-k", "50",
+                    "--oracle-tsp-top", "0",
+                ],
+                tmp / "oracle-top0.json",
+            )
+            assert top0_doc["search_stats"]["oracle_tsp_calls"] == 0, top0_doc["search_stats"]
+            assert top0_doc["oracle_call_records"] == [], top0_doc["oracle_call_records"]
 
-        top2_doc = run_case(
-            exe,
-            [
-                "--N", "30",
-                "--instances", "1",
-                "--threads", "1",
-                "--p-values", "1.0",
-                "--sa-iters", "0",
-                "--restarts", "1",
-                "--tsp-restarts", "4",
-                "--tsp-ils", "0",
-                "--disable-two-opt",
-                "--disable-or-opt",
-                "--oracle", "lkh",
-                "--lkh-path", str(fake_lkh),
-                "--oracle-min-k", "17",
-                "--oracle-max-k", "50",
-                "--oracle-tsp-top", "2",
-            ],
-            tmp / "oracle-top2.json",
-        )
-        calls = top2_doc["search_stats"]["oracle_tsp_calls"]
-        expected_oracle_hash = hashlib.sha256(fake_lkh.read_bytes()).hexdigest()
-        assert top2_doc["config"]["oracle_exec_sha256"] == expected_oracle_hash, top2_doc["config"]
-        assert calls == 2, top2_doc["search_stats"]
-        assert len(top2_doc["oracle_call_records"]) == 2, top2_doc["oracle_call_records"]
-        assert {r["type"] for r in top2_doc["oracle_call_records"]} == {"tsp"}, top2_doc["oracle_call_records"]
-        assert all(r["exec_sha256"] == expected_oracle_hash for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
-        assert all(r["solver_version"] for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
+            top2_doc = run_case(
+                exe,
+                [
+                    "--N", "30",
+                    "--instances", "1",
+                    "--threads", "1",
+                    "--p-values", "1.0",
+                    "--sa-iters", "0",
+                    "--restarts", "1",
+                    "--tsp-restarts", "4",
+                    "--tsp-ils", "0",
+                    "--disable-two-opt",
+                    "--disable-or-opt",
+                    "--oracle", "lkh",
+                    "--lkh-path", str(fake_lkh),
+                    "--oracle-min-k", "17",
+                    "--oracle-max-k", "50",
+                    "--oracle-tsp-top", "2",
+                ],
+                tmp / "oracle-top2.json",
+            )
+            calls = top2_doc["search_stats"]["oracle_tsp_calls"]
+            expected_oracle_hash = hashlib.sha256(fake_lkh.read_bytes()).hexdigest()
+            assert top2_doc["config"]["oracle_exec_sha256"] == expected_oracle_hash, top2_doc["config"]
+            assert calls == 2, top2_doc["search_stats"]
+            assert len(top2_doc["oracle_call_records"]) == 2, top2_doc["oracle_call_records"]
+            assert {r["type"] for r in top2_doc["oracle_call_records"]} == {"tsp"}, top2_doc["oracle_call_records"]
+            assert all(r["exec_sha256"] == expected_oracle_hash for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
+            assert all(r["solver_version"] for r in top2_doc["oracle_call_records"]), top2_doc["oracle_call_records"]
     return 0
 
 

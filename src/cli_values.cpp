@@ -104,23 +104,40 @@ bool parse_p_range(const std::string& text, std::vector<double>& out) {
 }
 
 bool read_p_file(const std::string& path, std::vector<double>& out, std::string& error) {
+    namespace fs = std::filesystem;
     std::error_code filesystem_error;
-    if (!std::filesystem::is_regular_file(path, filesystem_error)) {
+    const fs::path canonical_path = fs::canonical(fs::path(path), filesystem_error);
+    if (filesystem_error || !canonical_path.is_absolute()
+        || !fs::is_regular_file(canonical_path, filesystem_error)
+        || filesystem_error) {
         error = "p-file must be a readable regular file: " + path;
         return false;
     }
-    const std::uintmax_t bytes = std::filesystem::file_size(path, filesystem_error);
+    const std::uintmax_t bytes = fs::file_size(canonical_path, filesystem_error);
     if (filesystem_error || bytes > kMaxPFileBytes) {
         error = "p-file exceeds the 8 MiB safety limit: " + path;
         return false;
     }
-    std::ifstream input(path);
+    // Reading a user-selected local file is the explicit contract of --p-file.
+    // The path has been canonicalized and restricted to a bounded regular file.
+    // codeql[cpp/path-injection]
+    std::ifstream input(canonical_path, std::ios::binary);
     if (!input) {
         error = "failed to open p-file: " + path;
         return false;
     }
-    std::string text((std::istreambuf_iterator<char>(input)),
-                     std::istreambuf_iterator<char>());
+    std::string text(static_cast<std::size_t>(bytes), '\0');
+    input.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (input.bad()) {
+        error = "failed while reading p-file: " + path;
+        return false;
+    }
+    text.resize(static_cast<std::size_t>(input.gcount()));
+    char extra = '\0';
+    if (input.get(extra)) {
+        error = "p-file exceeds the 8 MiB safety limit: " + path;
+        return false;
+    }
     for (char& ch : text) {
         if (ch == ',') {
             ch = ' ';

@@ -170,10 +170,7 @@ def main() -> int:
         "search_seed": args.search_seed,
     }
     manifest_path = args.out_dir / "campaign-manifest.json"
-    try:
-        manifest = load_or_create_manifest(manifest_path, campaign, entries)
-    except ManifestError as exc:
-        parser.error(str(exc))
+    manifest = load_or_create_manifest(manifest_path, campaign, entries)
 
     print(f"campaign plan: {len(entries)} exact cells")
     for entry in entries:
@@ -232,4 +229,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except ManifestError as exc:
         print(f"campaign manifest error: {exc}", file=sys.stderr)
-        raise SystemExit(2)
+        raise SystemExit(2) from None

@@ -73,13 +73,18 @@ if(Python3_Interpreter_FOUND)
     VERBATIM)
 endif()
 
-# A native posix_spawn working-directory action avoids even the short, safe
-# shell trampoline on platforms that provide the non-portable extension. Keep a
-# portable argv-only shell fallback for other POSIX implementations.
+# Prefer the standardized POSIX.1-2024 spawn working-directory action where
+# available. Older systems often provide the historical addchdir_np extension;
+# platforms with neither retain the argv-only shell fallback below.
 if(WIN32)
+  set(ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR OFF)
   set(ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP OFF)
 else()
   include(CheckCXXSymbolExists)
+  check_cxx_symbol_exists(
+    posix_spawn_file_actions_addchdir
+    "spawn.h"
+    ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR)
   check_cxx_symbol_exists(
     posix_spawn_file_actions_addchdir_np
     "spawn.h"
@@ -300,6 +305,7 @@ target_compile_definitions(aldous_tsp_core PRIVATE
   ALDOUS_TSP_BUILD_ENABLE_WERROR=$<IF:$<BOOL:${ALDOUS_TSP_ENABLE_WERROR}>,"ON","OFF">
   ALDOUS_TSP_BUILD_LOW_MEMORY=$<IF:$<BOOL:${ALDOUS_TSP_LOW_MEMORY_BUILD}>,"ON","OFF">
   ALDOUS_TSP_BUILD_CXX_FLAGS="${ALDOUS_TSP_CXX_FLAGS_STR}"
+  ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR=$<BOOL:${ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR}>
   ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP=$<BOOL:${ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP}>
 )
 

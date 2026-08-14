@@ -31,7 +31,8 @@ def read_par(par_path):
 
 
 def read_matrix(tsp_path):
-    text = open(tsp_path).read()
+    with open(tsp_path, encoding="utf-8") as tsp_file:
+        text = tsp_file.read()
     dim = int(re.search(r"DIMENSION\s*:\s*(\d+)", text).group(1))
     if "EDGE_WEIGHT_TYPE : EUC_2D" in text:
         marker = "NODE_COORD_SECTION"

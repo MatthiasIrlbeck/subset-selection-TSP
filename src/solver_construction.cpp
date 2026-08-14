@@ -173,7 +173,7 @@ bool exact_small_tsp_cycle(const Instance& inst, const std::vector<int>& set_nod
     if (k == 2) { best_cycle = set_nodes; best_len = 2.0 * inst.dist(set_nodes[0], set_nodes[1]); return true; }
     if (k > kExactSmallTourLimit) { return false; }
     const int m = k - 1;
-    const auto total = static_cast<std::uint32_t>(1U << m);
+    const auto total = std::uint32_t{1} << static_cast<unsigned>(m);
     const double inf = std::numeric_limits<double>::infinity();
     std::vector<double> dm(static_cast<std::size_t>(k * k), 0.0);
     for (int i = 0; i < k; ++i) {
@@ -186,14 +186,14 @@ bool exact_small_tsp_cycle(const Instance& inst, const std::vector<int>& set_nod
     std::vector<double> dp(static_cast<std::size_t>(total) * static_cast<std::size_t>(m), inf);
     std::vector<int> parent(static_cast<std::size_t>(total) * static_cast<std::size_t>(m), -1);
     for (int j = 0; j < m; ++j) {
-        dp[static_cast<std::size_t>(1U << j) * static_cast<std::size_t>(m) + static_cast<std::size_t>(j)] = dm[static_cast<std::size_t>(j + 1)];
+        dp[(std::size_t{1} << static_cast<unsigned>(j)) * static_cast<std::size_t>(m) + static_cast<std::size_t>(j)] = dm[static_cast<std::size_t>(j + 1)];
     }
     for (std::uint32_t mask = 1; mask < total; ++mask) {
         std::uint32_t bits = mask;
         while (bits != 0U) {
             const int j = least_set_bit_index(bits);
             bits &= bits - 1U;
-            const std::uint32_t prev_mask = mask ^ (1U << j);
+            const std::uint32_t prev_mask = mask ^ (std::uint32_t{1} << static_cast<unsigned>(j));
             if (prev_mask == 0U) { continue; }
             double best = inf;
             int best_prev = -1;
@@ -223,7 +223,7 @@ bool exact_small_tsp_cycle(const Instance& inst, const std::vector<int>& set_nod
     for (int pos = k - 1; pos >= 1; --pos) {
         order_index[static_cast<std::size_t>(pos)] = cur + 1;
         const int prev = parent[static_cast<std::size_t>(mask) * static_cast<std::size_t>(m) + static_cast<std::size_t>(cur)];
-        mask ^= (1U << cur);
+        mask ^= std::uint32_t{1} << static_cast<unsigned>(cur);
         cur = prev;
         if (mask == 0U) { break; }
     }

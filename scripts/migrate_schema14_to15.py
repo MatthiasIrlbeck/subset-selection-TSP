@@ -151,6 +151,7 @@ def _atomic_write(path: Path, text: str) -> None:
         try:
             temporary.unlink()
         except FileNotFoundError:
+            # Cleanup is idempotent when the temporary file was never created.
             pass
         raise
 

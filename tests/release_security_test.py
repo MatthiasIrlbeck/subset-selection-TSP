@@ -63,6 +63,20 @@ def test_workflow_pins(root: Path) -> None:
     require("scripts/verify_release_bundle.py" in release,
             "release workflow does not verify its final artifact inventory")
 
+    codeql = (root / ".github" / "workflows" / "codeql.yml").read_text(
+        encoding="utf-8"
+    )
+    require("queries: security-extended" in codeql,
+            "blocking CodeQL does not use the focused extended-security suite")
+    require("security-and-quality" not in codeql,
+            "blocking CodeQL mixes advisory maintainability findings into security")
+    require('branches: [main, "release/**"]' not in codeql,
+            "CodeQL runs duplicate push and pull-request analyses on release branches")
+
+    ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    require("concurrency:" in ci and "cancel-in-progress: true" in ci,
+            "CI does not cancel superseded pull-request runs")
+
 
 def test_oracle_lock(root: Path) -> None:
     lock = json.loads((root / "config" / "oracle_sources.json").read_text(encoding="utf-8"))

@@ -714,7 +714,7 @@ ALDOUS_TEST(test_memory_budget_planning) {
     const std::uint64_t target = automatic.fixed_overhead_bytes
         + automatic.estimated_serialization_bytes
         + 2U * automatic.estimated_instance_bytes;
-    bounded.memory_budget_mb = static_cast<int>((target + (1U << 20U) - 1U) >> 20U);
+    bounded.memory_budget_mb = static_cast<int>((target + (std::uint64_t{1} << 20U) - 1U) >> 20U);
     const MemoryPlan limited = estimate_experiment_memory(bounded, bounded.threads);
     require(limited.effective_threads >= 1 && limited.effective_threads <= 2
                 && limited.limited_by_budget,

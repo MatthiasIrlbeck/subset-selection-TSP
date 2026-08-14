@@ -488,6 +488,8 @@ GeneratedCliParseResult parse_generated_cli_option(int& index, int argc, char** 
     if (flag == "--p-file") {
         std::string value;
         if (!value_argument(index, argc, argv, flag, value, error)) { return GeneratedCliParseResult::Error; }
+        // --p-file intentionally grants bounded read access to the named local file.
+        // codeql[cpp/path-injection]
         if (!read_p_file(value, opt.p_values, error)) { return GeneratedCliParseResult::Error; }
         return GeneratedCliParseResult::Matched;
     }

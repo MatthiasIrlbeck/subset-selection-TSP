@@ -168,7 +168,7 @@ int or_opt_1_candidate_descent(Tour& tour, const Instance& inst, int max_passes,
         // neighborhood but not the positional pos-1 offsets, so a wakeup-only
         // descent can strand a move; repeating from an all-awake state until a
         // full descent finds nothing guarantees a true candidate-local optimum.
-        std::fill(dont_look.begin(), dont_look.end(), 0U);
+        std::fill(dont_look.begin(), dont_look.end(), static_cast<unsigned char>(0));
         found_since_clear = false;
         bool any_improved = true;
         while (any_improved && scans < scan_limit) {
@@ -271,7 +271,7 @@ int or_opt_segment_candidate_descent(Tour& tour, const Instance& inst, int seg_l
     // despite the reverse-KNN wake set not covering positional offsets.
     bool found_since_clear = true;
     while (found_since_clear && scans < scan_limit) {
-      std::fill(dont_look.begin(), dont_look.end(), 0U);
+      std::fill(dont_look.begin(), dont_look.end(), static_cast<unsigned char>(0));
       found_since_clear = false;
       bool any_improved = true;
       while (any_improved && scans < scan_limit) {

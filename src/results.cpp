@@ -122,12 +122,14 @@ std::string compiler_string() {
     return oss.str();
 }
 
+#if defined(__linux__)
 std::string trim_left(std::string value) {
     while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
         value.erase(value.begin());
     }
     return value;
 }
+#endif
 
 std::string cpuid_brand_string() {
     // x86 processor brand string from CPUID leaves 0x80000002-0x80000004.

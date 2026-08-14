@@ -45,6 +45,11 @@ ALDOUS_TEST(test_sha256_provenance_primitive) {
 }
 
 ALDOUS_TEST(test_oracle_large_coordinates_precision) {
+#if defined(_WIN32)
+    std::fprintf(stderr,
+                 "  [skip test_oracle_large_coordinates_precision: POSIX reference oracle]\n");
+    return;
+#endif
     // Regression: LKH stores costs in `int` and multiplies them by its PRECISION
     // parameter (default 100), aborting when that overflows. With our cost scale
     // of 1e6, any pairwise distance above ~21.5 overflows -- which is EVERY real
@@ -296,6 +301,11 @@ double exact_held_karp(const Instance& inst) {
 }
 
 ALDOUS_TEST(test_oracle_torus_roundtrip) {
+#if defined(_WIN32)
+    std::fprintf(stderr,
+                 "  [skip test_oracle_torus_roundtrip: POSIX reference oracle]\n");
+    return;
+#endif
     // The external-oracle path must feed the torus distances to the solver and
     // score the returned tour with the torus metric. With the reference LKH
     // stand-in (which solves the matrix it is handed exactly for this size), the
@@ -767,6 +777,12 @@ ALDOUS_TEST(test_oracle_parser_and_fake_lkh) {
     require((perm == std::vector<int>{0, 2, 1}), "oracle parser maps 1-based tour");
     require(!parse_external_tour_text("0 0 1", 3, perm), "oracle parser rejects duplicate nodes");
 
+#if defined(_WIN32)
+    std::fprintf(stderr,
+                 "  [skip fake-LKH process half: POSIX shell fixture]\n");
+    return;
+#endif
+
     Instance inst;
     std::vector<Point> pts;
     constexpr int n = 20;
@@ -964,6 +980,11 @@ std::filesystem::path write_fake_lkh_copy_script(const std::filesystem::path& di
 }
 
 ALDOUS_TEST(test_oracle_top_n_matches_cli_config) {
+#if defined(_WIN32)
+    std::fprintf(stderr,
+                 "  [skip test_oracle_top_n_matches_cli_config: POSIX shell fixture]\n");
+    return;
+#endif
     Rng rng(9090);
     Instance inst;
     inst.generate(32, rng);
@@ -1024,6 +1045,11 @@ ALDOUS_TEST(test_oracle_top_n_matches_cli_config) {
 
 
 ALDOUS_TEST(test_oracle_posix_spawn_timeout_and_concurrency) {
+#if defined(_WIN32)
+    std::fprintf(stderr,
+                 "  [skip test_oracle_posix_spawn_timeout_and_concurrency: POSIX-only]\n");
+    return;
+#endif
     const std::string unique_suffix = std::to_string(
         std::chrono::steady_clock::now().time_since_epoch().count());
     // Spaces and shell metacharacters pin that cwd/executable values are passed
@@ -1162,6 +1188,8 @@ ALDOUS_TEST(test_oracle_posix_spawn_timeout_and_concurrency) {
                 || launch_error.find("oracle executable is not runnable")
                     != std::string::npos
                 || launch_error.find("identity could not be verified")
+                    != std::string::npos
+                || launch_error.find("no longer a runnable regular file")
                     != std::string::npos,
             "spawn failure retains a deterministic launch diagnostic");
 

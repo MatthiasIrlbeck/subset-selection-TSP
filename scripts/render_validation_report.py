@@ -132,7 +132,8 @@ def render(validation_dir: Path) -> str:
             all_scans = int(float(by_policy["all-polish"]["two_opt_scans"]))
             lines.append(f"`final-only` reduced two-opt scans by `{all_scans - final_scans}` relative to `all-polish` in the bundled validation run.")
             lines.append("")
-        except Exception:
+        except (KeyError, TypeError, ValueError):
+            # The explanatory delta sentence is optional when legacy rows are incomplete.
             pass
 
     if original_compat:

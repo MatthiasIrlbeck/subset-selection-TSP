@@ -66,13 +66,14 @@ HeldKarpBound held_karp_bound(const PreparedInstance& prepared,
     int since_improve = 0;
     const int patience = std::max(5, max_iters / 15);
 
-    int iter = 0;
-    for (; iter < max_iters; ++iter) {
+    int completed_iterations = 0;
+    for (int iter = 0; iter < max_iters; ++iter) {
+        completed_iterations = iter + 1;
         std::fill(degree.begin(), degree.end(), 0);
 
         // Minimum spanning tree over nodes 1..n-1 (node 0 excluded) via Prim,
         // using modified weights c'(u,v) = dist(u,v) + pi[u] + pi[v].
-        std::fill(in_tree.begin(), in_tree.end(), 0);
+        std::fill(in_tree.begin(), in_tree.end(), static_cast<char>(0));
         double mst_cost = 0.0;
         // Start the tree at node 1.
         for (int v = 1; v < n; ++v) {
@@ -166,7 +167,6 @@ HeldKarpBound held_karp_bound(const PreparedInstance& prepared,
         if (gnorm2 == 0.0) {
             result.closed_to_tour = true;
             best_bound = std::max(best_bound, lagrangian);
-            ++iter;
             break;
         }
 
@@ -176,7 +176,6 @@ HeldKarpBound held_karp_bound(const PreparedInstance& prepared,
         if (have_ub) {
             target_gap = upper_bound - lagrangian;
             if (target_gap <= 1e-12) {
-                ++iter;
                 break;  // bound has met the upper bound; converged
             }
         } else {
@@ -191,14 +190,13 @@ HeldKarpBound held_karp_bound(const PreparedInstance& prepared,
             lambda *= 0.5;
             since_improve = 0;
             if (lambda < 1e-4) {
-                ++iter;
                 break;
             }
         }
     }
 
     result.bound = best_bound;
-    result.iterations = iter;
+    result.iterations = completed_iterations;
     result.computed = true;
     if (have_ub) {
         result.gap_to_upper = std::max(0.0, upper_bound - best_bound);
