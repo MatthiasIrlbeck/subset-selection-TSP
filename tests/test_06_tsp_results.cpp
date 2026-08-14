@@ -510,9 +510,11 @@ ALDOUS_TEST(test_json_atomic) {
                 && write_result.total_seconds >= write_result.commit_seconds
                 && write_result.total_seconds >= write_result.synchronization_seconds,
             "atomic write reports internally consistent phase timing");
-    std::ifstream in(out, std::ios::binary);
-    std::string roundtrip((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    require(roundtrip == text, "atomic write roundtrip");
+    {
+        std::ifstream in(out, std::ios::binary);
+        std::string roundtrip((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        require(roundtrip == text, "atomic write roundtrip");
+    }
     std::filesystem::remove(out);
 }
 
