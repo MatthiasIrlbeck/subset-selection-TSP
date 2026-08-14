@@ -1,4 +1,4 @@
-# Aldous subset-selection TSP solver
+# Aldous subset selection TSP
 
 [![CI](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml)
 [![Fuzzing](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml)
@@ -6,60 +6,145 @@
 [![Latest release](https://img.shields.io/github/v/release/MatthiasIrlbeck/subset-selection-TSP)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-This repository studies David Aldous's subset-selection traveling-salesperson problem.
-Given `N` random points in a square of area `N`, it estimates the normalized shortest-cycle
-length `L(k) / k` for `k = pN` over a grid of subset fractions `p`.
+This project studies an open traveling salesman problem (TSP) posed by David Aldous. Scatter
+$N$ points uniformly in a square of area $N$, and let $L_N(k)$ denote the length of the shortest
+cycle through exactly $k$ of them. For $k \approx pN$, the quantity
 
-The project provides an installable C++17 library, a command-line solver, exact calibration
-for small instances, and reproducible campaign/analysis tooling. The production solver is
-heuristic: reported tour lengths are upper bounds on the unknown optimum unless exact subset
-mode is explicitly enabled for a supported small instance.
+$$
+f_N(p) = \frac{\mathbb{E}[L_N(k)]}{k}
+$$
 
-## Quick start
+is expected to approach a limiting function as $N$ grows. At $p=1$, this is the usual Euclidean
+TSP constant from the Beardwood--Halton--Hammersley theorem, numerically about $0.7124$.
+Aldous asks for the shape of the full curve on $(0,1]$: does it decrease monotonically, and what
+is its limiting form?
 
-```bash
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-./build/aldous_tsp --version
-./build/aldous_tsp --quick --output results.json --force
-python3 scripts/plot_results.py results.json -o curve.png
-```
+For the original problem statement and background, see
+**[Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html)**.
 
-The default `legacy-balanced` policy preserves the validated compatibility controller.
-Evidence-backed `heldout-balanced` and `heldout-quality` policies are opt-in; see
-[`docs/heldout_search_policy.md`](docs/heldout_search_policy.md).
+The program estimates the curve by Monte Carlo simulation over a grid of $p$-values, solving the
+resulting combinatorial problems with heuristic local search. Production-scale results are therefore
+upper bounds on the unknown optimum. For small instances, an exact dynamic program can globally
+optimize both the selected subset and its cycle.
 
-## What is included
+## Algorithmic approach
 
-- Immutable, validated `PreparedInstance` inputs with exact grid or brute-force KNN construction.
-- Deterministic full-TSP and subset-search controllers with staged restarts, simulated annealing,
-  exact batched exchanges, adaptive ruin/recreate, ejection chains, and budgeted relinking.
-- Optional global exact cardinality-`k` subset-and-cycle dynamic programming for `N <= 18`.
-- Correct open-square and periodic/toroidal geometry with canonical minimum-image distances.
-- Strict schema-16, locale-independent UTF-8 JSON; atomic no-clobber/replace output and durable
-  receipts.
-- Stable point/search streams, campaign manifests, fail-closed resume, block bootstrap,
-  multifidelity correction, cross-fitted control variates, and model/range sensitivity analysis.
-- Optional LKH and Concorde post-processing with timeouts, output validation, and executable
-  provenance.
-- GCC/Clang, sanitizer, portability, fuzzing, schema, package-consumer, quality, and historical
-  performance gates.
-- Deterministic source archives with embedded source identity, SBOM, checksums, and provenance.
+### Overview
 
-For the algorithm and implementation details, see [`docs/algorithm.md`](docs/algorithm.md).
-For the public C++ API, see [`docs/public_api.md`](docs/public_api.md) and
-[`examples/library_usage.cpp`](examples/library_usage.cpp).
+For each value of $p$, the program has to solve two linked problems.
+
+First, it has to decide **which** $k$ points should be visited.
+
+Second, it has to decide **in what order** those selected points should be visited.
+
+If $p=1$, there is no subset choice and the task is an ordinary Euclidean TSP on all $N$ points.
+If $p<1$, the program must optimize the subset and the tour through that subset simultaneously.
+
+A simulation repeatedly generates an independent random point set, solves the problem for each
+requested $p$, records the normalized tour length $L_N(k)/k$, and averages those values over many
+instances. Point-generation seeds and search seeds are tracked separately so that statistical and
+heuristic-search variation can be studied independently.
+
+### Full TSP solver for $p=1$
+
+When $p=1$, the only question is the visiting order.
+
+The full-tour solver uses multiple starts. Candidate tours are built by nearest-neighbor and
+insertion constructions, screened cheaply, and then the most promising and sufficiently diverse
+starts are promoted to stronger local search.
+
+The main local moves are:
+
+1. **2-opt**: remove two edges, reconnect the tour in the other possible way, and reverse the
+   affected segment when that shortens the cycle.
+2. **Or-opt**: remove one or more consecutive points and reinsert them elsewhere in the tour.
+
+Good Euclidean TSP moves usually involve nearby points, so the solver precomputes exact
+nearest-neighbor lists and uses them as candidate sets instead of comparing every pair of nodes.
+To escape local minima, the promoted tours undergo iterated local search with structured kicks and
+re-optimization. The best tours are retained in a small elite pool and polished again before the
+final result is reported.
+
+### Subset solver for $p<1$
+
+When $p<1$, the problem is no longer just "find a good tour." It becomes "find a good set of
+$k$ points and a good tour through them."
+
+That is the core of the project.
+
+Each subset run starts from several seed solutions. Seeds can come from:
+
+- good solutions at nearby values of $p$;
+- compact geometric or dense-region constructions;
+- reductions of a full TSP tour in the high-$p$ regime;
+- randomized and diversity-oriented starts;
+- elite solutions found by earlier restarts.
+
+Using nearby $p$-values matters because a strong solution at one density is often a useful starting
+point for a neighboring density. The solver can sweep through the $p$-grid in both directions and
+retain the better continuation.
+
+After a seed has been built, the solver runs simulated annealing. The main subset move removes one
+currently selected point, inserts one currently unselected point, and reconnects the cycle while
+keeping the subset size fixed. The default controller preserves the validated one-candidate search;
+held-out policies can instead evaluate several candidate moves per annealing step in the regimes
+where this produced better matched-compute results.
+
+During and after annealing, deterministic cleanup applies:
+
+- 2-opt and Or-opt within the current cycle;
+- one-for-one subset exchange descent;
+- bounded two-for-two exchanges;
+- exact batched insertion evaluation;
+- optional exhaustive finishing for sufficiently small tours.
+
+### Larger-neighborhood improvement
+
+Single exchanges are useful but can be too local. The solver therefore also includes several larger
+repair and recombination steps.
+
+**Ruin and recreate** removes a small group of selected points, builds a restricted replacement
+pool, reconstructs the damaged region, and polishes the resulting tour.
+
+**Ejection chains** follow a bounded sequence of dependent exchanges that can cross barriers which
+no single improving swap can cross.
+
+**Path relinking** moves gradually between two strong elite subsets and tests the intermediate
+solutions. Diversity-aware elite storage prevents the archive from collapsing to near-duplicates.
+
+These steps let different restarts share useful structure instead of behaving as completely
+independent searches.
+
+### Special regimes and search policies
+
+The main documented mode is `balanced`, which is the baseline end-to-end path for estimating the
+full curve. Additional modes emphasize the ends of the $p$-range:
+
+- `smallp-region` -- geometrically focused seeds for very small $p$;
+- `highp-delete` -- starts from a full tour and removes inexpensive points near $p=1$;
+- `hybrid` -- combines the regime-specific mechanisms.
+
+The search controller is selected separately:
+
+- `legacy-balanced` -- default compatibility policy;
+- `heldout-balanced` -- matched-compute multi-candidate annealing in its validated range;
+- `heldout-quality` -- deeper subset search and a stronger full-TSP controller.
+
+The held-out presets are opt-in because their validated ranges depend on geometry and $p$. See
+[`docs/heldout_search_policy.md`](docs/heldout_search_policy.md) for the experiments, activation
+rules, and interpretation limits.
 
 ## Build
 
+A C++17 compiler and CMake are required. Ninja is recommended but not mandatory.
+
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Or use presets:
+Or use the supplied presets:
 
 ```bash
 cmake --preset release
@@ -67,209 +152,150 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-Sanitizers:
-
-```bash
-cmake --preset debug-asan
-cmake --build --preset debug-asan
-ctest --preset debug-asan
-```
+The core library and CLI have no mandatory third-party solver dependency. Python is used only for
+analysis, plotting, campaign management, and some regression tests.
 
 ## Run
 
-Fast smoke run:
+A small smoke run:
 
 ```bash
-./build/aldous_tsp --quick --output results.json --force
+./build/aldous_tsp --mode balanced --oracle none --quick --output results.json --force
 ```
 
-Custom run:
+A larger run:
 
 ```bash
 ./build/aldous_tsp \
-  --mode hybrid \
-  --N 1000 \
+  --mode balanced \
+  --oracle none \
+  --N 2000 \
   --instances 12 \
   --threads 12 \
-  --p-values 0.02,0.03,0.05,0.10,0.20,0.50,0.80,1.00 \
-  --restarts 3 \
-  --sa-iters 60000 \
-  --tsp-restarts 5 \
-  --tsp-ils 800 \
-  --knn-backend grid \
   --output results.json \
   --force
 ```
 
-Dry-run resolved configuration:
+A quality-oriented held-out policy:
 
 ```bash
-./build/aldous_tsp --N 500 --p-range 0.02:1.0:12 --dry-run
+./build/aldous_tsp \
+  --search-policy heldout-quality \
+  --N 2000 \
+  --instances 12 \
+  --threads 12 \
+  --output results-quality.json \
+  --force
 ```
 
-The `legacy-balanced` compatibility controller remains the default. Evidence-backed search presets are opt-in:
+By default, the program writes `results.json` in the current working directory. Existing files are
+preserved unless `--force` is supplied. A digest-bound adjacent receipt records the durable output
+commit and end-to-end timing.
+
+Use
 
 ```bash
-# Matched-compute four-candidate SA through p=0.35
-./build/aldous_tsp --search-policy heldout-balanced ...
-
-# Deeper subset policy, periodic extension through p=0.50, and stronger p=1 search
-./build/aldous_tsp --search-policy heldout-quality ...
+./build/aldous_tsp --help
 ```
 
-See [`docs/heldout_search_policy.md`](docs/heldout_search_policy.md) for activation rules, held-out evidence, and interpretation limits.
-
-`--quick` is a preset applied before explicit user options, so overrides work regardless of order:
+for the complete generated option reference, or
 
 ```bash
-./build/aldous_tsp --quick --N 100 --instances 1 --dry-run
-./build/aldous_tsp --N 100 --instances 1 --quick --dry-run   # same resolved N/instances
+./build/aldous_tsp --dry-run --N 500 --p-range 0.02:1.0:12
 ```
 
-Plot results:
+to inspect the fully resolved configuration without running a simulation.
+
+## Exact small-instance calibration
+
+For supported instances up to the hard cap $N=18$, the solver can globally optimize both the
+cardinality-$k$ subset and the cycle through it:
 
 ```bash
-python3 scripts/plot_results.py results.json -o curve.png --csv summary.csv
-
-# Lightweight phase/counter profiling
-python3 scripts/profile_run.py --exe build/aldous_tsp --N 240 --instances 2
+./build/aldous_tsp --N 18 --exact-subset-max-n 18 ...
 ```
 
-## CLI reference
+This exact mode is intended for regression testing and calibration. Large production instances use
+heuristic search and do not claim global optimality.
 
-Important flags:
+## Optional external TSP solvers
 
-- `--version`
-- `--quick[=true|false]`
-- `--dry-run[=true|false]`
-- `--force[=true|false]`
-- `--mode balanced|smallp-region|highp-delete|hybrid`
-- `--N <int>`
-- `--instances <int>`
-- `--threads <int>` (`0` means auto; negative values are rejected)
-- `--seed <int>`
-- `--p-values <csv>`
-- `--p-range <start:end:count>`
-- `--p-file <file>`
-- `--search-policy legacy-balanced|heldout-balanced|heldout-quality`
-- `--restarts <int>`
-- `--sa-iters <int>`
-- `--sa-iters-per-k <int>` (extra SA iterations per subset element; effective budget is `sa_iters + sa_iters_per_k * k`)
-- `--time-budget-per-p <seconds>` (anytime mode: runs at least the configured restarts, then keeps launching restarts until the wall-clock budget per `(instance, p)` solve elapses; `0` disables)
-- `--restart-threads <int>` (parallel subset restarts within one `(instance, p)` solve; `0` = auto from the leftover thread budget, `1` = sequential; results are invariant to this value outside time-budget mode)
-- `--second-sweep[=bool]` (after the descending warm-start sweep over `p`, run an ascending sweep seeded from the grown solution at the next smaller `p` and keep the better result per `p`)
-- `--tsp-restarts <int>`
-- `--tsp-ils <int>`
-- `--tsp-patience <int>`
-- `--knn <int>`
-- `--knn-backend grid|bruteforce`
-- `--grid-cell <float>`
-- `--verify-knn <int>`
-- `--exact-subset-max-n <int>` (`0` disables; values through the hard cap of `18` globally solve both subset choice and cycle)
-- `--final-exhaustive-k <int>`
-- `--exhaustive-two-opt-policy never|final-only|all-polish`
-- `--subset-swap-passes <int>`
-- `--pair-exchange-passes <int>`
-- `--pair-exchange-max-k <int>` (`5000` by default; `0` removes the large-`k` safety gate)
-- `--ruin-recreate-rounds <int>`
-- `--adaptive-ruin-recreate[=true|false]`
-- `--ruin-recreate-max-fraction <float>`
-- `--ruin-recreate-max-nodes <int>` (`0` removes the absolute cap)
-- `--ruin-recreate-pool-cap <int>`
-- `--ejection-chain-starts <int>`
-- `--ejection-chain-depth <int>`
-- `--ejection-chain-candidates <int>`
-- `--ejection-chain-remove-cap <int>` (`0` considers every eligible member)
-- `--ejection-chain-max-uphill <float>`
-- `--elite-diversity-slots <int>`
-- `--elite-min-jaccard <float>`
-- `--elite-quality-slack <float>`
-- `--path-relink-top <int>`
-- `--disable-two-opt[=true|false]`
-- `--disable-or-opt[=true|false]`
-- `--disable-subset-swap[=true|false]`
-- `--disable-pair-exchange[=true|false]`
-- `--disable-ruin-recreate[=true|false]`
-- `--disable-ejection-chain[=true|false]`
-- `--disable-path-relink[=true|false]`
-- `--disable-smallp-seeds[=true|false]`
-- `--disable-highp-delete[=true|false]`
-- `--oracle none|auto|lkh|concorde`
-- `--oracle-format matrix|euc2d`
-- `--lkh-path <path>`
-- `--concorde-path <path>`
-- `--oracle-time-limit <int>`
-- `--oracle-inline-feedback`
+External post-processing is disabled by default with `--oracle none`. LKH and Concorde can be used
+when installed explicitly:
 
-External post-processing is available through `--oracle auto`, `--oracle lkh`, or `--oracle concorde`. It is disabled by default with `--oracle none`. Boolean flags accept plain presence as true or explicit `=true`/`=false` values (`yes/no`, `on/off`, and `1/0` are also accepted). See `docs/oracles.md` for setup, TSPLIB format choices, and caveats.
-
-Campaign inference supports replicate-block bootstrap, finite-size model envelopes, deletion/range sensitivity, nested search-seed variance, and paired multifidelity correction. See [`docs/campaign_analysis.md`](docs/campaign_analysis.md).
-
-
-## Design style
-
-The hardened public solve path uses an immutable `PreparedInstance`. Build one
-with `InstanceBuilder`, which validates the numerical metric domain and creates
-the exact KNN/grid representation before returning an object that exposes only
-const state. The older mutable `Instance` surface remains source-compatible;
-passing it to a solver performs a complete checked canonical conversion first.
-The hottest local-search operators are still implemented as free functions over
-the internal const instance view. That keeps stateless numerical kernels easy to
-test and profile without allowing application-owned buffers into search code.
-
-For application code, use the facade classes:
-
-```cpp
-aldous_tsp::SolverOptions options;
-aldous_tsp::PreparedInstance instance = aldous_tsp::InstanceBuilder()
-    .generate(120, rng)
-    .build(32, aldous_tsp::KnnBackend::GridExact);
-aldous_tsp::TspSolver tsp_solver(options);
-auto tsp = tsp_solver.solve(instance, rng);
-
-aldous_tsp::SubsetSolver subset_solver(options);
-auto subset = subset_solver.solve_with_warm_start(instance, 40, rng, tsp.tour.nodes);
-
-aldous_tsp::ExperimentRunner runner(run_options);
-auto results = runner.run();
+```bash
+./build/aldous_tsp --oracle lkh --lkh-path /path/to/LKH ...
+./build/aldous_tsp --oracle concorde --concorde-path /path/to/concorde ...
 ```
 
-For direct exact calibration on a small instance, include
-`<aldous_tsp/exact_subset.hpp>` and call:
+The integration records executable identity, enforces time and output limits, validates returned
+tours, and does not silently fall back to another method in publication campaigns. See
+[`docs/oracles.md`](docs/oracles.md).
 
-```cpp
-auto proof = aldous_tsp::exact_subset_cycle(instance, k);
-if (proof.proven_optimal) {
-    // proof.cycle globally minimizes the implemented metric over all
-    // cardinality-k subsets, and proof.length is its optimal cycle length.
-}
-```
+## Design decisions
 
-The direct exact API does not require KNN construction. Instances above the hard
-limit return `solved == false` without allocating the exponential DP table. The
-heuristic solver and Held–Karp APIs accept `PreparedInstance`; compatibility
-overloads taking mutable `Instance` validate and canonicalize before execution.
+Distances are computed from coordinates rather than stored in a full $O(N^2)$ matrix. Exact KNN
+candidate lists are built either by brute force or by a uniform-grid search; the grid backend keeps
+memory near-linear in $N$ for large random instances.
 
-See `examples/library_usage.cpp` for a complete library-use example.
+The public solver boundary uses an immutable `PreparedInstance`. Coordinates, numerical range,
+geometry, KNN rows, and derived spatial structures are validated before search begins. Successful
+solves are checked again for cardinality, uniqueness, finite length, and consistency.
+
+Open-square and periodic/toroidal geometry share canonical distance routines. The random-number
+generator and tie rules are deterministic, while separate point and search streams make paired
+experiments reproducible.
+
+Native output uses strict schema 16 with locale-independent UTF-8 JSON, complete resolved options,
+source/build identity, restart diagnostics, phase timing, memory planning, and campaign
+fingerprints. Atomic no-clobber or replace semantics prevent partial or accidental output loss.
+
+For implementation details, see [`docs/algorithm.md`](docs/algorithm.md). For the reusable C++ API,
+see [`docs/public_api.md`](docs/public_api.md) and
+[`examples/library_usage.cpp`](examples/library_usage.cpp).
 
 ## Project structure
 
-The implementation is split into focused solver and CLI translation units. The public API remains in `include/aldous_tsp/`, while `src/solver_*.cpp` covers construction, local search, neighborhoods, seeding, subset orchestration, and TSP orchestration; `src/cli_*.cpp` covers parsing, self-tests, and command-line coordination; `apps/` contains executable entry points.
+- `include/aldous_tsp/` -- public C++ library headers;
+- `src/` -- geometry, instances, solvers, exact methods, result handling, and CLI implementation;
+- `apps/` -- command-line executable entry point;
+- `tests/` -- C++ and Python regression tests;
+- `scripts/` -- plotting, profiling, campaign, migration, and analysis tools;
+- `docs/` -- algorithm, reproducibility, validation, API, and release documentation;
+- `schema/` -- current and frozen historical JSON schemas;
+- `examples/` -- library example and example input grids;
+- `validation_runs/current/` -- compact evidence generated for the current release;
+- `validation_archive/` -- explicitly historical validation fixtures.
 
+## Plotting
 
-```text
-include/aldous_tsp/      public library headers
-src/                     core library and CLI implementation
-apps/                    command-line executable entry points
-tests/                   CTest unit tests
-scripts/                 plotting, profiling, benchmarking, and oracle smoke utilities
-docs/                    algorithm, reproducibility, development, and validation notes
-schema/                  JSON schema for results
-examples/                example p-grid files
-.github/workflows/       CI
+The plotting script reads the result JSON and produces the estimated normalized-length curve:
+
+```bash
+python3 scripts/plot_results.py results.json -o curve.png
 ```
 
-See `docs/known_good_benchmarks.md` for the compact current-release validation evidence. Regenerate it with `scripts/regenerate_validation_artifacts.py` followed by `scripts/render_validation_report.py`. Current evidence lives in `validation_runs/current/`; explicitly historical evidence is retained under `validation_archive/` and is never presented as current-release validation.
+It can also export the plotted summary:
+
+```bash
+python3 scripts/plot_results.py results.json -o curve.png --csv summary.csv
+```
+
+## Reproducibility and validation
+
+Result files contain the exact source revision, resolved configuration, point/search stream policy,
+and method fingerprint. Publication campaign tools use exact manifests, reject stale or mismatched
+resume files, and fail on incomplete campaigns unless partial output is explicitly authorized.
+
+Campaign analysis supports replicate-block bootstrap, separate point-set and search-seed variance,
+multifidelity correction, cross-fitted control variates, and finite-size model/range sensitivity.
+See [`docs/reproducibility.md`](docs/reproducibility.md) and
+[`docs/campaign_analysis.md`](docs/campaign_analysis.md).
+
+Current compact validation evidence is summarized in
+[`docs/known_good_benchmarks.md`](docs/known_good_benchmarks.md). The hosted release gate covers GCC,
+Clang, AppleClang, MSVC, ASan/UBSan, ThreadSanitizer, Ruff, clang-tidy, CodeQL, packaging, and a pinned
+historical performance comparison.
 
 ## Development provenance
 
@@ -279,43 +305,4 @@ maintainer's direction. The public commit identities and validation policy are e
 
 ## License
 
-This package is distributed under the MIT License. See `LICENSE`.
-
-## Development workflow
-
-```bash
-cmake --preset debug
-cmake --build --preset debug
-ctest --preset debug
-
-# Include Python-driven regression and schema-validation tests
-cmake --preset release-regression
-cmake --build --preset release-regression
-ctest --preset release-regression
-```
-
-Recommended local checks:
-
-```bash
-cmake --preset debug-asan
-cmake --build --preset debug-asan
-ctest --preset debug-asan
-python3 scripts/plot_results.py build/quick-smoke.json -o build/quick-smoke.png || true
-```
-
-## Current limitations
-
-The internal heuristic stack and optional external oracle path are now integrated in the cleaner structure. Research-grade claims still require benchmark comparisons, larger Monte Carlo sample sizes, and sensitivity/ablation analysis. Per-oracle-call diagnostics are serialized, but research-grade oracle comparisons still need real LKH/Concorde runs on the target machine.
-
-
-### Reproducibility metadata
-
-Result JSON records build flags, target compile options, effective KNN backend/cell-size telemetry, and optionally per-instance rows via `--include-instance-rows`.
-
-Historical schema-13 result files can first be converted to frozen schema 14 with `scripts/migrate_schema13_to14.py`, then to schema 15 with `scripts/migrate_schema14_to15.py`, and finally to current schema 16 with `scripts/migrate_schema15_to16.py`. Migration records every inferred or unrecoverable field and preserves the complete step history; it does not invent missing replicate identities.
-
-Publication campaign drivers create exact configuration manifests and accept resumed outputs only when their complete resolved configuration, method fingerprint, completion counts, oracle identity, result digest, and fully durable timing receipt match. They require an explicit search policy and a positive `--sa-iters-per-n`; incomplete campaigns and silent oracle fallback fail by default. See `docs/reproducibility.md`.
-
-Source releases preserve commit/tree identity without `.git`; release automation pins actions by full commit SHA, verifies external-oracle archives against independently approved digests, and emits checksums, an SPDX SBOM, SLSA provenance, and signed GitHub attestations. See `docs/release_security.md`. The public-history merge and GitHub publication procedure is documented in `docs/releases/publication_checklist.md`.
-
-Large campaigns can set `--memory-budget-mb` to cap active instance workers before allocation. Result JSON records the conservative per-instance/peak estimate and requested, resolved, and effective concurrency under `memory_plan`. Reverse-KNN wakeup adjacency is created lazily and can be disabled with `--reverse-knn=false` when memory is more valuable than wakeup acceleration.
+This project is distributed under the MIT License. See [`LICENSE`](LICENSE).
