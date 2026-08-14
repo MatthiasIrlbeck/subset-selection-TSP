@@ -393,11 +393,13 @@ ALDOUS_TEST(test_public_api_validation_and_concurrent_atomic_writers) {
     }
     require(failures.load() == 0,
             "concurrent atomic writers do not collide on a shared temporary filename");
-    std::ifstream input(target, std::ios::binary);
-    const std::string final_payload(
-        (std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    require(std::find(payloads.begin(), payloads.end(), final_payload) != payloads.end(),
-            "concurrent atomic output is one complete writer payload");
+    {
+        std::ifstream input(target, std::ios::binary);
+        const std::string final_payload(
+            (std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        require(std::find(payloads.begin(), payloads.end(), final_payload) != payloads.end(),
+                "concurrent atomic output is one complete writer payload");
+    }
 
     const std::filesystem::path no_clobber_target = directory / "no-clobber.json";
     std::atomic<int> ready{0};
