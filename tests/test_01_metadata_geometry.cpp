@@ -661,7 +661,10 @@ ALDOUS_TEST(test_knn_memory_representation_and_lazy_reverse) {
     for (int node = 0; node < inst.N; node += 7) {
         for (int rank = 0; rank < inst.knn_k; rank += 3) {
             const double distance = inst.knn_d_at(node, rank);
-            require(std::fabs(inst.knn_d2_at(node, rank) - distance * distance) < 1e-15,
+            const double expected_d2 = distance * distance;
+            const double tolerance = 4.0 * std::numeric_limits<double>::epsilon()
+                * std::max(1.0, std::fabs(expected_d2));
+            require(std::fabs(inst.knn_d2_at(node, rank) - expected_d2) <= tolerance,
                     "squared KNN distance is derived from the persistent distance array");
         }
     }

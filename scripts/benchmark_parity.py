@@ -51,6 +51,13 @@ ORIGINAL_COMPAT_SMOKE_SCENARIOS = [
 ]
 
 
+def executable_prefix(executable: Path) -> list[str]:
+    """Return a cross-platform command prefix for native tools or Python scripts."""
+    if executable.suffix.lower() == ".py":
+        return [sys.executable, str(executable)]
+    return [str(executable)]
+
+
 def run_checked(cmd: Sequence[str]) -> None:
     print("+", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True)
@@ -66,7 +73,7 @@ def current_cmd(
     original_compatible: bool = False,
 ) -> list[str]:
     cmd = [
-        str(exe),
+        *executable_prefix(exe),
         "--mode", scenario.mode,
         "--N", str(scenario.n),
         "--instances", str(scenario.instances),
@@ -99,7 +106,7 @@ def baseline_original_cmd(exe: Path, out: Path, scenario: Scenario, extra: Itera
     # not support custom p-values or the newer neighborhood/backend flags, so the
     # paired current run also omits those options when comparing to this command.
     cmd = [
-        str(exe),
+        *executable_prefix(exe),
         "--mode", scenario.mode,
         "--N", str(scenario.n),
         "--instances", str(scenario.instances),
@@ -143,7 +150,14 @@ def max_abs_mean_delta(a: dict[str, float], b: dict[str, float]) -> tuple[float,
 
 def detect_baseline_kind(baseline: Path) -> str:
     try:
-        proc = subprocess.run([str(baseline), "--help"], check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+        proc = subprocess.run(
+            [*executable_prefix(baseline), "--help"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
     except Exception:
         return "original"
     text = proc.stdout or ""

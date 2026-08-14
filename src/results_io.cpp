@@ -68,6 +68,13 @@ std::filesystem::path unique_temp_candidate(const std::filesystem::path& target,
 
 #if defined(_WIN32)
 
+bool transient_windows_replace_error(DWORD code) noexcept {
+    return code == ERROR_ACCESS_DENIED
+        || code == ERROR_SHARING_VIOLATION
+        || code == ERROR_LOCK_VIOLATION
+        || code == ERROR_UNABLE_TO_MOVE_REPLACEMENT;
+}
+
 std::string windows_error_message(DWORD code) {
     LPSTR buffer = nullptr;
     const DWORD flags = FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
@@ -152,11 +159,32 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
     if (replace_policy == ReplacePolicy::ReplaceExisting) {
         flags |= MOVEFILE_REPLACE_EXISTING;
     }
-    if (MoveFileExW(temp.wstring().c_str(), target.wstring().c_str(), flags) == 0) {
-        const DWORD code = GetLastError();
+    DWORD commit_error = ERROR_SUCCESS;
+    bool committed = false;
+    constexpr unsigned max_commit_attempts = 256U;
+    for (unsigned attempt = 0; attempt < max_commit_attempts; ++attempt) {
+        if (MoveFileExW(temp.wstring().c_str(), target.wstring().c_str(), flags) != 0) {
+            committed = true;
+            break;
+        }
+        commit_error = GetLastError();
+        if (replace_policy != ReplacePolicy::ReplaceExisting
+            || !transient_windows_replace_error(commit_error)) {
+            break;
+        }
+        // Concurrent atomic replacers can briefly hold destination metadata.
+        // Yield first, then back off by one millisecond under sustained contention.
+        if (attempt < 15U) {
+            (void)SwitchToThread();
+        } else {
+            Sleep(1U);
+        }
+    }
+    if (!committed) {
         DeleteFileW(temp.wstring().c_str());
         if (replace_policy == ReplacePolicy::NoReplace
-            && (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS)) {
+            && (commit_error == ERROR_FILE_EXISTS
+                || commit_error == ERROR_ALREADY_EXISTS)) {
             result.message = "Refusing to overwrite existing output file "
                 + target.string() + " (use --force or a different --output)";
             result.commit_seconds = elapsed_seconds(commit_start);
@@ -164,7 +192,7 @@ AtomicWriteResult write_atomic_impl(const std::filesystem::path& target,
             return result;
         }
         result.message = "failed to commit output file atomically: "
-            + windows_error_message(code);
+            + windows_error_message(commit_error);
         result.commit_seconds = elapsed_seconds(commit_start);
         result.total_seconds = elapsed_seconds(total_start);
         return result;
