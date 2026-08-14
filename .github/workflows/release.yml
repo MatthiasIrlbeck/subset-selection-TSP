@@ -149,31 +149,40 @@ jobs:
       - name: Verify source-archive revision fallback
         shell: bash
         env:
-          # The extracted archive deliberately has no .git directory, so its
-          # release-security test creates a temporary fixture repository. Keep
-          # runner-level Git ignore rules from changing which fixture files are
-          # staged; only repository-local attributes should affect the archive.
+          # The extracted archive deliberately has no .git directory. Keep the
+          # nested archive fixture independent of runner-level Git settings.
           GIT_CONFIG_NOSYSTEM: "1"
           GIT_CONFIG_GLOBAL: /dev/null
         run: |
           set -euo pipefail
-          rm -rf source-archive-check source-archive-build
-          unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d source-archive-check
-          source_dir="source-archive-check/subset-selection-TSP-${VERSION}"
-          cmake -S "$source_dir" -B source-archive-build -G Ninja \
+          archive_root="${RUNNER_TEMP}/aldous-source-archive-check"
+          archive_build="${RUNNER_TEMP}/aldous-source-archive-build"
+          rm -rf "$archive_root" "$archive_build"
+          mkdir -p "$archive_root"
+          unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d "$archive_root"
+          source_dir="$archive_root/subset-selection-TSP-${VERSION}"
+
+          # Do not place the extracted source beneath the checkout's .git
+          # directory. Git discovers repositories by walking through parents;
+          # a nested archive would otherwise be mistaken for a subdirectory of
+          # the checked-out repository, and `git archive` would archive only
+          # that untracked subtree instead of the synthetic test fixture.
+          test -z "$(git -C "$source_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+
+          cmake -S "$source_dir" -B "$archive_build" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTING=ON \
             -DALDOUS_TSP_ENABLE_WARNINGS=ON \
             -DALDOUS_TSP_ENABLE_WERROR=ON \
             -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
-          cmake --build source-archive-build --parallel 2
-          ctest --test-dir source-archive-build --output-on-failure
+          cmake --build "$archive_build" --parallel 2
+          ctest --test-dir "$archive_build" --output-on-failure
           grep -F "kGitCommit = \"${SOURCE_COMMIT}\"" \
-            source-archive-build/generated/aldous_tsp/version.hpp
+            "$archive_build/generated/aldous_tsp/version.hpp"
           grep -F "kGitTree = \"${SOURCE_TREE}\"" \
-            source-archive-build/generated/aldous_tsp/version.hpp
+            "$archive_build/generated/aldous_tsp/version.hpp"
           grep -F 'kRevisionSource = "source-archive"' \
-            source-archive-build/generated/aldous_tsp/version.hpp
+            "$archive_build/generated/aldous_tsp/version.hpp"
           (cd dist && sha256sum --check SHA256SUMS)
       - name: Create signed build-provenance attestations
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
