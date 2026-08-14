@@ -1,0 +1,27 @@
+name: Performance or solution-quality regression
+description: Report a reproducible runtime, memory, or L/k regression
+title: "perf: "
+labels: [performance]
+body:
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Compared revisions and commands
+      description: Include baseline/candidate commits, fixed seeds, and complete commands.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Paired results
+      description: Report wall time, worker time, memory, L/k, wins/ties/losses, and uncertainty where applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Machine-readable artifacts
+      description: Attach result JSON, benchmark manifests, and hardware/compiler metadata.
+    validations:
+      required: true

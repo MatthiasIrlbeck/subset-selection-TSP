@@ -1,320 +1,1461 @@
-#include "subset_solver_internal.hpp"
+#include "aldous_tsp/oracle.hpp"
+#include "aldous_tsp/memory.hpp"
 
+#include "aldous_tsp/solver.hpp"
+
+#include "sha256.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cerrno>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <optional>
+#include <sstream>
+#include <string_view>
+#include <thread>
+#include <utility>
+
+#if !defined(_WIN32)
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
+#include <spawn.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
-static std::string resolve_exec_in_path(const std::string& prog){
-    // Direct PATH lookup.
-    if(prog.empty()) return std::string();
-    if(prog.find('/') != std::string::npos){
-        return access(prog.c_str(), X_OK) == 0 ? prog : std::string();
+#include <random>
+
+#if !defined(_WIN32)
+extern char** environ;
+#ifndef ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR
+#define ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR 0
+#endif
+#ifndef ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+#define ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP 0
+#endif
+#endif
+
+namespace aldous_tsp {
+namespace {
+
+std::string trim_ascii(std::string text) {
+    auto is_space = [](unsigned char ch) {
+        return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
+    };
+    while (!text.empty() && is_space(static_cast<unsigned char>(text.front()))) {
+        text.erase(text.begin());
     }
-    const char* env = std::getenv("PATH");
-    if(!env) return std::string();
-    std::string path(env);
-    size_t start = 0;
-    while(start <= path.size()){
-        size_t end = path.find(':', start);
-        std::string dir = (end == std::string::npos) ? path.substr(start) : path.substr(start, end - start);
-        if(dir.empty()) dir = ".";
-        std::string cand = dir + "/" + prog;
-        if(access(cand.c_str(), X_OK) == 0) return cand;
-        if(end == std::string::npos) break;
-        start = end + 1;
+    while (!text.empty() && is_space(static_cast<unsigned char>(text.back()))) {
+        text.pop_back();
     }
-    return std::string();
+    return text;
 }
 
-bool build_oracle_context(const ExternalOracleConfig& cfg,OracleContext& oracle,std::string& err){
-    err.clear();
+std::optional<std::string> environment_value(const char* name) {
+    if (name == nullptr || *name == '\0') {
+        return std::nullopt;
+    }
+#if defined(_WIN32)
+    char* raw = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&raw, &length, name) != 0 || raw == nullptr) {
+        return std::nullopt;
+    }
+    std::string value(raw);
+    std::free(raw);
+    return value;
+#else
+    const char* raw = std::getenv(name);
+    if (raw == nullptr) {
+        return std::nullopt;
+    }
+    return std::string(raw);
+#endif
+}
+
+std::filesystem::path canonical_executable_path(
+    const std::filesystem::path& candidate) {
+    namespace fs = std::filesystem;
+    if (candidate.empty()) {
+        return {};
+    }
+    std::error_code ec;
+    const fs::path resolved = fs::canonical(candidate, ec);
+    if (ec || !resolved.is_absolute() || !fs::is_regular_file(resolved, ec) || ec) {
+        return {};
+    }
+#if !defined(_WIN32)
+    if (access(resolved.c_str(), X_OK) != 0) {
+        return {};
+    }
+#endif
+    return resolved;
+}
+
+std::optional<std::filesystem::path> fixed_child_path(
+    const std::filesystem::path& root,
+    std::string_view leaf_name) {
+    namespace fs = std::filesystem;
+    if (root.empty() || leaf_name.empty()) {
+        return std::nullopt;
+    }
+    const fs::path leaf(leaf_name);
+    if (leaf.is_absolute() || leaf.has_parent_path() || leaf.filename() != leaf) {
+        return std::nullopt;
+    }
+    const fs::path normalized_root = root.lexically_normal();
+    const fs::path candidate = (normalized_root / leaf).lexically_normal();
+    if (candidate.parent_path() != normalized_root) {
+        return std::nullopt;
+    }
+    return candidate;
+}
+
+// Private, uniquely named working directory used to stage the fixed-name files
+// handed to an external solver. The platform temp-directory API is used rather
+// than reading TMPDIR directly; the created directory is canonicalized and its
+// permissions are restricted before any child path is returned.
+struct TempWorkDir {
+    std::filesystem::path path;
+    bool ok = false;
+
+    explicit TempWorkDir(const char* prefix) {
+        namespace fs = std::filesystem;
+        if (prefix == nullptr || *prefix == '\0') {
+            return;
+        }
+        std::error_code ec;
+        fs::path base = fs::temp_directory_path(ec);
+        if (ec || base.empty()) {
+            return;
+        }
+        base = fs::canonical(base, ec);
+        if (ec || !base.is_absolute() || !fs::is_directory(base, ec) || ec) {
+            return;
+        }
+
+        std::mt19937_64 gen(std::random_device{}() ^ static_cast<std::uint64_t>(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+        for (int attempt = 0; attempt < 64; ++attempt) {
+            std::ostringstream name;
+            name << prefix << '_' << std::hex << gen();
+            const auto candidate = fixed_child_path(base, name.str());
+            if (!candidate.has_value()) {
+                return;
+            }
+            ec.clear();
+            if (!fs::create_directory(*candidate, ec) || ec) {
+                continue;
+            }
+#if !defined(_WIN32)
+            ec.clear();
+            fs::permissions(
+                *candidate,
+                fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec,
+                fs::perm_options::replace,
+                ec);
+            if (ec) {
+                std::error_code remove_error;
+                fs::remove_all(*candidate, remove_error);
+                continue;
+            }
+#endif
+            ec.clear();
+            const fs::path resolved = fs::canonical(*candidate, ec);
+            if (ec || resolved.parent_path() != base) {
+                std::error_code remove_error;
+                fs::remove_all(*candidate, remove_error);
+                continue;
+            }
+            path = resolved;
+            ok = true;
+            return;
+        }
+    }
+
+    TempWorkDir(const TempWorkDir&) = delete;
+    TempWorkDir& operator=(const TempWorkDir&) = delete;
+
+    std::filesystem::path file(std::string_view leaf_name) const {
+        if (!ok) {
+            return {};
+        }
+        const auto candidate = fixed_child_path(path, leaf_name);
+        return candidate.has_value() ? *candidate : std::filesystem::path{};
+    }
+
+    ~TempWorkDir() {
+        if (ok) {
+            std::error_code ec;
+            std::filesystem::remove_all(path, ec);
+        }
+    }
+};
+
+constexpr std::uintmax_t kMaxOracleConsoleBytes = 16U * 1024U * 1024U;
+constexpr std::uintmax_t kMaxOracleTourBytes = 16U * 1024U * 1024U;
+constexpr std::size_t kOracleConsoleReadBytes = 64U * 1024U;
+
+bool bounded_regular_file(const std::filesystem::path& path,
+                          std::uintmax_t limit,
+                          std::uintmax_t& bytes) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::file_status status = fs::symlink_status(path, ec);
+    if (ec || fs::is_symlink(status) || !fs::is_regular_file(status)) {
+        return false;
+    }
+    bytes = fs::file_size(path, ec);
+    return !ec && bytes <= limit;
+}
+
+// Reads a bounded tail of the external solver's captured console output and
+// returns the part worth reporting. A malicious or broken solver must not make
+// the parent allocate according to an untrusted output-file size.
+std::string summarize_child_output(const std::filesystem::path& path) {
+    namespace fs = std::filesystem;
+    std::error_code status_error;
+    const fs::file_status status = fs::symlink_status(path, status_error);
+    if (status_error || fs::is_symlink(status) || !fs::is_regular_file(status)) {
+        return {};
+    }
+    std::error_code size_error;
+    const std::uintmax_t file_bytes = fs::file_size(path, size_error);
+    if (size_error) {
+        return {};
+    }
+    // The caller supplies a fixed child of a freshly created private workspace.
+    // codeql[cpp/path-injection]
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    const std::uintmax_t bounded = std::min<std::uintmax_t>(file_bytes, kOracleConsoleReadBytes);
+    if (file_bytes > bounded) {
+        in.seekg(static_cast<std::streamoff>(file_bytes - bounded), std::ios::beg);
+    }
+    std::string text(static_cast<std::size_t>(bounded), '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    text.resize(static_cast<std::size_t>(in.gcount()));
+    if (text.empty()) {
+        return file_bytes > kMaxOracleConsoleBytes
+            ? "oracle console output exceeded the 16 MiB security limit"
+            : std::string{};
+    }
+    constexpr std::size_t kMaxReport = 240U;
+    const std::size_t marker = text.find("*** Error ***");
+    std::string slice;
+    if (marker != std::string::npos) {
+        slice = text.substr(marker, kMaxReport);
+    } else if (text.size() > kMaxReport) {
+        slice = text.substr(text.size() - kMaxReport);
+    } else {
+        slice = text;
+    }
+    // Flatten to a single line so it fits in a JSON error field.
+    std::string flat;
+    flat.reserve(slice.size());
+    bool prev_space = false;
+    for (const char c : slice) {
+        const bool is_space = (c == '\n' || c == '\r' || c == '\t' || c == ' ');
+        if (is_space) {
+            if (!prev_space && !flat.empty()) {
+                flat += ' ';
+            }
+            prev_space = true;
+        } else {
+            flat += c;
+            prev_space = false;
+        }
+    }
+    std::string summary = trim_ascii(flat);
+    if (file_bytes > kMaxOracleConsoleBytes) {
+        summary = "oracle console output exceeded the 16 MiB security limit; tail: " + summary;
+    }
+    return summary;
+}
+
+#if !defined(_WIN32)
+
+std::string resolve_exec_in_path(const std::string& program) {
+    if (program.empty()) {
+        return {};
+    }
+    if (program.find('/') != std::string::npos) {
+        return canonical_executable_path(program).string();
+    }
+    const std::optional<std::string> path_env = environment_value("PATH");
+    if (!path_env.has_value()) {
+        return {};
+    }
+    std::size_t start = 0;
+    while (start <= path_env->size()) {
+        const std::size_t end = path_env->find(':', start);
+        std::string dir = (end == std::string::npos)
+            ? path_env->substr(start)
+            : path_env->substr(start, end - start);
+        if (dir.empty()) {
+            dir = ".";
+        }
+        const std::filesystem::path resolved =
+            canonical_executable_path(std::filesystem::path(dir) / program);
+        if (!resolved.empty()) {
+            return resolved.string();
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1U;
+    }
+    return {};
+}
+
+using ProcessClock = std::chrono::steady_clock;
+using ProcessDeadline = ProcessClock::time_point;
+
+class UniqueFd {
+public:
+    UniqueFd() = default;
+    explicit UniqueFd(int fd) noexcept : fd_(fd) {}
+    UniqueFd(const UniqueFd&) = delete;
+    UniqueFd& operator=(const UniqueFd&) = delete;
+    UniqueFd(UniqueFd&& other) noexcept : fd_(other.release()) {}
+    UniqueFd& operator=(UniqueFd&& other) noexcept {
+        if (this != &other) {
+            reset(other.release());
+        }
+        return *this;
+    }
+    ~UniqueFd() { reset(); }
+
+    int get() const noexcept { return fd_; }
+    int release() noexcept {
+        const int fd = fd_;
+        fd_ = -1;
+        return fd;
+    }
+    void reset(int fd = -1) noexcept {
+        if (fd_ >= 0) {
+            (void)close(fd_);
+        }
+        fd_ = fd;
+    }
+
+private:
+    int fd_ = -1;
+};
+
+ProcessDeadline process_deadline(int timeout_sec) {
+    if (timeout_sec <= 0) {
+        return ProcessDeadline::max();
+    }
+    return ProcessClock::now() + std::chrono::seconds(timeout_sec);
+}
+
+int process_exit_code(int status) noexcept {
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
+}
+
+void kill_process_group(pid_t pid) noexcept {
+    if (pid <= 0) {
+        return;
+    }
+    if (kill(-pid, SIGKILL) != 0) {
+        // POSIX_SPAWN_SETPGROUP should make the negative-PID form sufficient.
+        // Fall back to the direct child if the group disappeared or was not
+        // established by a non-conforming implementation.
+        (void)kill(pid, SIGKILL);
+    }
+}
+
+void terminate_process_group_and_reap(pid_t pid) noexcept {
+    if (pid <= 0) {
+        return;
+    }
+    kill_process_group(pid);
+    int status = 0;
+    for (;;) {
+        const pid_t waited = waitpid(pid, &status, 0);
+        if (waited == pid || (waited < 0 && errno == ECHILD)) {
+            return;
+        }
+        if (waited < 0 && errno != EINTR) {
+            return;
+        }
+    }
+}
+
+class SpawnedProcess {
+public:
+    explicit SpawnedProcess(pid_t pid) noexcept : pid_(pid) {}
+    SpawnedProcess(const SpawnedProcess&) = delete;
+    SpawnedProcess& operator=(const SpawnedProcess&) = delete;
+    ~SpawnedProcess() {
+        if (active_) {
+            terminate_process_group_and_reap(pid_);
+        }
+    }
+
+    void mark_reaped() noexcept { active_ = false; }
+
+private:
+    pid_t pid_ = -1;
+    bool active_ = true;
+};
+
+int wait_for_process_until(pid_t pid, ProcessDeadline deadline) {
+    int status = 0;
+    if (deadline == ProcessDeadline::max()) {
+        for (;;) {
+            const pid_t waited = waitpid(pid, &status, 0);
+            if (waited == pid) {
+                return process_exit_code(status);
+            }
+            if (waited < 0 && errno == ECHILD) {
+                return -1;
+            }
+            if (waited < 0 && errno != EINTR) {
+                terminate_process_group_and_reap(pid);
+                return -1;
+            }
+        }
+    }
+
+    for (;;) {
+        const pid_t waited = waitpid(pid, &status, WNOHANG);
+        if (waited == pid) {
+            return process_exit_code(status);
+        }
+        if (waited < 0 && errno == ECHILD) {
+            return -1;
+        }
+        if (waited < 0 && errno != EINTR) {
+            terminate_process_group_and_reap(pid);
+            return -1;
+        }
+        const auto now = ProcessClock::now();
+        if (now >= deadline) {
+            terminate_process_group_and_reap(pid);
+            return 124;
+        }
+        const auto remaining = deadline - now;
+        auto sleep_time = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+        if (sleep_time <= std::chrono::milliseconds(0)) {
+            sleep_time = std::chrono::milliseconds(1);
+        }
+        std::this_thread::sleep_for(
+            std::min(std::chrono::milliseconds(100), sleep_time));
+    }
+}
+
+std::vector<char*> spawn_argument_pointers(const std::vector<std::string>& argv) {
+    std::vector<char*> pointers;
+    pointers.reserve(argv.size() + 1U);
+    for (const std::string& argument : argv) {
+        pointers.push_back(const_cast<char*>(argument.c_str()));
+    }
+    pointers.push_back(nullptr);
+    return pointers;
+}
+
+int spawn_in_new_process_group(const std::vector<std::string>& argv,
+                               std::vector<char*>& arguments,
+                               const posix_spawn_file_actions_t* file_actions,
+                               pid_t& pid) noexcept {
+    if (argv.empty() || arguments.size() != argv.size() + 1U) {
+        return EINVAL;
+    }
+    posix_spawnattr_t attributes;
+    int error = posix_spawnattr_init(&attributes);
+    if (error != 0) {
+        return error;
+    }
+    error = posix_spawnattr_setpgroup(&attributes, 0);
+    if (error == 0) {
+        error = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    }
+    if (error == 0) {
+        // All callers provide an exact absolute executable (either the resolved
+        // oracle or /bin/sh), so avoid a second PATH lookup at launch time.
+        error = posix_spawn(&pid,
+                            argv.front().c_str(),
+                            file_actions,
+                            &attributes,
+                            arguments.data(),
+                            environ);
+    }
+    (void)posix_spawnattr_destroy(&attributes);
+    return error;
+}
+
+#if !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR && !ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+std::vector<std::string> process_arguments_in_directory(
+    const std::vector<std::string>& argv,
+    const std::filesystem::path& cwd) {
+    if (cwd.empty()) {
+        return argv;
+    }
+    // POSIX has no standard working-directory file action before POSIX.1-2024.
+    // On implementations without the common addchdir_np extension, spawn a
+    // shell with a constant command and pass directory/program solely as argv;
+    // no user-controlled text is interpolated. The shell immediately execs the
+    // solver and retains the same PID/process group for timeout handling.
+    std::vector<std::string> wrapped;
+    wrapped.reserve(argv.size() + 5U);
+    wrapped.emplace_back("/bin/sh");
+    wrapped.emplace_back("-c");
+    wrapped.emplace_back(
+        "cd \"$1\" || exit 126; shift; "
+        "[ -x \"$1\" ] || { echo 'oracle executable is not runnable' >&2; exit 127; }; "
+        "exec \"$@\"");
+    wrapped.emplace_back("aldous_tsp_spawn");
+    wrapped.push_back(cwd.string());
+    wrapped.insert(wrapped.end(), argv.begin(), argv.end());
+    return wrapped;
+}
+#endif
+
+int run_external_process(const std::vector<std::string>& argv,
+                         const std::filesystem::path& cwd,
+                         int timeout_sec,
+                         bool verbose,
+                         std::string* captured) {
+    if (argv.empty()) {
+        return -1;
+    }
+    const auto log_path_value = fixed_child_path(cwd, "oracle_output.txt");
+    if (!log_path_value.has_value()) {
+        if (captured != nullptr) {
+            *captured = "oracle working directory is invalid";
+        }
+        return -1;
+    }
+    const std::filesystem::path& log_path = *log_path_value;
+    const std::string log_str = log_path.string();
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR || ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+    const std::vector<std::string>& spawn_argv = argv;
+#else
+    const std::vector<std::string> spawn_argv =
+        process_arguments_in_directory(argv, cwd);
+#endif
+    std::vector<char*> spawn_arguments = spawn_argument_pointers(spawn_argv);
+    const std::string cwd_str = cwd.string();
+
+    posix_spawn_file_actions_t actions;
+    int error = posix_spawn_file_actions_init(&actions);
+    if (error != 0) {
+        if (captured != nullptr) {
+            *captured = std::string("posix_spawn file-action initialization failed: ")
+                + std::strerror(error);
+        }
+        return -1;
+    }
+    error = posix_spawn_file_actions_addopen(
+        &actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (error == 0) {
+        error = posix_spawn_file_actions_addopen(
+            &actions,
+            STDOUT_FILENO,
+            log_str.c_str(),
+            O_WRONLY | O_CREAT | O_TRUNC,
+            0600);
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, STDOUT_FILENO, STDERR_FILENO);
+    }
+#if ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR
+    if (error == 0 && !cwd_str.empty()) {
+        error = posix_spawn_file_actions_addchdir(&actions, cwd_str.c_str());
+    }
+#elif ALDOUS_TSP_HAVE_POSIX_SPAWN_CHDIR_NP
+    if (error == 0 && !cwd_str.empty()) {
+        error = posix_spawn_file_actions_addchdir_np(&actions, cwd_str.c_str());
+    }
+#endif
+
+    pid_t pid = -1;
+    if (error == 0) {
+        error = spawn_in_new_process_group(
+            spawn_argv, spawn_arguments, &actions, pid);
+    }
+    (void)posix_spawn_file_actions_destroy(&actions);
+    if (error != 0) {
+        if (captured != nullptr) {
+            *captured = std::string("posix_spawn failed: ") + std::strerror(error);
+        }
+        return -1;
+    }
+
+    SpawnedProcess process(pid);
+    const int rc = wait_for_process_until(pid, process_deadline(timeout_sec));
+    process.mark_reaped();
+    // log_path is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
+    const std::string output = summarize_child_output(log_path);
+    if (captured != nullptr) {
+        *captured = output;
+    }
+    if (verbose && !output.empty()) {
+        std::fprintf(stderr, "[oracle] %s\n", output.c_str());
+    }
+    return rc;
+}
+
+int poll_timeout_ms(ProcessDeadline deadline) noexcept {
+    if (deadline == ProcessDeadline::max()) {
+        return -1;
+    }
+    const auto now = ProcessClock::now();
+    if (now >= deadline) {
+        return 0;
+    }
+    const auto remaining = deadline - now;
+    const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+    const auto rounded = milliseconds + (milliseconds < remaining ? std::chrono::milliseconds(1)
+                                                                   : std::chrono::milliseconds(0));
+    const auto max_int = std::chrono::milliseconds(std::numeric_limits<int>::max());
+    return static_cast<int>(std::min(rounded, max_int).count());
+}
+
+bool prepare_pipe_descriptor(UniqueFd& descriptor) noexcept {
+    if (descriptor.get() < 0) {
+        return false;
+    }
+    if (descriptor.get() <= STDERR_FILENO) {
+        const int duplicate = fcntl(descriptor.get(), F_DUPFD, STDERR_FILENO + 1);
+        if (duplicate < 0) {
+            return false;
+        }
+        descriptor.reset(duplicate);
+    }
+    const int flags = fcntl(descriptor.get(), F_GETFD, 0);
+    return flags >= 0
+        && fcntl(descriptor.get(), F_SETFD, flags | FD_CLOEXEC) == 0;
+}
+
+std::string capture_process_first_line(const std::vector<std::string>& argv,
+                                       int timeout_sec) {
+    if (argv.empty()) {
+        return "unknown";
+    }
+    // Build all C++ argument storage before acquiring OS resources. Once file
+    // actions are initialized, the setup path below performs only non-throwing
+    // POSIX calls until those actions have been destroyed.
+    std::vector<char*> spawn_arguments = spawn_argument_pointers(argv);
+
+    int pipefd[2] = {-1, -1};
+    if (pipe(pipefd) != 0) {
+        return "unknown";
+    }
+    UniqueFd read_end(pipefd[0]);
+    UniqueFd write_end(pipefd[1]);
+    if (!prepare_pipe_descriptor(read_end) || !prepare_pipe_descriptor(write_end)) {
+        return "unknown";
+    }
+    const int read_flags = fcntl(read_end.get(), F_GETFL, 0);
+    if (read_flags < 0
+        || fcntl(read_end.get(), F_SETFL, read_flags | O_NONBLOCK) != 0) {
+        return "unknown";
+    }
+
+    posix_spawn_file_actions_t actions;
+    int error = posix_spawn_file_actions_init(&actions);
+    if (error != 0) {
+        return "unknown";
+    }
+    error = posix_spawn_file_actions_addopen(
+        &actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    if (error == 0) {
+        error = posix_spawn_file_actions_addclose(&actions, read_end.get());
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, write_end.get(), STDOUT_FILENO);
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_adddup2(
+            &actions, write_end.get(), STDERR_FILENO);
+    }
+    if (error == 0) {
+        error = posix_spawn_file_actions_addclose(&actions, write_end.get());
+    }
+
+    pid_t pid = -1;
+    if (error == 0) {
+        error = spawn_in_new_process_group(
+            argv, spawn_arguments, &actions, pid);
+    }
+    (void)posix_spawn_file_actions_destroy(&actions);
+    if (error != 0) {
+        return "unknown";
+    }
+
+    SpawnedProcess process(pid);
+    write_end.reset();
+    const ProcessDeadline deadline = process_deadline(timeout_sec);
+    std::string output;
+    std::array<char, 256> chunk{};
+    bool pipe_closed = false;
+    while (output.size() <= 512U && output.find('\n') == std::string::npos) {
+        pollfd descriptor{};
+        descriptor.fd = read_end.get();
+        descriptor.events = POLLIN | POLLHUP;
+        const int polled = poll(&descriptor, 1, poll_timeout_ms(deadline));
+        if (polled == 0) {
+            break;
+        }
+        if (polled < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if ((descriptor.revents & POLLNVAL) != 0) {
+            break;
+        }
+        if ((descriptor.revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
+            continue;
+        }
+        for (;;) {
+            const ssize_t nread = read(read_end.get(), chunk.data(), chunk.size());
+            if (nread > 0) {
+                output.append(chunk.data(), static_cast<std::size_t>(nread));
+                if (output.size() > 512U || output.find('\n') != std::string::npos) {
+                    break;
+                }
+                continue;
+            }
+            if (nread == 0) {
+                pipe_closed = true;
+            }
+            if (nread < 0 && errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (pipe_closed) {
+            break;
+        }
+    }
+    read_end.reset();
+
+    const int rc = wait_for_process_until(pid, deadline);
+    process.mark_reaped();
+    if (rc != 0 && output.empty()) {
+        return "unknown";
+    }
+    const std::size_t newline = output.find('\n');
+    if (newline != std::string::npos) {
+        output.resize(newline);
+    }
+    output = trim_ascii(output);
+    if (output.empty()) {
+        return "unknown";
+    }
+    if (output.size() > 120U) {
+        output.resize(120U);
+    }
+    return output;
+}
+
+#else  // _WIN32
+
+std::string resolve_exec_in_path(const std::string& program) {
+    if (program.empty()) {
+        return {};
+    }
+    namespace fs = std::filesystem;
+    auto resolve_variants = [&](const fs::path& base) -> std::string {
+        fs::path resolved = canonical_executable_path(base);
+        if (!resolved.empty()) {
+            return resolved.string();
+        }
+        fs::path with_exe = base;
+        with_exe += ".exe";
+        resolved = canonical_executable_path(with_exe);
+        return resolved.string();
+    };
+    const bool looks_like_path = program.find('/') != std::string::npos
+        || program.find('\\') != std::string::npos
+        || (program.size() >= 2U && program[1] == ':');
+    if (looks_like_path) {
+        return resolve_variants(fs::path(program));
+    }
+    const std::optional<std::string> path_env = environment_value("PATH");
+    if (!path_env.has_value()) {
+        return {};
+    }
+    std::size_t start = 0;
+    while (start <= path_env->size()) {
+        const std::size_t end = path_env->find(';', start);  // Windows PATH separator
+        const std::string dir = (end == std::string::npos)
+            ? path_env->substr(start)
+            : path_env->substr(start, end - start);
+        if (!dir.empty()) {
+            const std::string resolved = resolve_variants(fs::path(dir) / program);
+            if (!resolved.empty()) {
+                return resolved;
+            }
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1U;
+    }
+    return {};
+}
+
+// Quote one argument per the Windows command-line parsing rules (CommandLineToArgvW).
+std::string windows_quote_arg(const std::string& arg) {
+    if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
+        return arg;
+    }
+    std::string result = "\"";
+    for (auto it = arg.begin();; ++it) {
+        unsigned backslashes = 0;
+        while (it != arg.end() && *it == '\\') {
+            ++it;
+            ++backslashes;
+        }
+        if (it == arg.end()) {
+            result.append(static_cast<std::size_t>(backslashes) * 2U, '\\');
+            break;
+        }
+        if (*it == '"') {
+            result.append(static_cast<std::size_t>(backslashes) * 2U + 1U, '\\');
+            result += '"';
+        } else {
+            result.append(static_cast<std::size_t>(backslashes), '\\');
+            result += *it;
+        }
+    }
+    result += '"';
+    return result;
+}
+
+int run_external_process(const std::vector<std::string>& argv, const std::filesystem::path& cwd, int timeout_sec, bool verbose, std::string* captured) {
+    if (argv.empty()) {
+        return -1;
+    }
+    std::string command_line;
+    for (std::size_t i = 0; i < argv.size(); ++i) {
+        if (i != 0) {
+            command_line += ' ';
+        }
+        command_line += windows_quote_arg(argv[i]);
+    }
+    std::vector<char> mutable_cmd(command_line.begin(), command_line.end());
+    mutable_cmd.push_back('\0');
+
+    const auto log_path_value = fixed_child_path(cwd, "oracle_output.txt");
+    if (!log_path_value.has_value()) {
+        if (captured != nullptr) {
+            *captured = "oracle working directory is invalid";
+        }
+        return -1;
+    }
+    const std::filesystem::path& log_path = *log_path_value;
+    const std::string log_str = log_path.string();
+
+    SECURITY_ATTRIBUTES sa;
+    ZeroMemory(&sa, sizeof(sa));
+    sa.nLength = sizeof(sa);
+    sa.lpSecurityDescriptor = nullptr;
+    sa.bInheritHandle = TRUE;
+
+    // Capture the child's console output so a failing solver's own diagnostics
+    // survive; this also hands the child valid standard handles, which it would
+    // otherwise lack under CREATE_NO_WINDOW.
+    HANDLE log_handle = CreateFileA(log_str.c_str(), GENERIC_WRITE,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE null_in = CreateFileA("NUL", GENERIC_READ,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                                 OPEN_EXISTING, 0, nullptr);
+
+    STARTUPINFOA startup;
+    ZeroMemory(&startup, sizeof(startup));
+    startup.cb = sizeof(startup);
+    BOOL inherit_handles = FALSE;
+    if (log_handle != INVALID_HANDLE_VALUE && null_in != INVALID_HANDLE_VALUE) {
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = null_in;
+        startup.hStdOutput = log_handle;
+        startup.hStdError = log_handle;
+        inherit_handles = TRUE;
+    }
+    PROCESS_INFORMATION proc;
+    ZeroMemory(&proc, sizeof(proc));
+
+    const std::string cwd_str = cwd.string();
+    const BOOL created = CreateProcessA(
+        argv[0].c_str(),                              // exact executable (already resolved)
+        mutable_cmd.data(),                           // command line (mutable buffer)
+        nullptr, nullptr, inherit_handles,
+        CREATE_NO_WINDOW,                             // no console window per invocation
+        nullptr,
+        cwd_str.empty() ? nullptr : cwd_str.c_str(),  // per-call working directory (thread-safe)
+        &startup, &proc);
+    if (log_handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(log_handle);
+    }
+    if (null_in != INVALID_HANDLE_VALUE) {
+        CloseHandle(null_in);
+    }
+    if (!created) {
+        return -1;
+    }
+    const DWORD wait_ms = (timeout_sec > 0) ? static_cast<DWORD>(timeout_sec) * 1000U : INFINITE;
+    const DWORD wait_result = WaitForSingleObject(proc.hProcess, wait_ms);
+    DWORD exit_code = 1;
+    if (wait_result == WAIT_TIMEOUT) {
+        TerminateProcess(proc.hProcess, 124U);
+        WaitForSingleObject(proc.hProcess, 2000U);
+        exit_code = 124;
+    } else {
+        GetExitCodeProcess(proc.hProcess, &exit_code);
+    }
+    CloseHandle(proc.hProcess);
+    CloseHandle(proc.hThread);
+    // log_path is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
+    const std::string output = summarize_child_output(log_path);
+    if (captured != nullptr) {
+        *captured = output;
+    }
+    if (verbose && !output.empty()) {
+        std::fprintf(stderr, "[oracle] %s\n", output.c_str());
+    }
+    return static_cast<int>(exit_code);
+}
+
+// The version probe is cosmetic; a real LKH exits non-zero on "--version"
+// anyway, so we don't attempt to capture it on Windows.
+std::string capture_process_first_line(const std::vector<std::string>&, int) { return "unknown"; }
+
+#endif
+
+// LKH stores edge costs in `int` and internally multiplies them by its PRECISION
+// parameter, so a cost must satisfy  cost * PRECISION <= INT_MAX. We write
+// PRECISION = 1 in the parameter file (our costs are already scaled integers, so
+// LKH's default x100 buys nothing), and additionally cap the scale here so the
+// largest cost stays well inside int even for very large instances -- leaving
+// headroom for the node potentials LKH adds during its ascent.
+//
+// This only affects the fidelity of the *external solver's* optimization: we use
+// the returned tour's node ORDER and recompute its true length in double
+// precision, so the reported f(p) is never quantized by this scale.
+constexpr long long kMaxOracleCost = 500000000LL;  // INT_MAX / ~4
+
+int effective_oracle_scale(const Instance& inst, const std::vector<int>& nodes, int requested_scale) {
+    double max_dist = 0.0;
+    const int k = static_cast<int>(nodes.size());
+    // The farthest pair bounds every cost; sampling the extremes is enough
+    // because we only need an upper bound, so take the exact max over a bounded
+    // number of pairs and fall back to the geometric bound for large k.
+    if (k <= 256) {
+        for (int i = 0; i < k; ++i) {
+            for (int j = i + 1; j < k; ++j) {
+                max_dist = std::max(max_dist, inst.dist(nodes[static_cast<std::size_t>(i)], nodes[static_cast<std::size_t>(j)]));
+            }
+        }
+    } else {
+        // Upper bound: the torus half-diagonal, or the full diagonal for the open
+        // square. inst.side is the domain edge length.
+        const double side = inst.side;
+        max_dist = inst.periodic ? (std::sqrt(2.0) * side * 0.5) : (std::sqrt(2.0) * side);
+    }
+    if (!(max_dist > 0.0) || !std::isfinite(max_dist)) {
+        return std::max(1, requested_scale);
+    }
+    const long long cap = static_cast<long long>(static_cast<double>(kMaxOracleCost) / max_dist);
+    long long scale = static_cast<long long>(std::max(1, requested_scale));
+    if (scale > cap) {
+        scale = cap;
+    }
+    if (scale < 1) {
+        scale = 1;
+    }
+    return static_cast<int>(scale);
+}
+
+bool write_tsplib_matrix(const std::filesystem::path& path, const Instance& inst, const std::vector<int>& nodes, int scale) {
+    std::ofstream out(path);
+    if (!out) {
+        return false;
+    }
+    const int k = static_cast<int>(nodes.size());
+    out << "NAME : aldous_oracle\nTYPE : TSP\nDIMENSION : " << k
+        << "\nEDGE_WEIGHT_TYPE : EXPLICIT\nEDGE_WEIGHT_FORMAT : FULL_MATRIX\nEDGE_WEIGHT_SECTION\n";
+    for (int i = 0; i < k; ++i) {
+        for (int j = 0; j < k; ++j) {
+            long long w = 0;
+            if (i != j) {
+                w = static_cast<long long>(std::llround(static_cast<double>(scale) * inst.dist(nodes[static_cast<std::size_t>(i)], nodes[static_cast<std::size_t>(j)])));
+            }
+            out << w << (j + 1 == k ? '\n' : ' ');
+        }
+    }
+    out << "EOF\n";
+    return out.good();
+}
+
+bool write_tsplib_euc2d(const std::filesystem::path& path, const Instance& inst, const std::vector<int>& nodes, int scale) {
+    std::ofstream out(path);
+    if (!out) {
+        return false;
+    }
+    const int k = static_cast<int>(nodes.size());
+    out << "NAME : aldous_oracle\nTYPE : TSP\nDIMENSION : " << k << "\nEDGE_WEIGHT_TYPE : EUC_2D\nNODE_COORD_SECTION\n";
+    for (int i = 0; i < k; ++i) {
+        const Point& point = inst.points[static_cast<std::size_t>(nodes[static_cast<std::size_t>(i)])];
+        const long long x = static_cast<long long>(std::llround(static_cast<double>(scale) * point.x));
+        const long long y = static_cast<long long>(std::llround(static_cast<double>(scale) * point.y));
+        out << (i + 1) << ' ' << x << ' ' << y << '\n';
+    }
+    out << "EOF\n";
+    return out.good();
+}
+
+bool write_identity_tour(const std::filesystem::path& path, int k) {
+    std::ofstream out(path);
+    if (!out) {
+        return false;
+    }
+    out << "NAME : init\nTYPE : TOUR\nDIMENSION : " << k << "\nTOUR_SECTION\n";
+    for (int i = 1; i <= k; ++i) {
+        out << i << '\n';
+    }
+    out << "-1\nEOF\n";
+    return out.good();
+}
+
+std::vector<long long> extract_ints(const std::string& text) {
+    std::vector<long long> values;
+    const char* cursor = text.c_str();
+    while (*cursor != '\0') {
+        char* end = nullptr;
+        const long long value = std::strtoll(cursor, &end, 10);
+        if (end != cursor) {
+            values.push_back(value);
+            cursor = end;
+        } else {
+            ++cursor;
+        }
+    }
+    return values;
+}
+
+bool parse_window(const std::vector<long long>& values, std::size_t start, int k, bool one_based, std::vector<int>& permutation) {
+    if (start + static_cast<std::size_t>(k) > values.size()) {
+        return false;
+    }
+    permutation.assign(static_cast<std::size_t>(k), -1);
+    std::vector<unsigned char> seen(static_cast<std::size_t>(k), 0U);
+    for (int i = 0; i < k; ++i) {
+        const long long raw = values[start + static_cast<std::size_t>(i)];
+        const long long v = one_based ? raw - 1LL : raw;
+        if (v < 0 || v >= static_cast<long long>(k)) {
+            return false;
+        }
+        const auto idx = static_cast<std::size_t>(v);
+        if (seen[idx] != 0U) {
+            return false;
+        }
+        seen[idx] = 1U;
+        permutation[static_cast<std::size_t>(i)] = static_cast<int>(v);
+    }
+    return true;
+}
+
+bool parse_external_tour_file(const std::filesystem::path& path,
+                              int k,
+                              std::vector<int>& permutation) {
+    std::uintmax_t file_bytes = 0U;
+    if (!bounded_regular_file(path, kMaxOracleTourBytes, file_bytes)) {
+        return false;
+    }
+    // The caller supplies a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    std::string text(static_cast<std::size_t>(file_bytes), '\0');
+    in.read(text.data(), static_cast<std::streamsize>(text.size()));
+    if (in.bad()) {
+        return false;
+    }
+    text.resize(static_cast<std::size_t>(in.gcount()));
+    char extra = '\0';
+    if (in.get(extra)) {
+        return false;
+    }
+    return parse_external_tour_text(text, k, permutation);
+}
+
+bool external_oracle_polish_nodes(const Instance& inst,
+                                  const OracleContext& oracle,
+                                  const std::vector<int>& input_nodes,
+                                  std::vector<int>& output_nodes,
+                                  double& output_length,
+                                  std::string* error_message) {
+    auto fail = [&](const std::string& message) {
+        if (error_message != nullptr) {
+            *error_message = message;
+        }
+        output_length = std::numeric_limits<double>::infinity();
+        return false;
+    };
+    const int k = static_cast<int>(input_nodes.size());
+    if (k < 3) {
+        return fail("tour has fewer than 3 nodes");
+    }
+    const std::filesystem::path launch_executable =
+        canonical_executable_path(oracle.exec_path);
+    if (launch_executable.empty()
+        || launch_executable.string() != oracle.exec_path) {
+        return fail("oracle executable path changed or is no longer a runnable regular file");
+    }
+    std::string launch_hash;
+    std::string hash_error;
+    // launch_executable was canonicalized and restricted to a runnable regular file.
+    // codeql[cpp/path-injection]
+    if (!detail::sha256_file(launch_executable, launch_hash, hash_error)) {
+        return fail("oracle executable identity could not be verified before launch: " + hash_error);
+    }
+    if (launch_hash != oracle.exec_sha256) {
+        return fail("oracle executable changed after resolution; refusing launch (expected sha256="
+                    + oracle.exec_sha256 + ", actual sha256=" + launch_hash + ")");
+    }
+    TempWorkDir tmp("aldous_oracle");
+    if (!tmp.ok) {
+        return fail("failed to create temporary working directory");
+    }
+    const std::filesystem::path problem = tmp.file("problem.tsp");
+    const std::filesystem::path init = tmp.file("init.tour");
+    const std::filesystem::path params = tmp.file("run.par");
+    const std::filesystem::path out_tour = tmp.file("out.tour");
+    const std::filesystem::path concorde_fallback = tmp.file("problem.sol");
+    if (problem.empty() || init.empty() || params.empty() || out_tour.empty()
+        || concorde_fallback.empty()) {
+        return fail("failed to derive fixed oracle workspace paths");
+    }
+    const int safe_scale = effective_oracle_scale(inst, input_nodes, oracle.cfg.scale);
+    bool wrote_problem = false;
+    if (oracle.cfg.problem_format == OracleProblemFormat::Matrix) {
+        // problem is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        wrote_problem = write_tsplib_matrix(problem, inst, input_nodes, safe_scale);
+    } else {
+        // problem is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        wrote_problem = write_tsplib_euc2d(problem, inst, input_nodes, safe_scale);
+    }
+    if (!wrote_problem) {
+        return fail("failed to write TSPLIB problem file");
+    }
+
+    std::vector<std::string> argv;
+    if (oracle.resolved == ResolvedOracleMode::Lkh) {
+        // init is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        if (!write_identity_tour(init, k)) {
+            return fail("failed to write initial tour file");
+        }
+        // params is a fixed child of the validated private oracle workspace.
+        // codeql[cpp/path-injection]
+        std::ofstream par(params);
+        if (!par) {
+            return fail("failed to write LKH parameter file");
+        }
+        par << "PROBLEM_FILE = problem.tsp\n"
+            << "INITIAL_TOUR_FILE = init.tour\n"
+            << "TOUR_FILE = out.tour\n"
+            // Our costs are already scaled integers; LKH's default PRECISION=100
+            // would multiply them again in int arithmetic and overflow (LKH then
+            // aborts with "PRECISION (= 100) is too large" and exit status 1).
+            << "PRECISION = 1\n"
+            << "RUNS = " << std::max(1, oracle.cfg.lkh_runs) << "\n"
+            << "TRACE_LEVEL = " << (oracle.cfg.verbose ? 1 : 0) << "\n";
+        if (oracle.cfg.lkh_max_trials > 0) {
+            par << "MAX_TRIALS = " << oracle.cfg.lkh_max_trials << "\n";
+        }
+        if (oracle.cfg.time_limit_sec > 0) {
+            par << "TIME_LIMIT = " << oracle.cfg.time_limit_sec << "\n";
+        }
+        par.close();
+        argv = {launch_executable.string(), params.filename().string()};
+    } else if (oracle.resolved == ResolvedOracleMode::Concorde) {
+        argv = {launch_executable.string(),
+                "-o",
+                out_tour.filename().string(),
+                problem.filename().string()};
+    } else {
+        return fail("no resolved external oracle executable");
+    }
+
+    std::string child_output;
+    const int rc = run_external_process(argv, tmp.path, oracle.cfg.time_limit_sec, oracle.cfg.verbose, &child_output);
+    if (child_output.rfind("oracle console output exceeded the 16 MiB security limit", 0U) == 0U) {
+        return fail(child_output);
+    }
+    // Accept whatever the solver actually produced: its contract is the tour
+    // file, and exit-code conventions vary between solvers and versions. Only if
+    // no usable tour comes back do we treat the call as failed -- and then we
+    // report the solver's own diagnostics, which is what makes failures debuggable.
+    std::vector<int> permutation;
+    // out_tour is a fixed child of the validated private oracle workspace.
+    // codeql[cpp/path-injection]
+    bool parsed = parse_external_tour_file(out_tour, k, permutation);
+    if (!parsed) {
+        // concorde_fallback is the only alternative fixed output name accepted.
+        // codeql[cpp/path-injection]
+        parsed = parse_external_tour_file(concorde_fallback, k, permutation);
+    }
+    if (!parsed) {
+        std::ostringstream oss;
+        oss << "external solver returned no usable tour (exit status " << rc << ")";
+        if (!child_output.empty()) {
+            oss << "; solver said: " << child_output;
+        }
+        return fail(oss.str());
+    }
+    output_nodes.resize(static_cast<std::size_t>(k));
+    for (int i = 0; i < k; ++i) {
+        output_nodes[static_cast<std::size_t>(i)] = input_nodes[static_cast<std::size_t>(permutation[static_cast<std::size_t>(i)])];
+    }
+    output_length = cycle_length(inst, output_nodes);
+    if (!std::isfinite(output_length)) {
+        return fail("returned tour length is not finite");
+    }
+    if (error_message != nullptr) {
+        error_message->clear();
+    }
+    return true;
+}
+
+} // namespace
+
+bool parse_external_tour_text(const std::string& text, int k, std::vector<int>& permutation) {
+    if (k < 1) {
+        return false;
+    }
+    auto try_values = [&](const std::vector<long long>& values) {
+        std::vector<int> tmp;
+        for (std::size_t start = 0; start + static_cast<std::size_t>(k) <= values.size(); ++start) {
+            if (parse_window(values, start, k, false, tmp) || parse_window(values, start, k, true, tmp)) {
+                permutation = std::move(tmp);
+                return true;
+            }
+        }
+        return false;
+    };
+    const std::size_t tour_section = text.find("TOUR_SECTION");
+    if (tour_section != std::string::npos && try_values(extract_ints(text.substr(tour_section)))) {
+        return true;
+    }
+    return try_values(extract_ints(text));
+}
+
+bool external_oracle_applicable(const OracleContext& oracle, int k, bool full_tsp) noexcept {
+    if (oracle.resolved == ResolvedOracleMode::None) {
+        return false;
+    }
+    if (k <= kExactSmallTourLimit) {
+        return false;
+    }
+    if (k < oracle.cfg.min_k || k > oracle.cfg.max_k) {
+        return false;
+    }
+    if (full_tsp && !oracle.cfg.use_for_tsp) {
+        return false;
+    }
+    if (!full_tsp && !oracle.cfg.use_for_subset) {
+        return false;
+    }
+    return true;
+}
+
+bool build_oracle_context(const ExternalOracleConfig& cfg, OracleContext& oracle, std::string& error) {
+    error.clear();
+    const ExternalOracleConfig cfg_copy = cfg;
     oracle = OracleContext();
-    oracle.cfg = cfg;
-    if(oracle.cfg.mode == ExternalOracleMode::NONE){
+    oracle.cfg = cfg_copy;
+    if (cfg_copy.mode == ExternalOracleMode::None) {
         oracle.status = "disabled";
         return true;
     }
-    std::string lkh = resolve_exec_in_path(oracle.cfg.lkh_path);
-    std::string con = resolve_exec_in_path(oracle.cfg.concorde_path);
-    if(oracle.cfg.mode == ExternalOracleMode::AUTO){
-        if(!lkh.empty()){
-            oracle.resolved = ResolvedOracleMode::LKH;
+    const std::string lkh = resolve_exec_in_path(cfg_copy.lkh_path);
+    const std::string concorde = resolve_exec_in_path(cfg_copy.concorde_path);
+    if (cfg_copy.mode == ExternalOracleMode::Auto) {
+        if (!lkh.empty()) {
+            oracle.resolved = ResolvedOracleMode::Lkh;
             oracle.exec_path = lkh;
-        } else if(!con.empty()){
-            oracle.resolved = ResolvedOracleMode::CONCORDE;
-            oracle.exec_path = con;
+        } else if (!concorde.empty()) {
+            oracle.resolved = ResolvedOracleMode::Concorde;
+            oracle.exec_path = concorde;
         } else {
             oracle.status = "auto: no supported external solver found on PATH";
             return true;
         }
-    } else if(oracle.cfg.mode == ExternalOracleMode::LKH){
-        if(lkh.empty()){
-            err = "Requested --oracle lkh, but executable was not found: " + oracle.cfg.lkh_path;
+    } else if (cfg_copy.mode == ExternalOracleMode::Lkh) {
+        if (lkh.empty()) {
+            error = "requested --oracle lkh, but executable was not found: " + cfg_copy.lkh_path;
             return false;
         }
-        oracle.resolved = ResolvedOracleMode::LKH;
+        oracle.resolved = ResolvedOracleMode::Lkh;
         oracle.exec_path = lkh;
-    } else if(oracle.cfg.mode == ExternalOracleMode::CONCORDE){
-        if(con.empty()){
-            err = "Requested --oracle concorde, but executable was not found: " + oracle.cfg.concorde_path;
+    } else if (cfg_copy.mode == ExternalOracleMode::Concorde) {
+        if (concorde.empty()) {
+            error = "requested --oracle concorde, but executable was not found: " + cfg_copy.concorde_path;
             return false;
         }
-        oracle.resolved = ResolvedOracleMode::CONCORDE;
-        oracle.exec_path = con;
+        oracle.resolved = ResolvedOracleMode::Concorde;
+        oracle.exec_path = concorde;
     }
 
-    OracleProblemFormat fmt = resolved_oracle_problem_format(oracle);
-    std::ostringstream oss;
-    oss << resolved_mode_name(oracle.resolved) << " @ " << oracle.exec_path
-        << " (format=" << oracle_problem_format_name(fmt)
-        << ", scale=" << oracle.cfg.scale
-        << ", tsp-top=" << oracle.cfg.tsp_top
-        << ", subset-top=" << oracle.cfg.subset_top
-        << ", k-range=[" << oracle.cfg.min_k << ',' << oracle.cfg.max_k << "]"
-        << (oracle.cfg.inline_feedback ? ", inline-feedback" : ", posthoc-only");
-    if(oracle.cfg.verbose) oss << ", verbose";
-    oss << ")";
-    oracle.status = oss.str();
-    return true;
-}
-
-static bool write_tsplib_full_matrix(const std::string& fn,const Instance& inst,const std::vector<int>& base_nodes,int scale){
-    int k = (int)base_nodes.size();
-    FILE* f = std::fopen(fn.c_str(), "w");
-    if(!f) return false;
-    static thread_local std::array<char, TSPLIB_IO_BUFFER_BYTES> buf;
-    std::setvbuf(f, buf.data(), _IOFBF, buf.size());
-    std::fprintf(f, "NAME : aldous_oracle\nTYPE : TSP\nDIMENSION : %d\nEDGE_WEIGHT_TYPE : EXPLICIT\nEDGE_WEIGHT_FORMAT : FULL_MATRIX\nEDGE_WEIGHT_SECTION\n", k);
-    for(int i=0; i<k; ++i){
-        int ai = base_nodes[i];
-        for(int j=0; j<k; ++j){
-            long long w = 0;
-            if(i != j){
-                double d = inst.dist(ai, base_nodes[j]);
-                w = (long long)std::llround((double)scale * d);
-            }
-            std::fprintf(f, "%lld%c", w, (j + 1 == k) ? '\n' : ' ');
-        }
-    }
-    std::fprintf(f, "EOF\n");
-    std::fclose(f);
-    return true;
-}
-
-static bool write_tsplib_euc2d(const std::string& fn,const Instance& inst,const std::vector<int>& base_nodes,int scale){
-    int k = (int)base_nodes.size();
-    FILE* f = std::fopen(fn.c_str(), "w");
-    if(!f) return false;
-    static thread_local std::array<char, TSPLIB_IO_BUFFER_BYTES> buf;
-    std::setvbuf(f, buf.data(), _IOFBF, buf.size());
-    std::fprintf(f, "NAME : aldous_oracle\nTYPE : TSP\nDIMENSION : %d\nEDGE_WEIGHT_TYPE : EUC_2D\nNODE_COORD_SECTION\n", k);
-    for(int i=0; i<k; ++i){
-        long long xi = (long long)std::llround((double)scale * inst.x[base_nodes[i]]);
-        long long yi = (long long)std::llround((double)scale * inst.y[base_nodes[i]]);
-        std::fprintf(f, "%d %lld %lld\n", i + 1, xi, yi);
-    }
-    std::fprintf(f, "EOF\n");
-    std::fclose(f);
-    return true;
-}
-
-static bool write_tsplib_identity_tour(const std::string& fn,int k){
-    FILE* f = std::fopen(fn.c_str(), "w");
-    if(!f) return false;
-    std::fprintf(f, "NAME : init\nTYPE : TOUR\nDIMENSION : %d\nTOUR_SECTION\n", k);
-    for(int i=1; i<=k; ++i) std::fprintf(f, "%d\n", i);
-    std::fprintf(f, "-1\nEOF\n");
-    std::fclose(f);
-    return true;
-}
-
-static std::vector<long long> extract_all_ints(const std::string& text){
-    std::vector<long long> vals;
-    const char* s = text.c_str();
-    while(*s){
-        char* e = nullptr;
-        long long v = std::strtoll(s, &e, 10);
-        if(e != s){
-            vals.push_back(v);
-            s = e;
-        } else ++s;
-    }
-    return vals;
-}
-
-static bool parse_perm_window(const std::vector<long long>& vals,size_t start,int k,bool one_based,std::vector<int>& perm){
-    if(start + (size_t)k > vals.size()) return false;
-    perm.assign(k, -1);
-    std::vector<uint8_t> seen((size_t)k, 0);
-    for(int i=0; i<k; ++i){
-        long long raw = vals[start + (size_t)i];
-        long long v = one_based ? (raw - 1) : raw;
-        if(v < 0 || v >= k) return false;
-        if(seen[(size_t)v]) return false;
-        seen[(size_t)v] = 1;
-        perm[i] = (int)v;
-    }
-    return true;
-}
-
-static bool parse_external_tour_file(const std::string& fn,int k,std::vector<int>& perm){
-    std::ifstream in(fn);
-    if(!in) return false;
-    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    auto try_vals = [&](const std::vector<long long>& vals)->bool{
-        std::vector<int> tmp;
-        for(size_t start=0; start + (size_t)k <= vals.size(); ++start){
-            if(parse_perm_window(vals, start, k, false, tmp)){ perm = tmp; return true; }
-            if(parse_perm_window(vals, start, k, true, tmp)){ perm = tmp; return true; }
-        }
+    const std::filesystem::path canonical_exec =
+        canonical_executable_path(oracle.exec_path);
+    if (canonical_exec.empty() || canonical_exec.string() != oracle.exec_path) {
+        error = "resolved oracle executable is not a canonical runnable regular file";
+        oracle = OracleContext();
+        oracle.cfg = cfg_copy;
         return false;
-    };
-    size_t ts = text.find("TOUR_SECTION");
-    if(ts != std::string::npos){
-        if(try_vals(extract_all_ints(text.substr(ts)))) return true;
     }
-    return try_vals(extract_all_ints(text));
-}
-
-static int run_external_process(const std::vector<std::string>& argv,const std::string& cwd,
-                                int timeout_sec,bool verbose){
-    if(argv.empty()) return -1;
-    pid_t pid = fork();
-    if(pid == 0){
-        setpgid(0, 0);
-        if(!cwd.empty()) { if(chdir(cwd.c_str()) != 0) _exit(126); }
-        if(verbose){
-            dup2(STDERR_FILENO, STDOUT_FILENO);
-        } else {
-            int fd = open("/dev/null", O_WRONLY);
-            if(fd >= 0){
-                dup2(fd, STDOUT_FILENO);
-                dup2(fd, STDERR_FILENO);
-                if(fd > STDERR_FILENO) close(fd);
-            }
-        }
-        std::vector<char*> args;
-        args.reserve(argv.size() + 1);
-        for(const auto& s : argv) args.push_back(const_cast<char*>(s.c_str()));
-        args.push_back(nullptr);
-        execvp(args[0], args.data());
-        _exit(127);
+    std::string hash_error;
+    // canonical_exec was canonicalized and restricted to a runnable regular file.
+    // codeql[cpp/path-injection]
+    if (!detail::sha256_file(canonical_exec, oracle.exec_sha256, hash_error)) {
+        error = "failed to hash requested oracle executable: " + hash_error;
+        oracle = OracleContext();
+        oracle.cfg = cfg_copy;
+        return false;
     }
-    if(pid < 0) return -1;
-    int status = 0;
-    if(timeout_sec <= 0){
-        if(waitpid(pid, &status, 0) != pid) return -1;
-        if(WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
-        return status ? status : -1;
-    }
-    auto t0 = std::chrono::steady_clock::now();
-    while(true){
-        pid_t w = waitpid(pid, &status, WNOHANG);
-        if(w == pid){
-            if(WIFEXITED(status) && WEXITSTATUS(status) == 0) return 0;
-            return status ? status : -1;
-        }
-        if(w < 0) return -1;
-        double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        if(dt > timeout_sec){
-            kill(-pid, SIGKILL);
-            waitpid(pid, &status, 0);
-            return 124;
-        }
-        // Oracle calls are long enough that coarse polling is fine here.
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-}
-
-static bool external_oracle_polish_nodes(const Instance& inst,const OracleContext& oracle,
-                                         const std::vector<int>& input_nodes,
-                                         std::vector<int>& out_nodes,double& out_len,
-                                         uint64_t seed,int post_strength){
-    int k = (int)input_nodes.size();
-    if(k < 3) return false;
-    TempWorkDir tmp("aldous_oracle");
-    if(!tmp.ok) return false;
-    std::string tsp = tmp.path + "/problem.tsp";
-    std::string init = tmp.path + "/init.tour";
-    std::string par = tmp.path + "/run.par";
-    std::string out = tmp.path + "/out.tour";
-    OracleProblemFormat fmt = resolved_oracle_problem_format(oracle);
-    bool wrote = false;
-    if(fmt == OracleProblemFormat::MATRIX) wrote = write_tsplib_full_matrix(tsp, inst, input_nodes, oracle.cfg.scale);
-    else wrote = write_tsplib_euc2d(tsp, inst, input_nodes, oracle.cfg.scale);
-    if(!wrote) return false;
-    std::vector<std::string> argv;
-    if(oracle.resolved == ResolvedOracleMode::LKH){
-        if(!write_tsplib_identity_tour(init, k)) return false;
-        std::ofstream pf(par);
-        if(!pf) return false;
-        pf << "PROBLEM_FILE = problem.tsp\n";
-        pf << "INITIAL_TOUR_FILE = init.tour\n";
-        pf << "TOUR_FILE = out.tour\n";
-        pf << "RUNS = " << std::max(1, oracle.cfg.lkh_runs) << "\n";
-        if(oracle.cfg.lkh_max_trials > 0) pf << "MAX_TRIALS = " << oracle.cfg.lkh_max_trials << "\n";
-        if(oracle.cfg.time_limit_sec > 0) pf << "TIME_LIMIT = " << oracle.cfg.time_limit_sec << "\n";
-        pf << "SEED = " << (unsigned)(seed & 0x7fffffffULL) << "\n";
-        pf << "TRACE_LEVEL = " << (oracle.cfg.verbose ? 1 : 0) << "\n";
-        pf.close();
-        argv = {oracle.exec_path, par};
-    } else if(oracle.resolved == ResolvedOracleMode::CONCORDE){
-        argv = {oracle.exec_path, "-o", out, tsp};
-    } else return false;
-    int rc = run_external_process(argv, tmp.path, oracle.cfg.time_limit_sec, oracle.cfg.verbose);
-    if(rc != 0) return false;
-    std::vector<int> perm;
-    if(!parse_external_tour_file(out, k, perm)) {
-        if(oracle.resolved != ResolvedOracleMode::CONCORDE) return false;
-        std::string fallback = tmp.path + "/problem.sol";
-        if(!parse_external_tour_file(fallback, k, perm)) return false;
-    }
-    out_nodes.resize(k);
-    for(int i=0; i<k; ++i) out_nodes[i] = input_nodes[perm[i]];
-    Tour t;
-    t.init(inst.N);
-    t.set_tour_only(out_nodes.data(), k);
-    t.recompute_length(inst);
-    polish_fixed_subset_tour(t, inst, post_strength);
-    out_nodes = t.nodes;
-    out_len = t.length;
+    oracle.version = capture_process_first_line({canonical_exec.string(), "--version"}, 2);
+    std::ostringstream status;
+    status << resolved_oracle_mode_name(oracle.resolved)
+           << " @ " << oracle.exec_path
+           << " (sha256=" << oracle.exec_sha256
+           << ", version=" << oracle.version
+           << ", format=" << oracle_problem_format_name(cfg_copy.problem_format)
+           << ", scale=" << cfg_copy.scale
+           << ", tsp-top=" << cfg_copy.tsp_top
+           << ", subset-top=" << cfg_copy.subset_top
+           << ", k-range=[" << cfg_copy.min_k << ',' << cfg_copy.max_k << ']'
+           << (cfg_copy.inline_feedback ? ", inline-feedback" : ", posthoc-only")
+           << (cfg_copy.verbose ? ", verbose" : "")
+           << ')';
+    oracle.status = status.str();
     return true;
 }
 
-bool external_oracle_polish_tour(Tour& cand,const Instance& inst,const OracleContext& oracle,
-                                        bool full_tsp,int post_strength,OracleStats* stats){
-    cand.ensure_edges(inst);
-    if(!external_oracle_applicable(oracle, cand.k, full_tsp)) return false;
-    if(stats){
-        ++stats->calls;
-        if(full_tsp) ++stats->tsp_calls; else ++stats->subset_calls;
+bool external_oracle_polish_tour(Tour& candidate, const Instance& inst, const OracleContext& oracle, bool full_tsp, SearchStats* stats, bool enable_internal_two_opt) {
+    candidate.ensure_edges(inst);
+    if (!external_oracle_applicable(oracle, candidate.k, full_tsp)) {
+        return false;
     }
-    double before = cand.length;
+    std::optional<ConcurrencyLimiter::Permit> resource_permit;
+    if (oracle.concurrency_limiter != nullptr) {
+        resource_permit.emplace(oracle.concurrency_limiter->acquire());
+    }
+
+    OracleCallRecord record;
+    record.type = full_tsp ? "tsp" : "subset";
+    record.k = candidate.k;
+    record.solver = resolved_oracle_mode_name(oracle.resolved);
+    record.format = oracle_problem_format_name(oracle.cfg.problem_format);
+    record.exec_path = oracle.exec_path;
+    record.exec_sha256 = oracle.exec_sha256;
+    record.solver_version = oracle.version;
+    record.status = "failed";
+    record.error = "not run";
+    record.before_length = candidate.length;
+    record.after_length = std::numeric_limits<double>::quiet_NaN();
+    record.gain = 0.0;
+
+    if (stats != nullptr) {
+        ++stats->oracle_calls;
+        if (full_tsp) {
+            ++stats->oracle_tsp_calls;
+        } else {
+            ++stats->oracle_subset_calls;
+        }
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const double before = candidate.length;
     std::vector<int> out_nodes;
     double out_len = std::numeric_limits<double>::infinity();
-    uint64_t seed = mix_hash64(subset_hash_nodes(cand.nodes) ^ ((uint64_t)cand.k << 32)
-                               ^ (full_tsp ? 0x6a09e667f3bcc909ULL : 0xbb67ae8584caa73bULL));
-    if(!external_oracle_polish_nodes(inst, oracle, cand.nodes, out_nodes, out_len, seed, post_strength)){
-        if(stats) ++stats->failed;
+    std::string failure_reason;
+    const bool solved = external_oracle_polish_nodes(inst, oracle, candidate.nodes, out_nodes, out_len, &failure_reason);
+    record.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+    if (!solved) {
+        if (stats != nullptr) {
+            ++stats->oracle_failed;
+            record.error = failure_reason.empty() ? "external oracle failed" : failure_reason;
+            stats->oracle_call_records.push_back(std::move(record));
+        }
         return false;
     }
-    if(stats){
-        ++stats->solved;
-        if(full_tsp) ++stats->tsp_solved; else ++stats->subset_solved;
+
+    if (stats != nullptr) {
+        ++stats->oracle_solved;
     }
-    if(out_len + IMPROVEMENT_EPS < before){
-        cand.set_tour_only(out_nodes.data(), cand.k);
-        cand.recompute_length(inst);
-        if(stats){
-            ++stats->improved;
-            double gain = before - cand.length;
-            stats->exact_gain += gain;
-            if(full_tsp){ ++stats->tsp_improved; stats->tsp_gain += gain; }
-            else { ++stats->subset_improved; stats->subset_gain += gain; }
+    record.after_length = out_len;
+    record.error = "";
+
+    if (out_len + kImprovementEps < before) {
+        candidate.set_tour(out_nodes, inst);
+        if (enable_internal_two_opt && candidate.k <= 300) {
+            (void)two_opt_descent(candidate, inst, 200, nullptr);
+        }
+        const double gain = before - candidate.length;
+        record.status = "improved";
+        record.after_length = candidate.length;
+        record.gain = gain;
+        if (stats != nullptr) {
+            ++stats->oracle_improved;
+            stats->oracle_gain += gain;
+            stats->oracle_call_records.push_back(std::move(record));
         }
         return true;
     }
+
+    record.status = "solved_no_improvement";
+    record.gain = 0.0;
+    if (stats != nullptr) {
+        stats->oracle_call_records.push_back(std::move(record));
+    }
     return false;
 }
+
+} // namespace aldous_tsp

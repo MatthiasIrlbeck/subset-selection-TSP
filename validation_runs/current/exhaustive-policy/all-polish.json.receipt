@@ -1,0 +1,20 @@
+{
+  "receipt_schema_version": 1,
+  "result_path": "validation_runs/current/exhaustive-policy/all-polish.json",
+  "result_sha256": "0d848a3161f75ddaf0b28803bcb2ec402f1b2f1d04d00ccacd01581b322956e7",
+  "result_bytes": 13714,
+  "requested_durability": "full",
+  "commit_state": "fully-durable",
+  "timing": {
+    "solver_wall_seconds": 0.006085273,
+    "control_reference_seconds": 0,
+    "aggregation_seconds": 1.5032e-05,
+    "experiment_wall_seconds": 0.006100375,
+    "serialization_seconds": 0.00018178,
+    "output_write_seconds": 1.5553e-05,
+    "output_synchronization_seconds": 0.002680674,
+    "output_commit_seconds": 1.8157e-05,
+    "output_total_seconds": 0.002750668,
+    "process_end_to_end_seconds": 0.009208134
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "receipt_schema_version": 1,
+  "result_path": "validation_runs/current/benchmark-smoke/tiny-balanced.json",
+  "result_sha256": "3489169cc61a65dcf4dbe34c688566e7e155a8b3000ad4030ed51a1c6f6fe161",
+  "result_bytes": 16641,
+  "requested_durability": "full",
+  "commit_state": "fully-durable",
+  "timing": {
+    "solver_wall_seconds": 0.452570381,
+    "control_reference_seconds": 0,
+    "aggregation_seconds": 2.5258e-05,
+    "experiment_wall_seconds": 0.452595829,
+    "serialization_seconds": 0.000251874,
+    "output_write_seconds": 2.1692e-05,
+    "output_synchronization_seconds": 0.00156797,
+    "output_commit_seconds": 1.7296e-05,
+    "output_total_seconds": 0.001666376,
+    "process_end_to_end_seconds": 0.454732745
+  }
+}

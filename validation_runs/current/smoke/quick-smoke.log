@@ -1,0 +1,14 @@
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=64, instances=2, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=balanced, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=2, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=80, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=1, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=2, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.10000000000000001,0.40000000000000002,1
+========================================================================
+  [done 1/2] instance 1 in 0.01s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.02s  elapsed 0s  ETA 0s
+
+FINAL (N=64, instances=2, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.1     6    0.44085    0.02267    0.41818    0.46352
+                 0.4    26    0.70328    0.06990    0.63338    0.77318
+                   1    64    0.81650    0.01162    0.80488    0.82812
+Results written to validation_runs/current/smoke/quick-smoke.json
+Timing receipt written to validation_runs/current/smoke/quick-smoke.json.receipt (end-to-end 0.032s)

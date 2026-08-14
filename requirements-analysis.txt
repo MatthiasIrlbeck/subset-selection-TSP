@@ -1,0 +1,5 @@
+# Optional dependencies for plotting, schema validation, campaign analysis, and EVT fits.
+jsonschema>=4.23,<5
+matplotlib>=3.9,<4
+numpy>=1.26,<3
+scipy>=1.12,<2

@@ -1,0 +1,34 @@
++ build-github-release/aldous_tsp --mode hybrid --N 72 --instances 1 --threads 1 --p-values 0.25,1.0 --seed 2024 --restarts 1 --sa-iters 20 --tsp-restarts 1 --tsp-ils 4 --tsp-patience 8 --final-exhaustive-k 96 --exhaustive-two-opt-policy final-only --output validation_runs/current/exhaustive-policy/final-only.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=72, instances=1, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=20, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=3, oracle=disabled, p_values=0.25,1
+========================================================================
+  [done 1/1] instance 1 in 0.01s  elapsed 0s  ETA 0s
+
+FINAL (N=72, instances=1, wall=0.1s)
+                   p     k       mean     stderr        min        max
+                0.25    18    0.66879    0.00000    0.66879    0.66879
+                   1    72    0.80966    0.00000    0.80966    0.80966
+Results written to validation_runs/current/exhaustive-policy/final-only.json
+Timing receipt written to validation_runs/current/exhaustive-policy/final-only.json.receipt (end-to-end 0.066s)
++ build-github-release/aldous_tsp --mode hybrid --N 72 --instances 1 --threads 1 --p-values 0.25,1.0 --seed 2024 --restarts 1 --sa-iters 20 --tsp-restarts 1 --tsp-ils 4 --tsp-patience 8 --final-exhaustive-k 96 --exhaustive-two-opt-policy all-polish --output validation_runs/current/exhaustive-policy/all-polish.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=72, instances=1, threads=1, output_durability=full, seed=2024, point_seed=2024, search_seed=2024, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=20, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=3, oracle=disabled, p_values=0.25,1
+========================================================================
+  [done 1/1] instance 1 in 0.01s  elapsed 0s  ETA 0s
+
+FINAL (N=72, instances=1, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                0.25    18    0.66879    0.00000    0.66879    0.66879
+                   1    72    0.80966    0.00000    0.80966    0.80966
+Results written to validation_runs/current/exhaustive-policy/all-polish.json
+Timing receipt written to validation_runs/current/exhaustive-policy/all-polish.json.receipt (end-to-end 0.009s)
+
+Policy comparison
+-----------------
+final-only scans : 23840
+all-polish scans : 472514
+scan reduction   : 448674
+quality delta    : 0 (final-only minus all-polish best mean)
+manifest         : validation_runs/current/exhaustive-policy/manifest.csv

@@ -1,0 +1,20 @@
+{
+  "receipt_schema_version": 1,
+  "result_path": "validation_runs/current/benchmark-smoke/small-hybrid.json",
+  "result_sha256": "2e26e577b56de79a4b2a740bc92336e7a75978d0b66e036260fbace3677346b7",
+  "result_bytes": 18290,
+  "requested_durability": "full",
+  "commit_state": "fully-durable",
+  "timing": {
+    "solver_wall_seconds": 0.205216293,
+    "control_reference_seconds": 0,
+    "aggregation_seconds": 2.3966e-05,
+    "experiment_wall_seconds": 0.205240329,
+    "serialization_seconds": 0.000456658,
+    "output_write_seconds": 2.028e-05,
+    "output_synchronization_seconds": 0.001526098,
+    "output_commit_seconds": 1.9309e-05,
+    "output_total_seconds": 0.00162841,
+    "process_end_to_end_seconds": 0.207493867
+  }
+}

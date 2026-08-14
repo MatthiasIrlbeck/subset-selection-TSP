@@ -1,0 +1,25 @@
+#pragma once
+
+namespace aldous_tsp {
+inline constexpr const char* kProjectVersion = "@PROJECT_VERSION@";
+inline constexpr const char* kGitCommit = "@ALDOUS_TSP_GIT_COMMIT@";
+inline constexpr const char* kGitTree = "@ALDOUS_TSP_GIT_TREE@";
+inline constexpr bool kSourceDirty = @ALDOUS_TSP_SOURCE_DIRTY@;
+inline constexpr const char* kRevisionSource = "@ALDOUS_TSP_REVISION_SOURCE@";
+inline constexpr const char* kSourceRefNames = "@ALDOUS_TSP_SOURCE_REFNAMES_CXX@";
+inline constexpr const char* kConfiguredBuildType = "@ALDOUS_TSP_CONFIGURED_BUILD_TYPE@";
+inline constexpr const char* kCMakeGenerator = "@ALDOUS_TSP_CMAKE_GENERATOR@";
+inline constexpr const char* kCMakeVersion = "@ALDOUS_TSP_CMAKE_VERSION@";
+inline constexpr const char* kCxxFlagsConfigured = "@ALDOUS_TSP_CXX_FLAGS_CONFIGURED@";
+inline constexpr const char* kCxxFlagsEffectiveConfigured = "@ALDOUS_TSP_CXX_FLAGS_EFFECTIVE_CONFIGURED@";
+inline constexpr const char* kCoreTargetCompileOptions = "@ALDOUS_TSP_CORE_TARGET_COMPILE_OPTIONS_CONFIGURED@";
+inline constexpr const char* kCliTargetCompileOptions = "@ALDOUS_TSP_CLI_TARGET_COMPILE_OPTIONS_CONFIGURED@";
+inline constexpr const char* kBuildEnableNative = "@ALDOUS_TSP_ENABLE_NATIVE@";
+inline constexpr const char* kBuildEnableSanitizers = "@ALDOUS_TSP_ENABLE_SANITIZERS@";
+inline constexpr const char* kBuildEnableWarnings = "@ALDOUS_TSP_ENABLE_WARNINGS@";
+inline constexpr const char* kBuildEnableWerror = "@ALDOUS_TSP_ENABLE_WERROR@";
+inline constexpr const char* kBuildEnablePythonTests = "@ALDOUS_TSP_ENABLE_PYTHON_TESTS@";
+inline constexpr const char* kBuildLowMemory = "@ALDOUS_TSP_LOW_MEMORY_BUILD@";
+inline constexpr const char* kOptimizationProfile = "@ALDOUS_TSP_OPTIMIZATION_PROFILE@";
+inline constexpr const char* kEffectiveOptimizationLevel = "@ALDOUS_TSP_EFFECTIVE_OPTIMIZATION_LEVEL@";
+} // namespace aldous_tsp

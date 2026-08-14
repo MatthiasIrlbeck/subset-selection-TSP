@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "reference_policy": "legacy-balanced",
+  "policies": [
+    {
+      "id": "legacy-balanced",
+      "description": "0.10-compatible automatic controller.",
+      "args": [
+        "--search-policy",
+        "legacy-balanced"
+      ]
+    },
+    {
+      "id": "heldout-balanced",
+      "description": "Held-out four-candidate SA preset through p=0.35.",
+      "args": [
+        "--search-policy",
+        "heldout-balanced"
+      ]
+    },
+    {
+      "id": "heldout-quality",
+      "description": "Deeper held-out subset policy plus stronger full-TSP controller.",
+      "args": [
+        "--search-policy",
+        "heldout-quality"
+      ]
+    },
+    {
+      "id": "broader-8x3",
+      "description": "Eight explored restarts and three strong finalists.",
+      "args": [
+        "--restarts",
+        "8",
+        "--strong-polish-finalists",
+        "3"
+      ]
+    },
+    {
+      "id": "raced-8x2",
+      "description": "Current base population plus eight race pilots and two promotions.",
+      "args": [
+        "--racing-candidates",
+        "8",
+        "--racing-survivors",
+        "2",
+        "--racing-pilot-iters",
+        "500"
+      ]
+    },
+    {
+      "id": "strong-5x4",
+      "description": "Five explored restarts and four strong finalists.",
+      "args": [
+        "--restarts",
+        "5",
+        "--strong-polish-finalists",
+        "4"
+      ]
+    },
+    {
+      "id": "calibrated-fixed-proposal",
+      "description": "Restart-local temperature calibration with the historical one-candidate proposal.",
+      "args": [
+        "--sa-auto-temperature",
+        "--sa-temperature-samples",
+        "256"
+      ]
+    },
+    {
+      "id": "calibrated-mt4",
+      "description": "Calibrated schedule with four candidate trials and a 10% random-trial branch.",
+      "args": [
+        "--sa-auto-temperature",
+        "--sa-temperature-samples",
+        "256",
+        "--sa-candidate-trials",
+        "4",
+        "--sa-multiple-try-random-probability",
+        "0.1"
+      ]
+    }
+  ]
+}

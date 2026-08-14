@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "lkh-3.0.14": {
+      "version": "3.0.14",
+      "url": "https://webhotel4.ruc.dk/~keld/research/LKH-3/LKH-3.0.14.tgz",
+      "max_bytes": 16777216,
+      "digest_variable": "LKH_3_0_14_SHA256",
+      "license_note": "Research-use source distributed by the LKH author."
+    },
+    "concorde-linux24": {
+      "version": "03.12.19-linux24",
+      "url": "https://www.math.uwaterloo.ca/tsp/concorde/downloads/codes/linux24/concorde.gz",
+      "max_bytes": 16777216,
+      "digest_variable": "CONCORDE_LINUX24_SHA256",
+      "license_note": "Academic-research executable distributed by the Concorde project."
+    }
+  }
+}

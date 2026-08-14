@@ -1,0 +1,156 @@
++ build-validation/aldous_tsp --mode balanced --N 60 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 250 --tsp-restarts 2 --tsp-ils 8 --output validation_runs/benchmark-all/tiny-balanced.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=60, instances=2, threads=1, seed=2024, mode=balanced, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=250, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.42s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.37s  elapsed 1s  ETA 0s
+
+FINAL (N=60, instances=2, wall=0.8s)
+                   p     k       mean     stderr        min        max
+                0.05     3    0.24081    0.11831    0.12250    0.35913
+                 0.1     6    0.42723    0.02232    0.40491    0.44955
+                0.25    15    0.61243    0.05857    0.55386    0.67100
+                 0.5    30    0.69061    0.07789    0.61272    0.76851
+                   1    60    0.83124    0.01500    0.81624    0.84624
+Results written to validation_runs/benchmark-all/tiny-balanced.json
++ build-validation/aldous_tsp --mode hybrid --N 120 --instances 2 --threads 1 --p-values 0.02,0.05,0.10,0.25,0.50,0.80,1.0 --restarts 2 --sa-iters 900 --tsp-restarts 2 --tsp-ils 24 --output validation_runs/benchmark-all/small-hybrid.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=120, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=900, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.02,0.050000000000000003,0.10000000000000001,0.25,0.5,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 0.37s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.38s  elapsed 1s  ETA 0s
+
+FINAL (N=120, instances=2, wall=0.8s)
+                   p     k       mean     stderr        min        max
+                0.02     3    0.25602    0.08278    0.17324    0.33880
+                0.05     6    0.44457    0.00272    0.44185    0.44730
+                 0.1    12    0.61010    0.03480    0.57530    0.64490
+                0.25    30    0.77913    0.05143    0.72770    0.83056
+                 0.5    60    0.66928    0.00289    0.66639    0.67217
+                 0.8    96    0.71400    0.00257    0.71143    0.71656
+                   1   120    0.79262    0.01537    0.77725    0.80799
+Results written to validation_runs/benchmark-all/small-hybrid.json
++ build-validation/aldous_tsp --mode balanced --N 180 --instances 2 --threads 1 --p-values 0.02,0.05,0.10,0.20,0.40,0.60,0.80,1.0 --restarts 2 --sa-iters 1400 --tsp-restarts 2 --tsp-ils 32 --output validation_runs/benchmark-all/medium-balanced.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=180, instances=2, threads=1, seed=2024, mode=balanced, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1400, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.02,0.050000000000000003,0.10000000000000001,0.20000000000000001,0.40000000000000002,0.59999999999999998,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 0.90s  elapsed 1s  ETA 1s
+  [done 2/2] instance 2 in 1.04s  elapsed 2s  ETA 0s
+
+FINAL (N=180, instances=2, wall=1.9s)
+                   p     k       mean     stderr        min        max
+                0.02     4    0.27037    0.10227    0.16810    0.37265
+                0.05     9    0.54330    0.02053    0.52277    0.56383
+                 0.1    18    0.64537    0.02717    0.61819    0.67254
+                 0.2    36    0.77917    0.07252    0.70665    0.85169
+                 0.4    72    0.73159    0.05612    0.67547    0.78771
+                 0.6   108    0.72114    0.00589    0.71525    0.72703
+                 0.8   144    0.71912    0.01533    0.70379    0.73445
+                   1   180    0.77934    0.00531    0.77404    0.78465
+Results written to validation_runs/benchmark-all/medium-balanced.json
++ build-validation/aldous_tsp --mode hybrid --N 180 --instances 2 --threads 1 --p-values 0.02,0.03,0.05,0.10,0.20,0.50,0.80,1.0 --restarts 2 --sa-iters 1600 --tsp-restarts 2 --tsp-ils 36 --output validation_runs/benchmark-all/medium-hybrid.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=180, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1600, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.02,0.029999999999999999,0.050000000000000003,0.10000000000000001,0.20000000000000001,0.5,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 1.90s  elapsed 2s  ETA 2s
+  [done 2/2] instance 2 in 1.29s  elapsed 3s  ETA 0s
+
+FINAL (N=180, instances=2, wall=3.2s)
+                   p     k       mean     stderr        min        max
+                0.02     4    0.27037    0.10227    0.16810    0.37265
+                0.03     5    0.37680    0.03536    0.34144    0.41216
+                0.05     9    0.56317    0.04039    0.52277    0.60356
+                 0.1    18    0.75067    0.12561    0.62506    0.87629
+                 0.2    36    0.83436    0.00170    0.83266    0.83606
+                 0.5    90    0.72330    0.00210    0.72120    0.72539
+                 0.8   144    0.73237    0.00178    0.73059    0.73415
+                   1   180    0.78269    0.00196    0.78073    0.78465
+Results written to validation_runs/benchmark-all/medium-hybrid.json
++ build-validation/aldous_tsp --mode hybrid --N 140 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 1000 --tsp-restarts 2 --tsp-ils 28 --output validation_runs/benchmark-all/ablation-baseline.json --force
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=140, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1000, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.88s  elapsed 1s  ETA 1s
+  [done 2/2] instance 2 in 0.54s  elapsed 1s  ETA 0s
+
+FINAL (N=140, instances=2, wall=1.4s)
+                   p     k       mean     stderr        min        max
+                0.05     7    0.48425    0.01950    0.46475    0.50374
+                 0.1    14    0.64521    0.05153    0.59367    0.69674
+                0.25    35    0.76208    0.07426    0.68782    0.83634
+                 0.5    70    0.65170    0.01907    0.63263    0.67078
+                   1   140    0.79247    0.01432    0.77815    0.80680
+Results written to validation_runs/benchmark-all/ablation-baseline.json
++ build-validation/aldous_tsp --mode hybrid --N 140 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 1000 --tsp-restarts 2 --tsp-ils 28 --output validation_runs/benchmark-all/ablation-no-two-opt.json --force --disable-two-opt
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=140, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1000, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.50s  elapsed 1s  ETA 1s
+  [done 2/2] instance 2 in 0.57s  elapsed 1s  ETA 0s
+
+FINAL (N=140, instances=2, wall=1.1s)
+                   p     k       mean     stderr        min        max
+                0.05     7    0.46959    0.03415    0.43545    0.50374
+                 0.1    14    0.68066    0.01834    0.66232    0.69900
+                0.25    35    0.73247    0.05364    0.67883    0.78611
+                 0.5    70    0.66830    0.03510    0.63320    0.70340
+                   1   140    0.82828    0.00004    0.82824    0.82833
+Results written to validation_runs/benchmark-all/ablation-no-two-opt.json
++ build-validation/aldous_tsp --mode hybrid --N 140 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 1000 --tsp-restarts 2 --tsp-ils 28 --output validation_runs/benchmark-all/ablation-no-or-opt.json --force --disable-or-opt
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=140, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1000, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.56s  elapsed 1s  ETA 1s
+  [done 2/2] instance 2 in 0.43s  elapsed 1s  ETA 0s
+
+FINAL (N=140, instances=2, wall=1.0s)
+                   p     k       mean     stderr        min        max
+                0.05     7    0.48425    0.01950    0.46475    0.50374
+                 0.1    14    0.68717    0.04050    0.64667    0.72767
+                0.25    35    0.68096    0.09015    0.59080    0.77111
+                 0.5    70    0.72309    0.02907    0.69402    0.75216
+                   1   140    0.79933    0.01387    0.78546    0.81319
+Results written to validation_runs/benchmark-all/ablation-no-or-opt.json
++ build-validation/aldous_tsp --mode hybrid --N 140 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 1000 --tsp-restarts 2 --tsp-ils 28 --output validation_runs/benchmark-all/ablation-no-lns.json --force --disable-pair-exchange --disable-ruin-recreate
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=140, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1000, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.38s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.68s  elapsed 1s  ETA 0s
+
+FINAL (N=140, instances=2, wall=1.1s)
+                   p     k       mean     stderr        min        max
+                0.05     7    0.48425    0.01950    0.46475    0.50374
+                 0.1    14    0.76134    0.06096    0.70038    0.82229
+                0.25    35    0.73648    0.07129    0.66519    0.80777
+                 0.5    70    0.69474    0.03230    0.66244    0.72703
+                   1   140    0.79247    0.01432    0.77815    0.80680
+Results written to validation_runs/benchmark-all/ablation-no-lns.json
++ build-validation/aldous_tsp --mode hybrid --N 140 --instances 2 --threads 1 --p-values 0.05,0.10,0.25,0.50,1.0 --restarts 2 --sa-iters 1000 --tsp-restarts 2 --tsp-ils 28 --output validation_runs/benchmark-all/ablation-no-relink.json --force --disable-path-relink
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · refactor package 0.8.7
+  N=140, instances=2, threads=1, seed=2024, mode=hybrid, knn=40, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, subset_restarts=2, sa_iters=1000, tsp_restarts=2, final_exhaustive_k=300, exhaustive_two_opt_policy=final-only, oracle=disabled, p_values=0.050000000000000003,0.10000000000000001,0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.96s  elapsed 1s  ETA 1s
+  [done 2/2] instance 2 in 0.53s  elapsed 1s  ETA 0s
+
+FINAL (N=140, instances=2, wall=1.5s)
+                   p     k       mean     stderr        min        max
+                0.05     7    0.48425    0.01950    0.46475    0.50374
+                 0.1    14    0.67171    0.02503    0.64667    0.69674
+                0.25    35    0.74539    0.04990    0.69549    0.79529
+                 0.5    70    0.67325    0.01313    0.66012    0.68638
+                   1   140    0.79247    0.01432    0.77815    0.80680
+Results written to validation_runs/benchmark-all/ablation-no-relink.json
+Wrote validation_runs/benchmark-all/manifest.csv
+Wrote validation_runs/benchmark-all/manifest.json
+Wrote validation_runs/benchmark-all/ablation_manifest.csv
+Wrote validation_runs/benchmark-all/ablation_manifest.json

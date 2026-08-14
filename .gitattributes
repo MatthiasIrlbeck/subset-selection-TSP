@@ -1,0 +1,7 @@
+SOURCE_REVISION export-subst
+
+# Current generated validation manifests are canonical LF text.
+validation_runs/current/**/*.csv text eol=lf
+
+validation_runs/current/**/*.json text eol=lf
+validation_runs/current/**/*.receipt text eol=lf

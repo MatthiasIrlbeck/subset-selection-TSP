@@ -1,0 +1,151 @@
+{
+  "schema_version": 4,
+  "run_metadata": {
+    "cli_command": "/home/matthias/tsp-validation/builds/original-release/aldous_tsp --mode hybrid --N 36 --instances 2 --threads 1 --seed 202 --restarts 1 --sa-iters 18 --tsp-restarts 1 --tsp-ils 2 --knn 12 --output /home/matthias/tsp-validation/outputs/parity-original/hybrid-controlled-original.json --force",
+    "git_commit": null,
+    "compiler": "GCC 11.4.0 (C++201703)"
+  },
+  "N": 36,
+  "p_values": [0.0200, 0.0300, 0.0500, 0.0700, 0.1000, 0.1500, 0.2000, 0.2500, 0.3000, 0.4000, 0.5000, 0.6000, 0.8000, 1.0000],
+  "done": 2,
+  "target": 2,
+  "restarts": 1,
+  "sa_iters": 18,
+  "seed": 202,
+  "threads": 1,
+  "wall_seconds": 2.65,
+  "distance_backend": "coords_exact_grid_knn_edgecache",
+  "mode": "hybrid",
+  "regime_counts": {"full": 2, "low": 6, "mid": 14, "high": 6},
+  "regime_seconds": {"full": 0.00, "low": 0.00, "mid": 2.19, "high": 0.46},
+  "oracle_status": "disabled",
+  "oracle_summary": {
+    "calls": 0,
+    "solved": 0,
+    "improved": 0,
+    "failed": 0,
+    "exact_gain": 0.0000000000,
+    "tsp_calls": 0,
+    "tsp_solved": 0,
+    "tsp_improved": 0,
+    "tsp_gain": 0.0000000000,
+    "subset_calls": 0,
+    "subset_solved": 0,
+    "subset_improved": 0,
+    "subset_gain": 0.0000000000
+  },
+  "summary": {
+    "0.02": {
+      "k": 3,
+      "mean": 0.4211993694,
+      "std": 0.0378935764,
+      "stderr": 0.0267948048,
+      "n": 2,
+      "values": [0.3944045646, 0.4479941743]
+    },
+    "0.03": {
+      "k": 3,
+      "mean": 0.4828700005,
+      "std": 0.0493218664,
+      "stderr": 0.0348758262,
+      "n": 2,
+      "values": [0.5177458267, 0.4479941743]
+    },
+    "0.05": {
+      "k": 3,
+      "mean": 0.4941140550,
+      "std": 0.0652233609,
+      "stderr": 0.0461198808,
+      "n": 2,
+      "values": [0.5402339358, 0.4479941743]
+    },
+    "0.07": {
+      "k": 3,
+      "mean": 0.4695247389,
+      "std": 0.1062359693,
+      "stderr": 0.0751201743,
+      "n": 2,
+      "values": [0.3944045646, 0.5446449132]
+    },
+    "0.1": {
+      "k": 4,
+      "mean": 0.5514139787,
+      "std": 0.1544979342,
+      "stderr": 0.1092465370,
+      "n": 2,
+      "values": [0.4421674417, 0.6606605157]
+    },
+    "0.15": {
+      "k": 5,
+      "mean": 0.6348577710,
+      "std": 0.1639982371,
+      "stderr": 0.1159642655,
+      "n": 2,
+      "values": [0.5188935055, 0.7508220365]
+    },
+    "0.2": {
+      "k": 7,
+      "mean": 0.6532896021,
+      "std": 0.1301277796,
+      "stderr": 0.0920142354,
+      "n": 2,
+      "values": [0.5612753667, 0.7453038375]
+    },
+    "0.25": {
+      "k": 9,
+      "mean": 0.6810161187,
+      "std": 0.1059244346,
+      "stderr": 0.0748998860,
+      "n": 2,
+      "values": [0.6061162328, 0.7559160047]
+    },
+    "0.3": {
+      "k": 11,
+      "mean": 0.6623178323,
+      "std": 0.0842851053,
+      "stderr": 0.0595985695,
+      "n": 2,
+      "values": [0.6027192628, 0.7219164019]
+    },
+    "0.4": {
+      "k": 14,
+      "mean": 0.6977843973,
+      "std": 0.0959970331,
+      "stderr": 0.0678801531,
+      "n": 2,
+      "values": [0.6299042442, 0.7656645504]
+    },
+    "0.5": {
+      "k": 18,
+      "mean": 0.6745251685,
+      "std": 0.0692062964,
+      "stderr": 0.0489362415,
+      "n": 2,
+      "values": [0.6255889271, 0.7234614100]
+    },
+    "0.6": {
+      "k": 22,
+      "mean": 0.7142211397,
+      "std": 0.0949013648,
+      "stderr": 0.0671053986,
+      "n": 2,
+      "values": [0.6471157411, 0.7813265383]
+    },
+    "0.8": {
+      "k": 29,
+      "mean": 0.7715780298,
+      "std": 0.0199034584,
+      "stderr": 0.0140738704,
+      "n": 2,
+      "values": [0.7856519002, 0.7575041594]
+    },
+    "1.0": {
+      "k": 36,
+      "mean": 0.8161238956,
+      "std": 0.0366197495,
+      "stderr": 0.0258940732,
+      "n": 2,
+      "values": [0.7902298224, 0.8420179688]
+    }
+  }
+}

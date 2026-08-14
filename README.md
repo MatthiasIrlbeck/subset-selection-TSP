@@ -1,10 +1,31 @@
 # Aldous subset selection TSP
 
-![CI](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/ci.yml)
+[![Fuzzing](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/fuzz.yml)
+[![CodeQL](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/codeql.yml/badge.svg)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/actions/workflows/codeql.yml)
+[![Latest release](https://img.shields.io/github/v/release/MatthiasIrlbeck/subset-selection-TSP)](https://github.com/MatthiasIrlbeck/subset-selection-TSP/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-This project attacks an open traveling salesman problem (TSP) posed by David Aldous. Scatter $N$ points uniformly in a square of area $N$ and let $L(k)$ denote the length of the shortest cycle through exactly $k$ of them. The ratio $f(p) = E[L(pN)] / (pN)$ is believed to converge to a constant as $N$ grows, and at $p = 1$ the Beardwood-Halton-Hammersley (1959) theorem gives $f(1) \approx 0.7124$. Aldous asks for the shape of $f$ over the full interval $(0, 1]$: does it decrease monotonically? What is its limiting form?
+This project studies an open traveling salesman problem (TSP) posed by David Aldous. Scatter
+$N$ points uniformly in a square of area $N$, and let $L_N(k)$ denote the length of the shortest
+cycle through exactly $k$ of them. For $k \approx pN$, the quantity
 
-The program estimates $f(p)$ by Monte Carlo simulation over a grid of $p$ values, solving the resulting combinatorial problems with heuristic local search. For background see [Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html).
+$$
+f_N(p) = \frac{\mathbb{E}[L_N(k)]}{k}
+$$
+
+is expected to approach a limiting function as $N$ grows. At $p=1$, this is the usual Euclidean
+TSP constant from the Beardwood--Halton--Hammersley theorem, numerically about $0.7124$.
+Aldous asks for the shape of the full curve on $(0,1]$: does it decrease monotonically, and what
+is its limiting form?
+
+For the original problem statement and background, see
+**[Aldous's problem page](https://www.stat.berkeley.edu/~aldous/Research/OP/simTSP.html)**.
+
+The program estimates the curve by Monte Carlo simulation over a grid of $p$-values, solving the
+resulting combinatorial problems with heuristic local search. Production-scale results are therefore
+upper bounds on the unknown optimum. For small instances, an exact dynamic program can globally
+optimize both the selected subset and its cycle.
 
 ## Algorithmic approach
 
@@ -12,173 +33,276 @@ The program estimates $f(p)$ by Monte Carlo simulation over a grid of $p$ values
 
 For each value of $p$, the program has to solve two linked problems.
 
-First, it has to decide **which** $k = pN$ points should be visited.
+First, it has to decide **which** $k$ points should be visited.
 
 Second, it has to decide **in what order** those selected points should be visited.
 
-If $p = 1$, there is no subset choice and the task is an ordinary Euclidean traveling salesman problem on all $N$ points. If $p < 1$, the task is harder: the program must optimize both the subset and the tour through that subset.
+If $p=1$, there is no subset choice and the task is an ordinary Euclidean TSP on all $N$ points.
+If $p<1$, the program must optimize the subset and the tour through that subset simultaneously.
 
-The code estimates $f(p)$ by Monte Carlo simulation. It repeatedly generates a random point set, solves the optimization problem for each requested value of $p$, records the normalized tour length $L(k)/k$, and then averages those values over many independent instances.
+A simulation repeatedly generates an independent random point set, solves the problem for each
+requested $p$, records the normalized tour length $L_N(k)/k$, and averages those values over many
+instances. Point-generation seeds and search seeds are tracked separately so that statistical and
+heuristic-search variation can be studied independently.
 
-The solver is mainly heuristic. It is designed to produce good solutions quickly and consistently over many runs, not to certify global optimality. For very small subset sizes, the code does switch to exact search, but the main regime is heuristic local search.
+### Full TSP solver for $p=1$
 
-### Full TSP solver for $p = 1$
+When $p=1$, the only question is the visiting order.
 
-When $p = 1$, the only question is the visiting order.
+The full-tour solver uses multiple starts. Candidate tours are built by nearest-neighbor and
+insertion constructions, screened cheaply, and then the most promising and sufficiently diverse
+starts are promoted to stronger local search.
 
-The full tour solver uses **multiple restarts**. Each restart begins from a different initial tour. One start is built by **farthest insertion**: start with a far-apart pair of points, then repeatedly insert the point that is currently farthest from the tour in the cheapest place. Other starts are built by **nearest-neighbor construction**, which repeatedly appends a nearby unvisited point.
+The main local moves are:
 
-Each initial tour is then improved by local search.
+1. **2-opt**: remove two edges, reconnect the tour in the other possible way, and reverse the
+   affected segment when that shortens the cycle.
+2. **Or-opt**: remove one or more consecutive points and reinsert them elsewhere in the tour.
 
-The two main local moves are:
+Good Euclidean TSP moves usually involve nearby points, so the solver precomputes exact
+nearest-neighbor lists and uses them as candidate sets instead of comparing every pair of nodes.
+To escape local minima, the promoted tours undergo iterated local search with structured kicks and
+re-optimization. The best tours are retained in a small elite pool and polished again before the
+final result is reported.
 
-1. **2-opt**: remove two edges, reconnect the tour in the other possible way, and reverse the affected segment if that shortens the cycle.
+### Subset solver for $p<1$
 
-2. **Or opt-1**: remove one point from the current tour and reinsert it somewhere else if that reduces the length.
-
-In Euclidean TSP instances, good improving moves usually involve nearby points, so the code does not compare every pair of nodes against every other pair. Instead, it precomputes exact nearest-neighbor lists and restricts most local search to those candidates. This makes the search much faster while still keeping the important moves.
-
-To escape local minima, the full-tour solver uses **iterated local search**. After a tour has been polished, the code cuts it at three positions, rearranges the resulting segments, and runs local search again. That perturbation is large enough to leave the current basin of attraction, but still structured enough that the next local search phase starts from a reasonable tour.
-
-The best restart solutions are stored in a small **elite pool**, meaning a short list of the strongest tours found so far. Those tours are then polished again with slightly broader search settings before the best one is reported.
-
-### Subset solver for $p < 1$
-
-When $p < 1$, the problem is no longer just "find a good tour." It becomes "find a good set of $k$ points and a good tour through them."
+When $p<1$, the problem is no longer just "find a good tour." It becomes "find a good set of
+$k$ points and a good tour through them."
 
 That is the core of the project.
 
-Each subset run starts from one or more seed solutions. A seed is simply an initial cycle on $k$ selected points. Seeds can come from several sources:
+Each subset run starts from several seed solutions. Seeds can come from:
 
-- good solutions from nearby values of $p$
-- simple geometric constructions
-- spatially localized candidate sets
-- random samples
+- good solutions at nearby values of $p$;
+- compact geometric or dense-region constructions;
+- reductions of a full TSP tour in the high-$p$ regime;
+- randomized and diversity-oriented starts;
+- elite solutions found by earlier restarts.
 
-Using nearby $p$-values matters because the optimal subset usually changes gradually as $p$ changes. A strong solution at one $p$ is often a useful starting point for the next.
+Using nearby $p$-values matters because a strong solution at one density is often a useful starting
+point for a neighboring density. The solver can sweep through the $p$-grid in both directions and
+retain the better continuation.
 
-Once a seed has been built, the code runs **simulated annealing**. In simple terms, simulated annealing is a search process that usually accepts improving moves, but also occasionally accepts worsening moves early in the run. That makes it less likely to get trapped immediately in a bad local minimum.
+After a seed has been built, the solver runs simulated annealing. The main subset move removes one
+currently selected point, inserts one currently unselected point, and reconnects the cycle while
+keeping the subset size fixed. The default controller preserves the validated one-candidate search;
+held-out policies can instead evaluate several candidate moves per annealing step in the regimes
+where this produced better matched-compute results.
 
-The main subset move is a **swap move**:
+During and after annealing, deterministic cleanup applies:
 
-- remove one point that is currently in the selected subset
-- insert one point that is currently outside the subset
-- reconnect the cycle in the cheapest available place
+- 2-opt and Or-opt within the current cycle;
+- one-for-one subset exchange descent;
+- bounded two-for-two exchanges;
+- exact batched insertion evaluation;
+- optional exhaustive finishing for sufficiently small tours.
 
-This keeps the subset size fixed at $k$ while allowing the selected set itself to evolve.
+### Larger-neighborhood improvement
 
-The subset solver also uses occasional **2-opt** moves inside the current cycle. That is important because even if the selected point set is good, the ordering of those points may still be poor.
+Single exchanges are useful but can be too local. The solver therefore also includes several larger
+repair and recombination steps.
 
-At regular intervals, and again after annealing finishes, the solver switches from stochastic search to deterministic cleanup. It runs several improvement passes, including:
+**Ruin and recreate** removes a small group of selected points, builds a restricted replacement
+pool, reconstructs the damaged region, and polishes the resulting tour.
 
-- 2-opt on the current cycle
-- single node reinsertion
-- one for one subset swap descent
-- in larger cases, limited two for two subset exchanges
+**Ejection chains** follow a bounded sequence of dependent exchanges that can cross barriers which
+no single improving swap can cross.
 
-The two for two exchanges matter because some improvements cannot be found by replacing only one selected point at a time.
+**Path relinking** moves gradually between two strong elite subsets and tests the intermediate
+solutions. Diversity-aware elite storage prevents the archive from collapsing to near-duplicates.
 
-### Larger neighborhood improvement
+These steps let different restarts share useful structure instead of behaving as completely
+independent searches.
 
-Single swaps are useful, but they can still be too local. For that reason the solver also uses a larger repair step often called **ruin and recreate**.
+### Special regimes and search policies
 
-The idea is simple:
+The main documented mode is `balanced`, which is the baseline end-to-end path for estimating the
+full curve. Additional modes emphasize the ends of the $p$-range:
 
-1. remove a small group of points from the current cycle
-2. build a restricted pool of plausible replacement candidates
-3. rebuild that part of the solution
-4. polish the repaired tour again
+- `smallp-region` -- geometrically focused seeds for very small $p$;
+- `highp-delete` -- starts from a full tour and removes inexpensive points near $p=1$;
+- `hybrid` -- combines the regime-specific mechanisms.
 
-This gives the search a way to reorganize a bad region of the subset without throwing away the whole solution.
+The search controller is selected separately:
 
-The solver also combines good solutions with each other. It keeps an elite pool of the best subsets found so far and applies two forms of recombination.
+- `legacy-balanced` -- default compatibility policy;
+- `heldout-balanced` -- matched-compute multi-candidate annealing in its validated range;
+- `heldout-quality` -- deeper subset search and a stronger full-TSP controller.
 
-The first is **path relinking**. Starting from one strong subset, the code gradually changes it toward another strong subset and checks the intermediate solutions along the way.
-
-The second is direct **recombination**. Here the code builds a child solution that inherits structure from two parent subsets, then re-optimizes that child.
-
-These combination steps help the search reuse information from different restarts instead of treating each restart as completely independent.
-
-### Special regimes
-
-The main documented mode is `balanced`. This is the default end to end path for estimating the full $f(p)$ curve.
-
-There are also specialized experimental regimes for the ends of the $p$-range.
-
-For very small $p$, the solver can generate geometrically focused seeds that look for compact local regions before the main search begins. This is useful because when only a small fraction of the points must be visited, good solutions often come from dense local structure.
-
-For large $p$, the solver can start from a full TSP tour and **delete** points that are cheap to remove, then improve the remaining cycle. This is a natural strategy near $p = 1$, because the selected subset is close to the full point set.
-
+The held-out presets are opt-in because their validated ranges depend on geometry and $p$. See
+[`docs/heldout_search_policy.md`](docs/heldout_search_policy.md) for the experiments, activation
+rules, and interpretation limits.
 
 ## Build
 
-CMake build (recommended):
+A C++17 compiler and CMake are required. Ninja is recommended but not mandatory.
+
 ```bash
-cmake -S . -B build
-cmake --build build -j
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ```
 
-Single-config generators default to Release if `CMAKE_BUILD_TYPE` is unset. Pass `-DALDOUS_TSP_ENABLE_NATIVE=ON` for `-march=native` tuning on the local machine.
+Or use the supplied presets:
 
-Direct build (fallback):
 ```bash
-g++ -O3 -std=c++17 -pthread src/main.cpp src/tsp_solver.cpp src/oracle.cpp \
-    src/subset_seed.cpp src/subset_pool.cpp src/subset_smallp.cpp \
-    src/subset_highp.cpp src/subset_search.cpp src/run_cli.cpp \
-    src/run_cli_common.cpp src/run_cli_parse.cpp src/run_cli_report.cpp \
-    src/run_cli_self_test.cpp src/run_cli_orchestrate.cpp \
-    -Iinclude -o aldous_tsp
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
 ```
 
-Run the self-test suite:
-```bash
-./build/aldous_tsp --self-test
-```
+The core library and CLI have no mandatory third-party solver dependency. Python is used only for
+analysis, plotting, campaign management, and some regression tests.
 
 ## Run
 
+A small smoke run:
+
 ```bash
-./build/aldous_tsp --mode balanced --oracle none --quick       # small fast run (N=200, 3 instances)
-./build/aldous_tsp --mode balanced --oracle none --N 2000 --instances 12 --threads 12
+./build/aldous_tsp --mode balanced --oracle none --quick --output results.json --force
 ```
 
-By default the program writes `results.json` in the current working directory. Existing files are preserved unless `--force` is passed. Use `--output <file>` to choose a different destination.
+A larger run:
 
-External solver use is optional. `--oracle none` is the default and keeps runs machine-independent. Use `--oracle auto`, `--oracle lkh`, or `--oracle concorde` when you want external post-processing.
+```bash
+./build/aldous_tsp \
+  --mode balanced \
+  --oracle none \
+  --N 2000 \
+  --instances 12 \
+  --threads 12 \
+  --output results.json \
+  --force
+```
 
-## Modes
+A quality-oriented held-out policy:
 
-- `balanced` -- default mode for end-to-end curve runs.
-- `smallp-region` -- experimental low-p search path.
-- `highp-delete` -- experimental high-p deletion path.
-- `hybrid` -- experimental combined path.
+```bash
+./build/aldous_tsp \
+  --search-policy heldout-quality \
+  --N 2000 \
+  --instances 12 \
+  --threads 12 \
+  --output results-quality.json \
+  --force
+```
 
-For comparisons and for the examples above, `balanced` is the recommended baseline.
+By default, the program writes `results.json` in the current working directory. Existing files are
+preserved unless `--force` is supplied. A digest-bound adjacent receipt records the durable output
+commit and end-to-end timing.
+
+Use
+
+```bash
+./build/aldous_tsp --help
+```
+
+for the complete generated option reference, or
+
+```bash
+./build/aldous_tsp --dry-run --N 500 --p-range 0.02:1.0:12
+```
+
+to inspect the fully resolved configuration without running a simulation.
+
+## Exact small-instance calibration
+
+For supported instances up to the hard cap $N=18$, the solver can globally optimize both the
+cardinality-$k$ subset and the cycle through it:
+
+```bash
+./build/aldous_tsp --N 18 --exact-subset-max-n 18 ...
+```
+
+This exact mode is intended for regression testing and calibration. Large production instances use
+heuristic search and do not claim global optimality.
+
+## Optional external TSP solvers
+
+External post-processing is disabled by default with `--oracle none`. LKH and Concorde can be used
+when installed explicitly:
+
+```bash
+./build/aldous_tsp --oracle lkh --lkh-path /path/to/LKH ...
+./build/aldous_tsp --oracle concorde --concorde-path /path/to/concorde ...
+```
+
+The integration records executable identity, enforces time and output limits, validates returned
+tours, and does not silently fall back to another method in publication campaigns. See
+[`docs/oracles.md`](docs/oracles.md).
 
 ## Design decisions
 
-The solver has no external dependencies beyond a C++17 compiler and pthreads. Distances are computed from coordinates on the fly rather than stored in an $O(N^2)$ matrix, keeping memory linear in $N$ and allowing larger $N$ runs. KNN candidate sets are built over a uniform grid with expanding ring search rather than a k-d tree; for uniform random points in two dimensions the grid is simpler, cache friendlier, and competitive in practice. The RNG is xoshiro256. External solver integration (LKH, Concorde) is available as an optional post-processing step but is never required.
+Distances are computed from coordinates rather than stored in a full $O(N^2)$ matrix. Exact KNN
+candidate lists are built either by brute force or by a uniform-grid search; the grid backend keeps
+memory near-linear in $N$ for large random instances.
+
+The public solver boundary uses an immutable `PreparedInstance`. Coordinates, numerical range,
+geometry, KNN rows, and derived spatial structures are validated before search begins. Successful
+solves are checked again for cardinality, uniqueness, finite length, and consistency.
+
+Open-square and periodic/toroidal geometry share canonical distance routines. The random-number
+generator and tie rules are deterministic, while separate point and search streams make paired
+experiments reproducible.
+
+Native output uses strict schema 16 with locale-independent UTF-8 JSON, complete resolved options,
+source/build identity, restart diagnostics, phase timing, memory planning, and campaign
+fingerprints. Atomic no-clobber or replace semantics prevent partial or accidental output loss.
+
+For implementation details, see [`docs/algorithm.md`](docs/algorithm.md). For the reusable C++ API,
+see [`docs/public_api.md`](docs/public_api.md) and
+[`examples/library_usage.cpp`](examples/library_usage.cpp).
 
 ## Project structure
 
-- `include/config.hpp` -- tuning constants and numerical tolerances
-- `include/problem.hpp`, `include/tour.hpp`, `include/oracle.hpp` -- shared data structures and interfaces split by responsibility
-- `include/core.hpp` -- umbrella include for the shared project types
-- `include/tsp_solver.hpp` -- full-TSP solver interface
-- `include/subset_solver.hpp` -- subset solver and oracle interface
-- `include/run_cli.hpp` -- CLI entry declaration
-- `src/tsp_solver.cpp` -- full-TSP construction and local search
-- `src/oracle.cpp` -- external-solver integration and TSPLIB/process plumbing
-- `src/subset_seed.cpp`, `src/subset_pool.cpp`, `src/subset_smallp.cpp`, `src/subset_highp.cpp`, `src/subset_search.cpp` -- subset construction, seed pools, regime-specific search, and local improvement
-- `src/run_cli.cpp`, `src/run_cli_parse.cpp`, `src/run_cli_report.cpp`, `src/run_cli_self_test.cpp`, `src/run_cli_orchestrate.cpp`, `src/run_cli_common.cpp` -- CLI entry, argument parsing, reporting/JSON, self-tests, orchestration, and shared CLI helpers
-- `src/main.cpp` -- entry point
-
-## Example output
-
-The `examples/` directory contains example results. 
+- `include/aldous_tsp/` -- public C++ library headers;
+- `src/` -- geometry, instances, solvers, exact methods, result handling, and CLI implementation;
+- `apps/` -- command-line executable entry point;
+- `tests/` -- C++ and Python regression tests;
+- `scripts/` -- plotting, profiling, campaign, migration, and analysis tools;
+- `docs/` -- algorithm, reproducibility, validation, API, and release documentation;
+- `schema/` -- current and frozen historical JSON schemas;
+- `examples/` -- library example and example input grids;
+- `validation_runs/current/` -- compact evidence generated for the current release;
+- `validation_archive/` -- explicitly historical validation fixtures.
 
 ## Plotting
 
-A plotting script is included at `scripts/plot_results.py`. It reads the JSON output and produces a curve of estimated mean edge length against subset fraction. Requires matplotlib.
+The plotting script reads the result JSON and produces the estimated normalized-length curve:
 
-    python3 scripts/plot_results.py results.json -o curve.png
+```bash
+python3 scripts/plot_results.py results.json -o curve.png
+```
+
+It can also export the plotted summary:
+
+```bash
+python3 scripts/plot_results.py results.json -o curve.png --csv summary.csv
+```
+
+## Reproducibility and validation
+
+Result files contain the exact source revision, resolved configuration, point/search stream policy,
+and method fingerprint. Publication campaign tools use exact manifests, reject stale or mismatched
+resume files, and fail on incomplete campaigns unless partial output is explicitly authorized.
+
+Campaign analysis supports replicate-block bootstrap, separate point-set and search-seed variance,
+multifidelity correction, cross-fitted control variates, and finite-size model/range sensitivity.
+See [`docs/reproducibility.md`](docs/reproducibility.md) and
+[`docs/campaign_analysis.md`](docs/campaign_analysis.md).
+
+Current compact validation evidence is summarized in
+[`docs/known_good_benchmarks.md`](docs/known_good_benchmarks.md). The hosted release gate covers GCC,
+Clang, AppleClang, MSVC, ASan/UBSan, ThreadSanitizer, Ruff, clang-tidy, CodeQL, packaging, and a pinned
+historical performance comparison.
+
+## Development provenance
+
+Development of version 2.0.0 used extensive AI-assisted implementation and review under the
+maintainer's direction. The public commit identities and validation policy are explained in
+[`DEVELOPMENT.md`](DEVELOPMENT.md). They do not imply sponsorship or endorsement by OpenAI.
+
+## License
+
+This project is distributed under the MIT License. See [`LICENSE`](LICENSE).

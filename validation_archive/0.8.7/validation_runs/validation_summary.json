@@ -1,0 +1,30 @@
+{
+  "backend_parity": {
+    "max_abs_mean_delta": 0.0,
+    "rows": 2
+  },
+  "benchmark_summary": {
+    "scenarios": 9,
+    "total_wall": 12.734278771
+  },
+  "ctest": "Release/Python CTest expected to pass; see CTest run in package validation",
+  "exhaustive_policy": {
+    "policies": [
+      "final-only",
+      "all-polish"
+    ],
+    "scan_reduction": 96899
+  },
+  "original_compatible_routing": "passed with tests/fake_original_cli.py",
+  "original_parity": {
+    "reason": "github.com DNS unavailable in container; no original executable available",
+    "status": "not_run"
+  },
+  "project_version": "0.8.7",
+  "real_oracle_smoke": {
+    "oracle_call_records": [],
+    "reason": "No real LKH or Concorde executable found",
+    "solvers": [],
+    "status": "skipped"
+  }
+}

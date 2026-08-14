@@ -1,0 +1,2791 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Aldous subset-selection TSP results",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_metadata",
+    "build_metadata",
+    "N",
+    "done",
+    "target",
+    "threads",
+    "memory_plan",
+    "timing",
+    "wall_seconds",
+    "mode",
+    "distance_backend",
+    "oracle_status",
+    "p_values",
+    "config",
+    "search_stats",
+    "oracle_call_records",
+    "summary",
+    "summary_rows",
+    "instance_rows"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 16
+    },
+    "run_metadata": {
+      "$ref": "#/$defs/run_metadata"
+    },
+    "build_metadata": {
+      "$ref": "#/$defs/build_metadata"
+    },
+    "N": {
+      "type": "integer",
+      "minimum": 3
+    },
+    "done": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "full_bound_expectation": {
+      "type": "number"
+    },
+    "full_bound_expectation_stderr": {
+      "type": "number"
+    },
+    "full_bound_expectation_samples": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "wall_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "mode": {
+      "enum": [
+        "balanced",
+        "smallp-region",
+        "highp-delete",
+        "hybrid"
+      ]
+    },
+    "distance_backend": {
+      "enum": [
+        "coords_exact_grid_knn",
+        "coords_exact_bruteforce_knn"
+      ]
+    },
+    "oracle_status": {
+      "type": "string"
+    },
+    "p_values": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1
+      },
+      "minItems": 1
+    },
+    "config": {
+      "$ref": "#/$defs/config"
+    },
+    "search_stats": {
+      "$ref": "#/$defs/search_stats"
+    },
+    "oracle_call_records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/oracle_call_record"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/summary_row"
+      }
+    },
+    "summary_rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/summary_row_with_p"
+      },
+      "minItems": 1
+    },
+    "instance_rows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/instance_row"
+      }
+    },
+    "campaign_metadata": {
+      "$ref": "#/$defs/campaign_metadata"
+    },
+    "migration_metadata": {
+      "$ref": "#/$defs/migration_metadata",
+      "description": "Present only on documents migrated from an older result schema."
+    },
+    "memory_plan": {
+      "$ref": "#/$defs/memory_plan"
+    },
+    "timing": {
+      "$ref": "#/$defs/timing"
+    },
+    "full_bound_expectation_stddev": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Sample standard deviation of the independent full-instance control-reference draws."
+    },
+    "full_bound_expectation_point_operations": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Exact N times reference-sample count used by the control-reference phase."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "run_metadata": {
+      "type": "object",
+      "required": [
+        "project_version",
+        "git_commit",
+        "compiler",
+        "platform",
+        "cpu_model",
+        "hardware_threads"
+      ],
+      "properties": {
+        "project_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "git_commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "git_tree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_dirty": {
+          "type": "boolean"
+        },
+        "revision_source": {
+          "type": "string",
+          "enum": [
+            "git",
+            "source-archive",
+            "unknown"
+          ]
+        },
+        "source_refnames": {
+          "type": "string"
+        },
+        "compiler": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu_model": {
+          "type": "string"
+        },
+        "hardware_threads": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "build_metadata": {
+      "type": "object",
+      "required": [
+        "build_type",
+        "configured_build_type",
+        "cmake_generator",
+        "cmake_version",
+        "enable_native",
+        "enable_sanitizers",
+        "enable_warnings",
+        "enable_werror",
+        "enable_python_tests",
+        "low_memory_build",
+        "optimization_profile",
+        "effective_optimization_level",
+        "cxx_flags",
+        "cxx_flags_configured",
+        "cxx_flags_effective_configured",
+        "core_target_compile_options",
+        "cli_target_compile_options",
+        "cplusplus",
+        "target_compile_options",
+        "effective_compile_options",
+        "source_compile_options"
+      ],
+      "properties": {
+        "build_type": {
+          "type": "string"
+        },
+        "configured_build_type": {
+          "type": "string"
+        },
+        "cmake_generator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cmake_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enable_native": {
+          "type": "boolean"
+        },
+        "enable_sanitizers": {
+          "type": "boolean"
+        },
+        "enable_warnings": {
+          "type": "boolean"
+        },
+        "enable_werror": {
+          "type": "boolean"
+        },
+        "enable_python_tests": {
+          "type": "boolean"
+        },
+        "low_memory_build": {
+          "type": "boolean"
+        },
+        "optimization_profile": {
+          "enum": [
+            "release-optimized",
+            "low-memory"
+          ]
+        },
+        "cxx_flags": {
+          "type": "string"
+        },
+        "cxx_flags_configured": {
+          "type": "string"
+        },
+        "cxx_flags_effective_configured": {
+          "type": "string"
+        },
+        "core_target_compile_options": {
+          "type": "string"
+        },
+        "cli_target_compile_options": {
+          "type": "string"
+        },
+        "cplusplus": {
+          "type": "integer",
+          "minimum": 201703
+        },
+        "target_compile_options": {
+          "type": "string"
+        },
+        "effective_compile_options": {
+          "type": "string"
+        },
+        "source_compile_options": {
+          "type": "string"
+        },
+        "effective_optimization_level": {
+          "enum": [
+            "O0",
+            "O1",
+            "O2",
+            "O3",
+            "Os",
+            "Oz",
+            "compiler-default",
+            "config-dependent",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "required": [
+        "N",
+        "instances",
+        "threads",
+        "memory_budget_mb",
+        "periodic",
+        "control_variate",
+        "cv_mc_samples",
+        "cv_max_point_ops",
+        "held_karp",
+        "hk_iterations",
+        "verbose",
+        "include_instance_rows",
+        "campaign_id",
+        "campaign_shard",
+        "replicate_offset",
+        "point_seed",
+        "search_seed",
+        "solver_policy_id",
+        "fidelity_level",
+        "second_sweep",
+        "force_output",
+        "dry_run",
+        "dump_config",
+        "output_path",
+        "output_durability",
+        "p_values",
+        "knn_k",
+        "knn_backend",
+        "reverse_knn",
+        "verify_knn_checks",
+        "grid_cell",
+        "exact_subset_max_n",
+        "tsp_candidate_starts",
+        "tsp_farthest_starts",
+        "tsp_min_edge_jaccard",
+        "tsp_restarts",
+        "tsp_ils",
+        "tsp_patience",
+        "search_policy_preset",
+        "subset_restarts",
+        "continuation_restarts",
+        "continuation_policy",
+        "racing_candidates",
+        "racing_survivors",
+        "racing_pilot_iters",
+        "racing_min_jaccard",
+        "staged_search",
+        "strong_polish_finalists",
+        "strong_polish_min_jaccard",
+        "sa_iters",
+        "sa_iters_per_k",
+        "sa_iters_per_n",
+        "sa_exact_insertion",
+        "sa_insertion_window",
+        "small_p_dense_fill",
+        "exploration_exact_insertion",
+        "sa_spatial_insertion",
+        "dense_exact_insertion",
+        "sa_spatial_neighbors",
+        "region_seeds",
+        "region_dilation",
+        "kick_restarts",
+        "kick_fraction",
+        "kick_t0",
+        "sa_t0",
+        "sa_t1",
+        "sa_auto_temperature",
+        "sa_temperature_samples",
+        "sa_temperature_quantile",
+        "sa_initial_uphill_acceptance",
+        "sa_final_uphill_acceptance",
+        "sa_candidate_trials",
+        "sa_multiple_try_random_probability",
+        "restart_threads",
+        "time_budget_per_p",
+        "final_exhaustive_k",
+        "exhaustive_two_opt_policy",
+        "subset_swap_descent_passes",
+        "pair_exchange_passes",
+        "pair_exchange_max_k",
+        "ruin_recreate_rounds",
+        "adaptive_ruin_recreate",
+        "ruin_recreate_max_fraction",
+        "ruin_recreate_max_nodes",
+        "ruin_recreate_pool_cap",
+        "ejection_chain_starts",
+        "ejection_chain_depth",
+        "ejection_chain_candidates",
+        "ejection_chain_remove_cap",
+        "ejection_chain_max_uphill",
+        "elite_diversity_slots",
+        "elite_min_jaccard",
+        "elite_quality_slack",
+        "path_relink_top",
+        "path_relink_diverse_reserve",
+        "path_relink_max_pairs",
+        "path_relink_max_removed",
+        "path_relink_max_removed_sum",
+        "path_relink_max_candidate_scans",
+        "seed",
+        "mode",
+        "disable_two_opt",
+        "disable_or_opt",
+        "disable_subset_swap",
+        "disable_pair_exchange",
+        "disable_elite_restarts",
+        "disable_ruin_recreate",
+        "disable_ejection_chain",
+        "disable_path_relink",
+        "disable_smallp_seeds",
+        "disable_highp_delete",
+        "oracle_mode",
+        "oracle_format",
+        "lkh_path",
+        "concorde_path",
+        "oracle_time_limit_sec",
+        "oracle_scale",
+        "oracle_tsp_top",
+        "oracle_subset_top",
+        "oracle_min_k",
+        "oracle_max_k",
+        "oracle_lkh_runs",
+        "oracle_lkh_max_trials",
+        "oracle_use_for_tsp",
+        "oracle_use_for_subset",
+        "oracle_inline_feedback",
+        "oracle_verbose",
+        "oracle_resolved",
+        "oracle_exec_path",
+        "oracle_version"
+      ],
+      "properties": {
+        "N": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Number of random points.",
+          "default": 500
+        },
+        "instances": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Monte Carlo point-set instances.",
+          "default": 15
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Instance worker threads; zero selects an automatic bounded value.",
+          "default": 0
+        },
+        "memory_budget_mb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Conservative peak-memory budget in MiB; zero derives a safe automatic budget from currently available physical/container memory.",
+          "default": 0
+        },
+        "periodic": {
+          "type": "boolean",
+          "description": "Use flat-torus periodic boundary conditions.",
+          "default": false
+        },
+        "control_variate": {
+          "type": "boolean",
+          "description": "Compute the two-nearest-neighbor control variate and fixed-subset bound; the bound measures tour quality conditional on that subset.",
+          "default": false
+        },
+        "cv_mc_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Cheap KNN-only samples used to estimate the full-set control-variate expectation.",
+          "default": 2000
+        },
+        "cv_max_point_ops": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Maximum N times control-reference samples; bounds the Monte Carlo point-generation work exactly.",
+          "default": 100000000
+        },
+        "held_karp": {
+          "type": "boolean",
+          "description": "Compute the Held-Karp lower bound for each selected subset; this certifies tour quality conditional on that subset, not global subset optimality.",
+          "default": false
+        },
+        "hk_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Held-Karp subgradient iterations.",
+          "default": 400
+        },
+        "verbose": {
+          "type": "boolean",
+          "description": "Print per-instance and per-p progress.",
+          "default": false
+        },
+        "include_instance_rows": {
+          "type": "boolean",
+          "description": "Include per-instance rows and restart diagnostics in JSON.",
+          "default": false
+        },
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable campaign identity.",
+          "default": "default"
+        },
+        "campaign_shard": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Nonnegative campaign shard identity.",
+          "default": 0
+        },
+        "replicate_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Campaign-global first replicate identifier.",
+          "default": 0
+        },
+        "point_seed": {
+          "type": "integer",
+          "description": "Point-instance seed; defaults to --seed."
+        },
+        "search_seed": {
+          "type": "integer",
+          "description": "Heuristic-search seed; defaults to --seed."
+        },
+        "solver_policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable solver-policy identity.",
+          "default": "default"
+        },
+        "fidelity_level": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Fidelity identity such as cheap or strong.",
+          "default": "strong"
+        },
+        "second_sweep": {
+          "type": "boolean",
+          "description": "Run an ascending continuation sweep after the descending sweep.",
+          "default": false
+        },
+        "force_output": {
+          "type": "boolean",
+          "description": "Replace an existing output path.",
+          "default": false
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "Validate and print the resolved configuration without solving.",
+          "default": false
+        },
+        "dump_config": {
+          "type": "boolean",
+          "description": "Print the resolved configuration before solving.",
+          "default": false
+        },
+        "output_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Output JSON path.",
+          "default": "results.json"
+        },
+        "output_durability": {
+          "enum": [
+            "none",
+            "file",
+            "full"
+          ],
+          "description": "Output durability: none, file, or full (file plus parent directory).",
+          "default": "full"
+        },
+        "p_values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          },
+          "description": "Resolved probability grid.",
+          "default": [
+            0.02,
+            0.03,
+            0.05,
+            0.07,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.4,
+            0.5,
+            0.6,
+            0.8,
+            1.0
+          ]
+        },
+        "knn_k": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact KNN candidate count; values are capped to N-1.",
+          "default": 40
+        },
+        "knn_backend": {
+          "enum": [
+            "coords_exact_grid_knn",
+            "coords_exact_bruteforce_knn"
+          ],
+          "description": "Exact KNN backend: grid or bruteforce.",
+          "default": "grid"
+        },
+        "reverse_knn": {
+          "type": "boolean",
+          "description": "Build reverse-KNN adjacency lazily when candidate local search needs it; disable to save additional memory.",
+          "default": true
+        },
+        "verify_knn_checks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sampled exact-KNN verification checks.",
+          "default": 0
+        },
+        "grid_cell": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Force a grid cell size; zero selects an automatic safe value.",
+          "default": 0.0
+        },
+        "exact_subset_max_n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18,
+          "description": "Globally solve subset choice and tour when N is at most this threshold; zero disables it.",
+          "default": 0
+        },
+        "tsp_candidate_starts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Cheap deterministic TSP starts screened before ILS promotion.",
+          "default": 12
+        },
+        "tsp_farthest_starts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Opt into at most one cubic farthest-insertion pilot.",
+          "default": 0
+        },
+        "tsp_min_edge_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred edge-Jaccard distance among promoted TSP starts.",
+          "default": 0.02
+        },
+        "tsp_restarts": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Full TSP restarts promoted into ILS.",
+          "default": 5
+        },
+        "tsp_ils": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Full-TSP ILS perturbation iterations.",
+          "default": 300
+        },
+        "tsp_patience": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Full-TSP ILS stagnation patience.",
+          "default": 80
+        },
+        "search_policy_preset": {
+          "enum": [
+            "legacy-balanced",
+            "heldout-balanced",
+            "heldout-quality"
+          ],
+          "description": "Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP screening. Explicit core SA or TSP population controls take precedence.",
+          "default": "legacy-balanced"
+        },
+        "subset_restarts": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Subset restarts; -1 selects the p-aware automatic policy.",
+          "default": -1
+        },
+        "continuation_restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Warm restarts when a neighboring-p parent exists.",
+          "default": 1
+        },
+        "continuation_policy": {
+          "enum": [
+            "supplemental",
+            "fixed-budget"
+          ],
+          "description": "Continuation policy: supplemental or fixed-budget.",
+          "default": "supplemental"
+        },
+        "racing_candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Supplemental candidates screened by deterministic restart racing; zero disables it.",
+          "default": 0
+        },
+        "racing_survivors": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Pilot candidates promoted to a full-depth rerun.",
+          "default": 2
+        },
+        "racing_pilot_iters": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "SA iterations used to screen each race candidate.",
+          "default": 2000
+        },
+        "racing_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred selected-set Jaccard distance between promoted race candidates.",
+          "default": 0.05
+        },
+        "staged_search": {
+          "type": "boolean",
+          "description": "Reserve expensive post-SA neighborhoods for promoted finalists.",
+          "default": true
+        },
+        "strong_polish_finalists": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Finalists receiving the strong search stage.",
+          "default": 3
+        },
+        "strong_polish_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Preferred selected-set distance among strong-polish finalists.",
+          "default": 0.02
+        },
+        "sa_iters": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Base subset-SA iteration budget.",
+          "default": 60000
+        },
+        "sa_iters_per_k": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Additional SA iterations per selected node k.",
+          "default": 0
+        },
+        "sa_iters_per_n": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Additional SA iterations per candidate point N.",
+          "default": 0
+        },
+        "sa_exact_insertion": {
+          "type": "boolean",
+          "description": "Use the historical exact O(k) insertion scan for every SA move.",
+          "default": false
+        },
+        "sa_insertion_window": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Tour-position radius for windowed SA insertion.",
+          "default": 12
+        },
+        "small_p_dense_fill": {
+          "type": "boolean",
+          "description": "At small p, fill the restart pool with dense-seed variants instead of uncontracted random subsets.",
+          "default": true
+        },
+        "exploration_exact_insertion": {
+          "type": "boolean",
+          "description": "Use exact insertion for spread-out exploration seeds.",
+          "default": true
+        },
+        "sa_spatial_insertion": {
+          "type": "boolean",
+          "description": "Use insertion slots from a live spatial index (default: false).",
+          "default": false
+        },
+        "dense_exact_insertion": {
+          "type": "boolean",
+          "description": "Force exact insertion on dense seeds; this reproduces the old bit-identical path at k=2000 but costs about +58% wall.",
+          "default": false
+        },
+        "sa_spatial_neighbors": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Nearest current members allowed to offer insertion slots.",
+          "default": 16
+        },
+        "region_seeds": {
+          "type": "boolean",
+          "description": "Use localized region seeds in the explorer pool.",
+          "default": false
+        },
+        "region_dilation": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Region-seed candidate dilation.",
+          "default": 3.0
+        },
+        "kick_restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Scheduled elite-kick restarts.",
+          "default": 0
+        },
+        "kick_fraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Fraction of members swapped by an elite kick.",
+          "default": 0.1
+        },
+        "kick_t0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "SA start temperature for elite-kick restarts.",
+          "default": 0.35
+        },
+        "sa_t0": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Fixed SA start temperature.",
+          "default": 1.4
+        },
+        "sa_t1": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Fixed SA end temperature.",
+          "default": 5e-05
+        },
+        "sa_auto_temperature": {
+          "type": "boolean",
+          "description": "Calibrate each restart's SA temperatures from sampled uphill move deltas.",
+          "default": false
+        },
+        "sa_temperature_samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536,
+          "description": "Target positive-delta samples for restart-local SA calibration.",
+          "default": 256
+        },
+        "sa_temperature_quantile": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Positive-delta quantile used to calibrate SA endpoints.",
+          "default": 0.5
+        },
+        "sa_initial_uphill_acceptance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Target initial acceptance for the calibrated uphill-delta quantile.",
+          "default": 0.6
+        },
+        "sa_final_uphill_acceptance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1,
+          "description": "Target final acceptance for the calibrated uphill-delta quantile.",
+          "default": 0.01
+        },
+        "sa_candidate_trials": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Candidate swaps evaluated per SA iteration; one preserves the historical proposal.",
+          "default": 1
+        },
+        "sa_multiple_try_random_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "For multiple-try SA, probability of selecting a random valid trial instead of the best.",
+          "default": 0.1
+        },
+        "restart_threads": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Parallel subset-restart workers; zero requests automatic allocation.",
+          "default": 1
+        },
+        "time_budget_per_p": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Wall-clock target per instance/p solve; zero disables anytime mode.",
+          "default": 0.0
+        },
+        "final_exhaustive_k": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exhaustive final 2-opt cardinality threshold.",
+          "default": 300
+        },
+        "exhaustive_two_opt_policy": {
+          "enum": [
+            "never",
+            "final-only",
+            "all-polish"
+          ],
+          "description": "Exhaustive 2-opt policy: never, final-only, or all-polish.",
+          "default": "final-only"
+        },
+        "subset_swap_descent_passes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Deterministic one-for-one subset-swap passes.",
+          "default": 1
+        },
+        "pair_exchange_passes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Two-for-two subset-exchange passes.",
+          "default": 1
+        },
+        "pair_exchange_max_k": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip pair exchange above k; zero removes the gate.",
+          "default": 5000
+        },
+        "ruin_recreate_rounds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Ruin/recreate LNS rounds.",
+          "default": 4
+        },
+        "adaptive_ruin_recreate": {
+          "type": "boolean",
+          "description": "Use the adaptive multi-scale ruin/recreate operator portfolio.",
+          "default": true
+        },
+        "ruin_recreate_max_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Maximum ruined fraction of k.",
+          "default": 0.05
+        },
+        "ruin_recreate_max_nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Absolute ruin-size cap; zero removes it.",
+          "default": 96
+        },
+        "ruin_recreate_pool_cap": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Candidate repair-pool cap.",
+          "default": 640
+        },
+        "ejection_chain_starts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Variable-depth membership-chain starts per restart.",
+          "default": 3
+        },
+        "ejection_chain_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum membership swaps per ejection chain.",
+          "default": 6
+        },
+        "ejection_chain_candidates": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Incoming-node candidates per chain step.",
+          "default": 24
+        },
+        "ejection_chain_remove_cap": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Removable selected-node cap per chain step; zero means all.",
+          "default": 96
+        },
+        "ejection_chain_max_uphill": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum cumulative uphill excursion in mean-edge units.",
+          "default": 0.75
+        },
+        "elite_diversity_slots": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Supplemental set-diverse elite slots.",
+          "default": 4
+        },
+        "elite_min_jaccard": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum selected-set Jaccard distance for supplemental elite entries.",
+          "default": 0.02
+        },
+        "elite_quality_slack": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Quality slack allowed for supplemental diverse entries.",
+          "default": 0.03
+        },
+        "path_relink_top": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Literal maximum archive population exposed to relinking.",
+          "default": 3
+        },
+        "path_relink_diverse_reserve": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Diversity-preferred entries inside the relinking node cap.",
+          "default": 1
+        },
+        "path_relink_max_pairs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum ranked relinking pair attempts; zero is unlimited.",
+          "default": 3
+        },
+        "path_relink_max_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum one-way selected-set difference per pair; zero is unlimited.",
+          "default": 64
+        },
+        "path_relink_max_removed_sum": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Cumulative selected-set-difference budget; zero is unlimited.",
+          "default": 128
+        },
+        "path_relink_max_candidate_scans": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact relinking candidate-scan budget; zero is unlimited.",
+          "default": 250000
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Base random seed.",
+          "default": 2024
+        },
+        "mode": {
+          "enum": [
+            "balanced",
+            "smallp-region",
+            "highp-delete",
+            "hybrid"
+          ],
+          "description": "Solver mode: balanced, smallp-region, highp-delete, or hybrid.",
+          "default": "balanced"
+        },
+        "disable_two_opt": {
+          "type": "boolean",
+          "description": "Disable 2-opt.",
+          "default": false
+        },
+        "disable_or_opt": {
+          "type": "boolean",
+          "description": "Disable Or-opt.",
+          "default": false
+        },
+        "disable_subset_swap": {
+          "type": "boolean",
+          "description": "Disable one-for-one subset swaps.",
+          "default": false
+        },
+        "disable_pair_exchange": {
+          "type": "boolean",
+          "description": "Disable two-for-two subset exchange.",
+          "default": false
+        },
+        "disable_elite_restarts": {
+          "type": "boolean",
+          "description": "Disable elite-seeded anytime restarts.",
+          "default": false
+        },
+        "disable_ruin_recreate": {
+          "type": "boolean",
+          "description": "Disable ruin/recreate.",
+          "default": false
+        },
+        "disable_ejection_chain": {
+          "type": "boolean",
+          "description": "Disable membership ejection chains.",
+          "default": false
+        },
+        "disable_path_relink": {
+          "type": "boolean",
+          "description": "Disable path relinking.",
+          "default": false
+        },
+        "disable_smallp_seeds": {
+          "type": "boolean",
+          "description": "Disable specialized small-p seeds.",
+          "default": false
+        },
+        "disable_highp_delete": {
+          "type": "boolean",
+          "description": "Disable high-p deletion seeds and exchange.",
+          "default": false
+        },
+        "oracle_mode": {
+          "enum": [
+            "none",
+            "auto",
+            "lkh",
+            "concorde"
+          ],
+          "description": "External oracle: none, auto, lkh, or concorde.",
+          "default": "none"
+        },
+        "oracle_format": {
+          "enum": [
+            "matrix",
+            "euc2d"
+          ],
+          "description": "Oracle problem format: matrix or euc2d.",
+          "default": "matrix"
+        },
+        "lkh_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "LKH executable path.",
+          "default": "LKH"
+        },
+        "concorde_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Concorde executable path.",
+          "default": "concorde"
+        },
+        "oracle_time_limit_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Per-call oracle time limit; zero disables it.",
+          "default": 0
+        },
+        "oracle_scale": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Distance scaling factor for integer oracle matrices.",
+          "default": 1000000
+        },
+        "oracle_tsp_top": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Top full-TSP solutions sent to the oracle.",
+          "default": 1
+        },
+        "oracle_subset_top": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Top subset solutions sent to the oracle.",
+          "default": 1
+        },
+        "oracle_min_k": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Minimum cardinality eligible for an external oracle.",
+          "default": 17
+        },
+        "oracle_max_k": {
+          "type": "integer",
+          "minimum": 3,
+          "description": "Maximum cardinality eligible for an external oracle.",
+          "default": 2500
+        },
+        "oracle_lkh_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "LKH RUNS parameter.",
+          "default": 6
+        },
+        "oracle_lkh_max_trials": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "LKH MAX_TRIALS; zero uses the solver default.",
+          "default": 0
+        },
+        "oracle_use_for_tsp": {
+          "type": "boolean",
+          "description": "Disable external-oracle use for full TSP.",
+          "default": true
+        },
+        "oracle_use_for_subset": {
+          "type": "boolean",
+          "description": "Disable external-oracle use for subset tours.",
+          "default": true
+        },
+        "oracle_inline_feedback": {
+          "type": "boolean",
+          "description": "Feed oracle-improved cycles back into the in-process elite search.",
+          "default": false
+        },
+        "oracle_verbose": {
+          "type": "boolean",
+          "description": "Print external-oracle diagnostics.",
+          "default": false
+        },
+        "oracle_resolved": {
+          "enum": [
+            "none",
+            "lkh",
+            "concorde"
+          ],
+          "description": "Resolved external oracle."
+        },
+        "oracle_exec_path": {
+          "type": "string",
+          "description": "Resolved oracle executable path."
+        },
+        "oracle_exec_sha256": {
+          "type": "string",
+          "description": "SHA-256 identity of the resolved oracle executable, or unknown when it could not be read."
+        },
+        "oracle_version": {
+          "type": "string",
+          "description": "Resolved oracle version."
+        }
+      },
+      "additionalProperties": false
+    },
+    "search_stats": {
+      "type": "object",
+      "required": [
+        "tsp_restarts",
+        "tsp_ils_iterations",
+        "subset_restarts",
+        "smallp_seed_restarts",
+        "highp_delete_restarts",
+        "warm_restarts",
+        "random_restarts",
+        "two_opt_scans",
+        "two_opt_improvements",
+        "or_opt_scans",
+        "or_opt_improvements",
+        "sa_moves",
+        "sa_accepted",
+        "sa_improving",
+        "subset_swap_scans",
+        "subset_swap_improvements",
+        "highp_exchange_scans",
+        "highp_exchange_improvements",
+        "pair_exchange_scans",
+        "pair_exchange_improvements",
+        "ruin_recreate_attempts",
+        "ruin_recreate_improvements",
+        "path_relink_attempts",
+        "path_relink_feasible",
+        "path_relink_elite_insertions",
+        "path_relink_best_improvements",
+        "path_relink_improvements",
+        "knn_requested_grid_instances",
+        "knn_requested_bruteforce_instances",
+        "knn_effective_grid_instances",
+        "knn_effective_bruteforce_instances",
+        "knn_bruteforce_fallback_instances",
+        "knn_grid_cell_capped_instances",
+        "knn_grid_cell_samples",
+        "knn_grid_cells_sum",
+        "knn_grid_cells_max",
+        "oracle_calls",
+        "oracle_solved",
+        "oracle_improved",
+        "oracle_failed",
+        "oracle_tsp_calls",
+        "oracle_subset_calls",
+        "knn_build_seconds",
+        "grid_cell_effective_min",
+        "grid_cell_effective_max",
+        "grid_cell_effective_sum",
+        "tsp_seconds",
+        "subset_seconds",
+        "oracle_gain"
+      ],
+      "properties": {
+        "tsp_candidate_starts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tsp_promoted_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tsp_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tsp_ils_iterations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "subset_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "smallp_seed_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "highp_delete_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warm_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "random_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "region_restarts": {
+          "description": "Executed subset restarts whose final kind is region.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "dense_restarts": {
+          "description": "Executed subset restarts whose final kind is dense.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "racing_pilot_restarts": {
+          "description": "Unique raced candidates that received the fixed screening pilot.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "racing_promoted_restarts": {
+          "description": "Raced candidates promoted to a full-depth rerun after screening.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_candidates": {
+          "description": "Eligible post-SA restart candidates considered by the staged strong-search funnel.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_finalists": {
+          "description": "Candidates promoted to subset swap, pair exchange, ruin/recreate, ejection-chain, and inline-oracle stages.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "strong_polish_improvements": {
+          "description": "Strong-polish finalists whose recorded restart length strictly improved.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_candidates": {
+          "description": "Unique candidates considered by the supplemental diversity archive.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_retained": {
+          "description": "Considered candidates retained in either the protected quality archive or a diverse slot.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "elite_diversity_rejected": {
+          "description": "Considered candidates rejected from the bounded quality-plus-diversity archive.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "two_opt_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "two_opt_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "or_opt_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "or_opt_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_moves": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_improving": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_candidate_evaluations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Valid candidate swap evaluations performed by the SA proposal controller."
+        },
+        "sa_multiple_try_iterations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "SA iterations that used more than one candidate trial."
+        },
+        "sa_temperature_schedules": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restart schedules with at least one allocated SA iteration."
+        },
+        "sa_temperature_calibrations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restart schedules successfully calibrated from sampled uphill deltas."
+        },
+        "sa_temperature_fallbacks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Requested restart calibrations that safely fell back to fixed endpoints."
+        },
+        "sa_calibration_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_calibration_uphill_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_temperature_t0_sum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_sum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t0_min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t0_max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_temperature_t1_max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_decile_moves": {
+          "type": "array",
+          "description": "Valid SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_uphill_moves": {
+          "type": "array",
+          "description": "Uphill SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_accepted": {
+          "type": "array",
+          "description": "Accepted SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "sa_decile_uphill_accepted": {
+          "type": "array",
+          "description": "Accepted uphill SA moves by temperature-schedule decile.",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "subset_swap_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "subset_swap_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "highp_exchange_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "highp_exchange_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pair_exchange_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pair_exchange_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pair_exchange_skipped_large_k": {
+          "description": "Pair-exchange invocations skipped by pair_exchange_max_k.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_removed_nodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_worst_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_worst_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_segment_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_segment_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_spatial_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_spatial_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_long_edge_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_long_edge_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_random_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ruin_recreate_random_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_feasible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_steps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ejection_chain_accepted_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sum of accepted improving prefix depths across completed searches."
+        },
+        "path_relink_pairs_considered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_pairs_skipped_distance": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_pairs_skipped_budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_feasible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_removed_sum": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_candidate_scans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_elite_insertions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_best_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path_relink_improvements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_requested_grid_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_requested_bruteforce_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_effective_grid_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_effective_bruteforce_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_bruteforce_fallback_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_grid_cell_capped_instances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_grid_cell_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_grid_cells_sum": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_grid_cells_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_solved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_improved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_tsp_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_subset_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "knn_build_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "grid_cell_effective_min": {
+          "type": "number",
+          "minimum": 0
+        },
+        "grid_cell_effective_max": {
+          "type": "number",
+          "minimum": 0
+        },
+        "grid_cell_effective_sum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tsp_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subset_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "oracle_gain": {
+          "type": "number"
+        },
+        "elite_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kick_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "phase_timing": {
+          "$ref": "#/$defs/phase_timing"
+        },
+        "exact_subset_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_subset_solved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_subset_states": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_subset_transitions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_subset_peak_memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "oracle_call_record": {
+      "type": "object",
+      "required": [
+        "type",
+        "k",
+        "solver",
+        "format",
+        "status",
+        "exec_path",
+        "error",
+        "before_length",
+        "after_length",
+        "gain",
+        "seconds"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "tsp",
+            "subset"
+          ]
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "solver": {
+          "enum": [
+            "lkh",
+            "concorde"
+          ]
+        },
+        "format": {
+          "enum": [
+            "matrix",
+            "euc2d"
+          ]
+        },
+        "status": {
+          "enum": [
+            "failed",
+            "improved",
+            "solved_no_improvement"
+          ]
+        },
+        "exec_path": {
+          "type": "string"
+        },
+        "exec_sha256": {
+          "type": "string",
+          "description": "SHA-256 identity of the executable used for this call, or unknown when it could not be read."
+        },
+        "solver_version": {
+          "type": "string",
+          "description": "Version probe captured when the oracle context was resolved."
+        },
+        "error": {
+          "type": "string"
+        },
+        "before_length": {
+          "type": "number"
+        },
+        "after_length": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gain": {
+          "type": "number",
+          "minimum": 0
+        },
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary_row": {
+      "type": "object",
+      "required": [
+        "k",
+        "mean",
+        "std",
+        "stderr",
+        "min",
+        "max",
+        "n",
+        "values"
+      ],
+      "properties": {
+        "k": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "mean": {
+          "type": "number"
+        },
+        "std": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stderr": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "exact_optimal_instances": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of instances globally proven optimal by the exact subset oracle."
+        }
+      },
+      "additionalProperties": false
+    },
+    "summary_row_with_p": {
+      "type": "object",
+      "required": [
+        "p",
+        "key",
+        "k",
+        "mean",
+        "std",
+        "stderr",
+        "min",
+        "max",
+        "n",
+        "values"
+      ],
+      "properties": {
+        "k": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "mean": {
+          "type": "number"
+        },
+        "std": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stderr": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "p": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "best_restart_max": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "executed_restarts_max": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "solve_seconds_total": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subset_bound_mean": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_bound_mean. This bounds only the optimal tour through each selected subset, not the optimum over all size-k subsets."
+        },
+        "lower_bound_gap_mean": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_gap_mean."
+        },
+        "conditional_two_nn_bound_mean": {
+          "type": "number",
+          "description": "Mean two-nearest-neighbor lower bound, divided by k, on the tour through the subset selected by the heuristic. It is conditional on that subset and is not a global lower bound on the optimum over all size-k subsets."
+        },
+        "conditional_two_nn_gap_mean": {
+          "type": "number",
+          "description": "Mean tour value minus conditional_two_nn_bound_mean. This diagnoses fixed-subset tour ordering and bound looseness, not subset-selection error."
+        },
+        "cv_mean": {
+          "type": "number"
+        },
+        "cv_stderr": {
+          "type": "number"
+        },
+        "cv_variance_reduction": {
+          "type": "number"
+        },
+        "held_karp_bound_mean": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_bound_mean."
+        },
+        "held_karp_gap_mean": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_gap_mean."
+        },
+        "conditional_held_karp_bound_mean": {
+          "type": "number",
+          "description": "Mean Held-Karp lower bound, divided by k, on the optimal tour through the subset selected by the heuristic. It is not a bound on the optimum over all size-k subsets."
+        },
+        "conditional_held_karp_gap_mean": {
+          "type": "number",
+          "description": "Mean tour value minus conditional_held_karp_bound_mean. A small value certifies tour-ordering quality for the selected subsets only."
+        },
+        "exact_optimal_instances": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of instances globally proven optimal by the exact subset oracle."
+        },
+        "cv_sampling_stderr": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Sampling standard error of the cross-fitted adjusted observations, excluding independent reference-MC uncertainty."
+        },
+        "cv_reference_stderr": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Propagated standard error from the independently estimated control-reference expectation."
+        },
+        "cv_lambda": {
+          "type": "number",
+          "description": "Mean coefficient applied by the two cross-fitting folds."
+        },
+        "cv_lambda_fold0": {
+          "type": "number",
+          "description": "Coefficient applied to even replicate IDs, fitted on odd replicate IDs."
+        },
+        "cv_lambda_fold1": {
+          "type": "number",
+          "description": "Coefficient applied to odd replicate IDs, fitted on even replicate IDs."
+        }
+      },
+      "additionalProperties": false
+    },
+    "instance_p_value_row": {
+      "type": "object",
+      "required": [
+        "p",
+        "key",
+        "k",
+        "value"
+      ],
+      "properties": {
+        "p": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "k": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "value": {
+          "type": "number"
+        },
+        "best_restart": {
+          "type": "integer",
+          "minimum": -1
+        },
+        "executed_restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "solve_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subset_bound": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_two_nn_bound."
+        },
+        "held_karp_bound": {
+          "type": "number",
+          "description": "Deprecated schema-13 alias of conditional_held_karp_bound."
+        },
+        "conditional_two_nn_bound": {
+          "type": "number",
+          "description": "Two-nearest-neighbor lower bound divided by k for the tour through this selected subset; conditional on the subset."
+        },
+        "conditional_held_karp_bound": {
+          "type": "number",
+          "description": "Held-Karp lower bound divided by k for the tour through this selected subset; conditional on the subset."
+        },
+        "restart_values": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_kinds": {
+          "type": "array",
+          "description": "Stable restart-kind codes defined by include/aldous_tsp/restart_kinds.def.",
+          "x-enumNames": [
+            "random",
+            "warm",
+            "small-p",
+            "high-p-delete",
+            "elite",
+            "kick",
+            "region",
+            "dense",
+            "tsp-farthest-insertion",
+            "tsp-nearest-neighbor"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9
+            ]
+          }
+        },
+        "restart_sweeps": {
+          "type": "array",
+          "description": "Sweep per restart: 0=primary (descending or standalone), 1=secondary (ascending second sweep).",
+          "x-enumNames": [
+            "primary",
+            "secondary"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        },
+        "restart_roles": {
+          "type": "array",
+          "description": "Search-controller role per restart: 0=independent diagnostic, 1=continuation, 2=elite kick, 3=anytime, 4=raced production.",
+          "x-enumNames": [
+            "independent-diagnostic",
+            "continuation",
+            "elite-kick",
+            "anytime",
+            "raced-production"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        },
+        "restart_variants": {
+          "type": "array",
+          "description": "Stable zero-based seed variant within each restart kind and role.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "restart_promotion_stages": {
+          "type": "array",
+          "description": "Restart racing stage: 0=ordinary, 1=pilot-only, 2=promoted full-depth outcome.",
+          "x-enumNames": [
+            "none",
+            "pilot-only",
+            "promoted-full"
+          ],
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        },
+        "restart_sa_iterations": {
+          "type": "array",
+          "description": "Actual SA iterations allocated to each recorded candidate. Promoted race entries include pilot plus full-depth rerun work.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "restart_sa_t0": {
+          "type": "array",
+          "description": "Actual initial SA temperature used by each recorded restart; zero when that restart performed no SA.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_sa_t1": {
+          "type": "array",
+          "description": "Actual final SA temperature used by each recorded restart; zero when that restart performed no SA.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_sa_temperature_samples": {
+          "type": "array",
+          "description": "Positive-delta calibration samples collected for each recorded restart.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "restart_sa_temperature_calibrated": {
+          "type": "array",
+          "description": "Whether each recorded restart used calibrated rather than fixed SA endpoints.",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "restart_strong_polished": {
+          "type": "array",
+          "description": "Whether each recorded restart received the strong finalist neighborhood stage.",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "restart_centroids_x": {
+          "type": "array",
+          "description": "Toroidal centroid x of each restart's subset.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_centroids_y": {
+          "type": "array",
+          "description": "Toroidal centroid y of each restart's subset.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "restart_radii": {
+          "type": "array",
+          "description": "Mean distance of subset members to their centroid.",
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "exact_optimal": {
+          "type": "boolean",
+          "description": "True only when the global cardinality-k subset choice and its cycle were solved exactly."
+        },
+        "control_variate_x": {
+          "type": "number",
+          "description": "Normalized full-instance two-NN control value for this observation."
+        },
+        "cv_adjusted_value": {
+          "type": "number",
+          "description": "Cross-fitted control-variate adjusted observation used for correlation-aware campaign analysis."
+        },
+        "cv_lambda": {
+          "type": "number",
+          "description": "Cross-fitted coefficient applied to this observation."
+        }
+      },
+      "additionalProperties": false
+    },
+    "knn_build": {
+      "type": "object",
+      "required": [
+        "requested_backend",
+        "effective_backend",
+        "bruteforce_fallback",
+        "grid_cell_capped",
+        "requested_cell_size",
+        "effective_cell_size",
+        "gx",
+        "gy",
+        "grid_cells",
+        "coordinate_span"
+      ],
+      "properties": {
+        "requested_backend": {
+          "enum": [
+            "coords_exact_grid_knn",
+            "coords_exact_bruteforce_knn"
+          ]
+        },
+        "effective_backend": {
+          "enum": [
+            "coords_exact_grid_knn",
+            "coords_exact_bruteforce_knn"
+          ]
+        },
+        "bruteforce_fallback": {
+          "type": "boolean"
+        },
+        "grid_cell_capped": {
+          "type": "boolean"
+        },
+        "requested_cell_size": {
+          "type": "number",
+          "minimum": 0
+        },
+        "effective_cell_size": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gy": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "grid_cells": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coordinate_span": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "instance_row": {
+      "type": "object",
+      "required": [
+        "index",
+        "ok",
+        "wall_seconds",
+        "values",
+        "p_results",
+        "knn_build",
+        "search_stats",
+        "oracle_call_records"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "full_bound": {
+          "type": "number"
+        },
+        "p_results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instance_p_value_row"
+          }
+        },
+        "knn_build": {
+          "$ref": "#/$defs/knn_build"
+        },
+        "search_stats": {
+          "$ref": "#/$defs/search_stats"
+        },
+        "oracle_call_records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/oracle_call_record"
+          }
+        },
+        "replicate_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "point_stream_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "search_stream_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "phase_timing": {
+      "description": "Accumulated worker elapsed-seconds by solver phase. Nested SA checkpoint timing is included in sa_seconds and should not be added as a disjoint phase. Proposal/insertion sample durations are raw deterministic 1-in-64 timing samples.",
+      "type": "object",
+      "required": [
+        "seed_construction_seconds",
+        "tsp_construction_seconds",
+        "initial_polish_seconds",
+        "sa_seconds",
+        "sa_checkpoint_polish_seconds",
+        "post_sa_polish_seconds",
+        "subset_swap_seconds",
+        "highp_exchange_seconds",
+        "pair_exchange_seconds",
+        "ruin_recreate_seconds",
+        "path_relink_seconds",
+        "tsp_ils_seconds",
+        "final_polish_seconds",
+        "oracle_seconds",
+        "sa_proposal_samples",
+        "sa_insertion_samples",
+        "sa_proposal_sample_seconds",
+        "sa_insertion_sample_seconds"
+      ],
+      "properties": {
+        "seed_construction_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tsp_construction_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "initial_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_checkpoint_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "post_sa_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subset_swap_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "highp_exchange_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pair_exchange_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ruin_recreate_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ejection_chain_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "path_relink_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tsp_ils_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "final_polish_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "oracle_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_proposal_sample_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_insertion_sample_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sa_proposal_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sa_insertion_samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exact_subset_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Elapsed worker-seconds spent in the global exact subset-tour dynamic program."
+        }
+      },
+      "additionalProperties": false
+    },
+    "campaign_metadata": {
+      "type": "object",
+      "required": [
+        "campaign_id",
+        "campaign_shard",
+        "replicate_offset",
+        "point_seed",
+        "search_seed",
+        "solver_policy_id",
+        "fidelity_level",
+        "configuration_fingerprint",
+        "method_fingerprint"
+      ],
+      "properties": {
+        "campaign_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "campaign_shard": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "replicate_offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "point_seed": {
+          "type": "integer"
+        },
+        "search_seed": {
+          "type": "integer"
+        },
+        "solver_policy_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fidelity_level": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "configuration_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of the complete resolved configuration and runtime oracle identity."
+        },
+        "method_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 of all quality-affecting solver, build-source, and oracle inputs after removing campaign/grid/output identities."
+        }
+      },
+      "additionalProperties": false
+    },
+    "migration_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_schema_version",
+              "target_schema_version",
+              "tool",
+              "source_sha256",
+              "inferred_fields",
+              "unrecoverable_fields",
+              "notes"
+            ],
+            "properties": {
+              "source_schema_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "target_schema_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "tool": {
+                "type": "string",
+                "minLength": 1
+              },
+              "source_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "inferred_fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "unrecoverable_fields": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "memory_plan": {
+      "type": "object",
+      "required": [
+        "budget_bytes",
+        "fixed_overhead_bytes",
+        "estimated_instance_bytes",
+        "estimated_peak_bytes",
+        "requested_threads",
+        "resolved_threads",
+        "effective_threads",
+        "limited_by_budget",
+        "reverse_knn_enabled"
+      ],
+      "properties": {
+        "budget_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected_available_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "automatic_budget": {
+          "type": "boolean"
+        },
+        "fixed_overhead_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_instance_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_serialization_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_held_karp_call_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_oracle_call_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_control_reference_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ordinary_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "held_karp_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "oracle_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "control_reference_phase_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimated_peak_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requested_threads": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "effective_threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "held_karp_concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "oracle_concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limited_by_budget": {
+          "type": "boolean"
+        },
+        "reverse_knn_enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "solver_wall_seconds",
+        "control_reference_seconds",
+        "aggregation_seconds",
+        "experiment_wall_seconds"
+      ],
+      "properties": {
+        "solver_wall_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Elapsed time through completion of the instance-search workers."
+        },
+        "control_reference_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Elapsed time spent estimating the independent control-reference expectation."
+        },
+        "aggregation_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Elapsed time spent aggregating instance results and fitting control-variate summaries."
+        },
+        "experiment_wall_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Complete in-process experiment time through aggregation. Output serialization and commit are reported in the adjacent .receipt file."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

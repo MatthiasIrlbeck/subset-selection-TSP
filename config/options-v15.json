@@ -1,0 +1,2215 @@
+{
+  "metadata_version": 1,
+  "schema_version": 15,
+  "sections": [
+    {
+      "id": "general",
+      "title": "General"
+    },
+    {
+      "id": "simulation",
+      "title": "Simulation and campaign identity"
+    },
+    {
+      "id": "search",
+      "title": "Subset search"
+    },
+    {
+      "id": "tsp",
+      "title": "Full-TSP search"
+    },
+    {
+      "id": "neighborhoods",
+      "title": "Local-search neighborhoods"
+    },
+    {
+      "id": "geometry",
+      "title": "Geometry and KNN"
+    },
+    {
+      "id": "statistics",
+      "title": "Statistical diagnostics"
+    },
+    {
+      "id": "oracle",
+      "title": "External oracle"
+    },
+    {
+      "id": "ablation",
+      "title": "Ablation controls"
+    }
+  ],
+  "options": [
+    {
+      "id": "help",
+      "section": "general",
+      "cli": "--help",
+      "help": "Show this generated help text and exit.",
+      "emit_json": false,
+      "declare": false,
+      "action": "help"
+    },
+    {
+      "id": "self_test",
+      "section": "general",
+      "cli": "--self-test",
+      "help": "Run built-in smoke and self tests.",
+      "emit_json": false,
+      "declare": false,
+      "action": "self_test"
+    },
+    {
+      "id": "quick",
+      "section": "general",
+      "cli": "--quick",
+      "help": "Apply the small fast-run preset; explicit flags override it regardless of order.",
+      "emit_json": false,
+      "declare": false,
+      "action": "quick"
+    },
+    {
+      "id": "N",
+      "section": "simulation",
+      "struct": "run",
+      "member": "N",
+      "cpp_type": "int",
+      "default": 500,
+      "cli": "--N",
+      "json_key": "N",
+      "metavar": "<int>",
+      "help": "Number of random points.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 3
+      },
+      "quick_default": 48
+    },
+    {
+      "id": "instances",
+      "section": "simulation",
+      "struct": "run",
+      "member": "instances",
+      "cpp_type": "int",
+      "default": 15,
+      "cli": "--instances",
+      "json_key": "instances",
+      "metavar": "<int>",
+      "help": "Monte Carlo point-set instances.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "quick_default": 2
+    },
+    {
+      "id": "threads",
+      "section": "simulation",
+      "struct": "run",
+      "member": "threads",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--threads",
+      "json_key": "threads",
+      "metavar": "<int>",
+      "help": "Instance worker threads; zero selects an automatic bounded value.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "memory_budget_mb",
+      "section": "simulation",
+      "struct": "run",
+      "member": "memory_budget_mb",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--memory-budget-mb",
+      "json_key": "memory_budget_mb",
+      "metavar": "<MiB>",
+      "help": "Conservative peak-memory budget in MiB; zero derives a safe automatic budget from currently available physical/container memory.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "periodic",
+      "section": "simulation",
+      "struct": "run",
+      "member": "periodic",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--periodic",
+      "json_key": "periodic",
+      "help": "Use flat-torus periodic boundary conditions.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "control_variate",
+      "section": "statistics",
+      "struct": "run",
+      "member": "control_variate",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--control-variate",
+      "json_key": "control_variate",
+      "help": "Compute the two-nearest-neighbor control variate and fixed-subset bound; the bound measures tour quality conditional on that subset.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "cv_mc_samples",
+      "section": "statistics",
+      "struct": "run",
+      "member": "cv_mc_samples",
+      "cpp_type": "int",
+      "default": 2000,
+      "cli": "--cv-mc-samples",
+      "json_key": "cv_mc_samples",
+      "metavar": "<int>",
+      "help": "Cheap KNN-only samples used to estimate the full-set control-variate expectation.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "held_karp",
+      "section": "statistics",
+      "struct": "run",
+      "member": "held_karp",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--held-karp",
+      "json_key": "held_karp",
+      "help": "Compute the Held-Karp lower bound for each selected subset; this certifies tour quality conditional on that subset, not global subset optimality.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "hk_iterations",
+      "section": "statistics",
+      "struct": "run",
+      "member": "hk_iterations",
+      "cpp_type": "int",
+      "default": 400,
+      "cli": "--hk-iterations",
+      "json_key": "hk_iterations",
+      "metavar": "<int>",
+      "help": "Held-Karp subgradient iterations.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "verbose",
+      "section": "general",
+      "struct": "run",
+      "member": "verbose",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--verbose-p",
+      "json_key": "verbose",
+      "help": "Print per-instance and per-p progress.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "include_instance_rows",
+      "section": "statistics",
+      "struct": "run",
+      "member": "include_instance_rows",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--include-instance-rows",
+      "json_key": "include_instance_rows",
+      "help": "Include per-instance rows and restart diagnostics in JSON.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "campaign_id",
+      "section": "simulation",
+      "struct": "run",
+      "member": "campaign_id",
+      "cpp_type": "std::string",
+      "default": "default",
+      "cli": "--campaign-id",
+      "json_key": "campaign_id",
+      "metavar": "<text>",
+      "help": "Stable campaign identity.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    {
+      "id": "campaign_shard",
+      "section": "simulation",
+      "struct": "run",
+      "member": "campaign_shard",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--campaign-shard",
+      "json_key": "campaign_shard",
+      "metavar": "<int>",
+      "help": "Nonnegative campaign shard identity.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "replicate_offset",
+      "section": "simulation",
+      "struct": "run",
+      "member": "replicate_offset",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--replicate-offset",
+      "json_key": "replicate_offset",
+      "metavar": "<int>",
+      "help": "Campaign-global first replicate identifier.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "point_seed",
+      "section": "simulation",
+      "struct": "run",
+      "member": "point_seed",
+      "cpp_type": "std::optional<int>",
+      "cpp_default": "std::nullopt",
+      "cli": "--point-seed",
+      "json_key": "point_seed",
+      "metavar": "<int>",
+      "help": "Point-instance seed; defaults to --seed.",
+      "constraints": {
+        "type": "integer"
+      },
+      "json_expr": "effective_point_seed(opt)"
+    },
+    {
+      "id": "search_seed",
+      "section": "simulation",
+      "struct": "run",
+      "member": "search_seed",
+      "cpp_type": "std::optional<int>",
+      "cpp_default": "std::nullopt",
+      "cli": "--search-seed",
+      "json_key": "search_seed",
+      "metavar": "<int>",
+      "help": "Heuristic-search seed; defaults to --seed.",
+      "constraints": {
+        "type": "integer"
+      },
+      "json_expr": "effective_search_seed(opt)"
+    },
+    {
+      "id": "solver_policy_id",
+      "section": "simulation",
+      "struct": "run",
+      "member": "solver_policy_id",
+      "cpp_type": "std::string",
+      "default": "default",
+      "cli": "--solver-policy-id",
+      "json_key": "solver_policy_id",
+      "metavar": "<text>",
+      "help": "Stable solver-policy identity.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    {
+      "id": "fidelity_level",
+      "section": "simulation",
+      "struct": "run",
+      "member": "fidelity_level",
+      "cpp_type": "std::string",
+      "default": "strong",
+      "cli": "--fidelity-level",
+      "json_key": "fidelity_level",
+      "metavar": "<text>",
+      "help": "Fidelity identity such as cheap or strong.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    {
+      "id": "second_sweep",
+      "section": "search",
+      "struct": "run",
+      "member": "second_sweep",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--second-sweep",
+      "json_key": "second_sweep",
+      "help": "Run an ascending continuation sweep after the descending sweep.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "force_output",
+      "section": "general",
+      "struct": "run",
+      "member": "force_output",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--force",
+      "json_key": "force_output",
+      "help": "Replace an existing output path.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "dry_run",
+      "section": "general",
+      "struct": "run",
+      "member": "dry_run",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--dry-run",
+      "json_key": "dry_run",
+      "help": "Validate and print the resolved configuration without solving.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "dump_config",
+      "section": "general",
+      "struct": "run",
+      "member": "dump_config",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--dump-config",
+      "json_key": "dump_config",
+      "help": "Print the resolved configuration before solving.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "output_path",
+      "section": "general",
+      "struct": "run",
+      "member": "output_path",
+      "cpp_type": "std::string",
+      "default": "results.json",
+      "cli": "--output",
+      "json_key": "output_path",
+      "metavar": "<file>",
+      "help": "Output JSON path.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    {
+      "id": "output_durability",
+      "section": "general",
+      "struct": "run",
+      "member": "output_durability",
+      "cpp_type": "OutputDurability",
+      "default": "full",
+      "cpp_default": "OutputDurability::Full",
+      "cli": "--output-durability",
+      "json_key": "output_durability",
+      "metavar": "<mode>",
+      "help": "Output durability: none, file, or full (file plus parent directory).",
+      "constraints": {
+        "enum": [
+          "none",
+          "file",
+          "full"
+        ]
+      },
+      "parser": "parse_output_durability",
+      "formatter": "output_durability_name"
+    },
+    {
+      "id": "p_values",
+      "section": "simulation",
+      "struct": "run",
+      "member": "p_values",
+      "cpp_type": "std::vector<double>",
+      "default": [
+        0.02,
+        0.03,
+        0.05,
+        0.07,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.8,
+        1.0
+      ],
+      "json_key": "p_values",
+      "help": "Resolved probability grid.",
+      "constraints": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      },
+      "quick_default": [
+        0.1,
+        0.25,
+        0.5,
+        1.0
+      ]
+    },
+    {
+      "id": "p_values_cli",
+      "section": "simulation",
+      "cli": "--p-values",
+      "metavar": "<csv>",
+      "help": "Comma-separated p grid, for example 0.02,0.05,1.",
+      "emit_json": false,
+      "declare": false,
+      "action": "p_values"
+    },
+    {
+      "id": "p_range_cli",
+      "section": "simulation",
+      "cli": "--p-range",
+      "metavar": "<a:b:n>",
+      "help": "Linear p grid from a to b with n values.",
+      "emit_json": false,
+      "declare": false,
+      "action": "p_range"
+    },
+    {
+      "id": "p_file_cli",
+      "section": "simulation",
+      "cli": "--p-file",
+      "metavar": "<file>",
+      "help": "Read whitespace- or comma-separated p values from a file.",
+      "emit_json": false,
+      "declare": false,
+      "action": "p_file"
+    },
+    {
+      "id": "knn_k",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "knn_k",
+      "cpp_type": "int",
+      "default": 40,
+      "cli": "--knn",
+      "json_key": "knn_k",
+      "metavar": "<int>",
+      "help": "Exact KNN candidate count; values are capped to N-1.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "knn_backend",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "knn_backend",
+      "cpp_type": "KnnBackend",
+      "default": "grid",
+      "cpp_default": "KnnBackend::GridExact",
+      "cli": "--knn-backend",
+      "json_key": "knn_backend",
+      "metavar": "<name>",
+      "help": "Exact KNN backend: grid or bruteforce.",
+      "constraints": {
+        "enum": [
+          "coords_exact_grid_knn",
+          "coords_exact_bruteforce_knn"
+        ]
+      },
+      "parser": "parse_knn_backend",
+      "formatter": "knn_backend_name"
+    },
+    {
+      "id": "reverse_knn",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "reverse_knn",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--reverse-knn",
+      "json_key": "reverse_knn",
+      "help": "Build reverse-KNN adjacency lazily when candidate local search needs it; disable to save additional memory.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "verify_knn_checks",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "verify_knn_checks",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--verify-knn",
+      "json_key": "verify_knn_checks",
+      "metavar": "<int>",
+      "help": "Sampled exact-KNN verification checks.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "grid_cell",
+      "section": "geometry",
+      "struct": "solver",
+      "member": "grid_cell",
+      "cpp_type": "double",
+      "default": 0.0,
+      "cli": "--grid-cell",
+      "json_key": "grid_cell",
+      "metavar": "<float>",
+      "help": "Force a grid cell size; zero selects an automatic safe value.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "exact_subset_max_n",
+      "section": "search",
+      "struct": "solver",
+      "member": "exact_subset_max_n",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--exact-subset-max-n",
+      "json_key": "exact_subset_max_n",
+      "metavar": "<int>",
+      "help": "Globally solve subset choice and tour when N is at most this threshold; zero disables it.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 18
+      }
+    },
+    {
+      "id": "tsp_candidate_starts",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_candidate_starts",
+      "cpp_type": "int",
+      "default": 12,
+      "cli": "--tsp-candidate-starts",
+      "json_key": "tsp_candidate_starts",
+      "metavar": "<int>",
+      "help": "Cheap deterministic TSP starts screened before ILS promotion.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "tsp_farthest_starts",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_farthest_starts",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--tsp-farthest-starts",
+      "json_key": "tsp_farthest_starts",
+      "metavar": "<0|1>",
+      "help": "Opt into at most one cubic farthest-insertion pilot.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "tsp_min_edge_jaccard",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_min_edge_jaccard",
+      "cpp_type": "double",
+      "default": 0.02,
+      "cli": "--tsp-min-edge-jaccard",
+      "json_key": "tsp_min_edge_jaccard",
+      "metavar": "<float>",
+      "help": "Preferred edge-Jaccard distance among promoted TSP starts.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "tsp_restarts",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_restarts",
+      "cpp_type": "int",
+      "default": 5,
+      "cli": "--tsp-restarts",
+      "json_key": "tsp_restarts",
+      "metavar": "<int>",
+      "help": "Full TSP restarts promoted into ILS.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "quick_default": 1
+    },
+    {
+      "id": "tsp_ils",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_ils",
+      "cpp_type": "int",
+      "default": 300,
+      "cli": "--tsp-ils",
+      "json_key": "tsp_ils",
+      "metavar": "<int>",
+      "help": "Full-TSP ILS perturbation iterations.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 20
+    },
+    {
+      "id": "tsp_patience",
+      "section": "tsp",
+      "struct": "solver",
+      "member": "tsp_patience",
+      "cpp_type": "int",
+      "default": 80,
+      "cli": "--tsp-patience",
+      "json_key": "tsp_patience",
+      "metavar": "<int>",
+      "help": "Full-TSP ILS stagnation patience.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 8
+    },
+    {
+      "id": "search_policy_preset",
+      "section": "search",
+      "struct": "solver",
+      "member": "search_policy_preset",
+      "cpp_type": "SearchPolicyPreset",
+      "default": "legacy-balanced",
+      "cpp_default": "SearchPolicyPreset::LegacyBalanced",
+      "cli": "--search-policy",
+      "json_key": "search_policy_preset",
+      "metavar": "<name>",
+      "help": "Search controller preset. legacy-balanced preserves the 0.10 controller. heldout-balanced uses the held-out four-candidate SA policy through p=0.35; heldout-quality uses a deeper policy, extends periodic runs through p=0.50, and strengthens full-TSP screening. Explicit core SA or TSP population controls take precedence.",
+      "constraints": {
+        "enum": [
+          "legacy-balanced",
+          "heldout-balanced",
+          "heldout-quality"
+        ]
+      },
+      "parser": "parse_search_policy_preset",
+      "formatter": "search_policy_preset_name"
+    },
+    {
+      "id": "subset_restarts",
+      "section": "search",
+      "struct": "solver",
+      "member": "subset_restarts",
+      "cpp_type": "int",
+      "default": -1,
+      "cli": "--restarts",
+      "json_key": "subset_restarts",
+      "metavar": "<int>",
+      "help": "Subset restarts; -1 selects the p-aware automatic policy.",
+      "constraints": {
+        "type": "integer",
+        "minimum": -1
+      },
+      "quick_default": 1
+    },
+    {
+      "id": "continuation_restarts",
+      "section": "search",
+      "struct": "solver",
+      "member": "continuation_restarts",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--continuation-restarts",
+      "json_key": "continuation_restarts",
+      "metavar": "<int>",
+      "help": "Warm restarts when a neighboring-p parent exists.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "continuation_policy",
+      "section": "search",
+      "struct": "solver",
+      "member": "continuation_policy",
+      "cpp_type": "ContinuationPolicy",
+      "default": "supplemental",
+      "cpp_default": "ContinuationPolicy::Supplemental",
+      "cli": "--continuation-policy",
+      "json_key": "continuation_policy",
+      "metavar": "<name>",
+      "help": "Continuation policy: supplemental or fixed-budget.",
+      "constraints": {
+        "enum": [
+          "supplemental",
+          "fixed-budget"
+        ]
+      },
+      "parser": "parse_continuation_policy",
+      "formatter": "continuation_policy_name"
+    },
+    {
+      "id": "racing_candidates",
+      "section": "search",
+      "struct": "solver",
+      "member": "racing_candidates",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--racing-candidates",
+      "json_key": "racing_candidates",
+      "metavar": "<int>",
+      "help": "Supplemental candidates screened by deterministic restart racing; zero disables it.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "racing_survivors",
+      "section": "search",
+      "struct": "solver",
+      "member": "racing_survivors",
+      "cpp_type": "int",
+      "default": 2,
+      "cli": "--racing-survivors",
+      "json_key": "racing_survivors",
+      "metavar": "<int>",
+      "help": "Pilot candidates promoted to a full-depth rerun.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "racing_pilot_iters",
+      "section": "search",
+      "struct": "solver",
+      "member": "racing_pilot_iters",
+      "cpp_type": "int",
+      "default": 2000,
+      "cli": "--racing-pilot-iters",
+      "json_key": "racing_pilot_iters",
+      "metavar": "<int>",
+      "help": "SA iterations used to screen each race candidate.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "racing_min_jaccard",
+      "section": "search",
+      "struct": "solver",
+      "member": "racing_min_jaccard",
+      "cpp_type": "double",
+      "default": 0.05,
+      "cli": "--racing-min-jaccard",
+      "json_key": "racing_min_jaccard",
+      "metavar": "<float>",
+      "help": "Preferred selected-set Jaccard distance between promoted race candidates.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "staged_search",
+      "section": "search",
+      "struct": "solver",
+      "member": "staged_search",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--staged-search",
+      "json_key": "staged_search",
+      "help": "Reserve expensive post-SA neighborhoods for promoted finalists.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "strong_polish_finalists",
+      "section": "search",
+      "struct": "solver",
+      "member": "strong_polish_finalists",
+      "cpp_type": "int",
+      "default": 3,
+      "cli": "--strong-polish-finalists",
+      "json_key": "strong_polish_finalists",
+      "metavar": "<int>",
+      "help": "Finalists receiving the strong search stage.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "strong_polish_min_jaccard",
+      "section": "search",
+      "struct": "solver",
+      "member": "strong_polish_min_jaccard",
+      "cpp_type": "double",
+      "default": 0.02,
+      "cli": "--strong-polish-min-jaccard",
+      "json_key": "strong_polish_min_jaccard",
+      "metavar": "<float>",
+      "help": "Preferred selected-set distance among strong-polish finalists.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "sa_iters",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_iters",
+      "cpp_type": "int",
+      "default": 60000,
+      "cli": "--sa-iters",
+      "json_key": "sa_iters",
+      "metavar": "<int>",
+      "help": "Base subset-SA iteration budget.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 250
+    },
+    {
+      "id": "sa_iters_per_k",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_iters_per_k",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--sa-iters-per-k",
+      "json_key": "sa_iters_per_k",
+      "metavar": "<int>",
+      "help": "Additional SA iterations per selected node k.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "sa_iters_per_n",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_iters_per_n",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--sa-iters-per-n",
+      "json_key": "sa_iters_per_n",
+      "metavar": "<int>",
+      "help": "Additional SA iterations per candidate point N.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "sa_exact_insertion",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_exact_insertion",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--sa-exact-insertion",
+      "json_key": "sa_exact_insertion",
+      "help": "Use the historical exact O(k) insertion scan for every SA move.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "sa_insertion_window",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_insertion_window",
+      "cpp_type": "int",
+      "default": 12,
+      "cli": "--sa-insertion-window",
+      "json_key": "sa_insertion_window",
+      "metavar": "<int>",
+      "help": "Tour-position radius for windowed SA insertion.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "small_p_dense_fill",
+      "section": "search",
+      "struct": "solver",
+      "member": "small_p_dense_fill",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--small-p-dense-fill",
+      "json_key": "small_p_dense_fill",
+      "help": "At small p, fill the restart pool with dense-seed variants instead of uncontracted random subsets.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "exploration_exact_insertion",
+      "section": "search",
+      "struct": "solver",
+      "member": "exploration_exact_insertion",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--exploration-exact-insertion",
+      "json_key": "exploration_exact_insertion",
+      "help": "Use exact insertion for spread-out exploration seeds.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "sa_spatial_insertion",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_spatial_insertion",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--sa-spatial-insertion",
+      "json_key": "sa_spatial_insertion",
+      "help": "Use insertion slots from a live spatial index (default: false).",
+      "constraints": {
+        "type": "boolean"
+      },
+      "show_default": false
+    },
+    {
+      "id": "dense_exact_insertion",
+      "section": "search",
+      "struct": "solver",
+      "member": "dense_exact_insertion",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--dense-exact-insertion",
+      "json_key": "dense_exact_insertion",
+      "help": "Force exact insertion on dense seeds; this reproduces the old bit-identical path at k=2000 but costs about +58% wall.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "sa_spatial_neighbors",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_spatial_neighbors",
+      "cpp_type": "int",
+      "default": 16,
+      "cli": "--sa-spatial-neighbors",
+      "json_key": "sa_spatial_neighbors",
+      "metavar": "<int>",
+      "help": "Nearest current members allowed to offer insertion slots.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "region_seeds",
+      "section": "search",
+      "struct": "solver",
+      "member": "region_seeds",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--region-seeds",
+      "json_key": "region_seeds",
+      "help": "Use localized region seeds in the explorer pool.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "region_dilation",
+      "section": "search",
+      "struct": "solver",
+      "member": "region_dilation",
+      "cpp_type": "double",
+      "default": 3.0,
+      "cli": "--region-dilation",
+      "json_key": "region_dilation",
+      "metavar": "<float>",
+      "help": "Region-seed candidate dilation.",
+      "constraints": {
+        "type": "number",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "subset_kick_restarts",
+      "section": "search",
+      "struct": "solver",
+      "member": "subset_kick_restarts",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--kick-restarts",
+      "json_key": "kick_restarts",
+      "metavar": "<int>",
+      "help": "Scheduled elite-kick restarts.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "kick_fraction",
+      "section": "search",
+      "struct": "solver",
+      "member": "kick_fraction",
+      "cpp_type": "double",
+      "default": 0.1,
+      "cli": "--kick-fraction",
+      "json_key": "kick_fraction",
+      "metavar": "<float>",
+      "help": "Fraction of members swapped by an elite kick.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1
+      }
+    },
+    {
+      "id": "kick_t0",
+      "section": "search",
+      "struct": "solver",
+      "member": "kick_t0",
+      "cpp_type": "double",
+      "default": 0.35,
+      "cli": "--kick-t0",
+      "json_key": "kick_t0",
+      "metavar": "<float>",
+      "help": "SA start temperature for elite-kick restarts.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    {
+      "id": "sa_t0",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_t0",
+      "cpp_type": "double",
+      "default": 1.4,
+      "cli": "--sa-t0",
+      "json_key": "sa_t0",
+      "metavar": "<float>",
+      "help": "Fixed SA start temperature.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    {
+      "id": "sa_t1",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_t1",
+      "cpp_type": "double",
+      "default": 5e-05,
+      "cli": "--sa-t1",
+      "json_key": "sa_t1",
+      "metavar": "<float>",
+      "help": "Fixed SA end temperature.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    {
+      "id": "sa_auto_temperature",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_auto_temperature",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--sa-auto-temperature",
+      "json_key": "sa_auto_temperature",
+      "help": "Calibrate each restart's SA temperatures from sampled uphill move deltas.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "sa_temperature_samples",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_temperature_samples",
+      "cpp_type": "int",
+      "default": 256,
+      "cli": "--sa-temperature-samples",
+      "json_key": "sa_temperature_samples",
+      "metavar": "<int>",
+      "help": "Target positive-delta samples for restart-local SA calibration.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65536
+      },
+      "quick_default": 32
+    },
+    {
+      "id": "sa_temperature_quantile",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_temperature_quantile",
+      "cpp_type": "double",
+      "default": 0.5,
+      "cli": "--sa-temperature-quantile",
+      "json_key": "sa_temperature_quantile",
+      "metavar": "<float>",
+      "help": "Positive-delta quantile used to calibrate SA endpoints.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "sa_initial_uphill_acceptance",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_initial_uphill_acceptance",
+      "cpp_type": "double",
+      "default": 0.6,
+      "cli": "--sa-initial-uphill-acceptance",
+      "json_key": "sa_initial_uphill_acceptance",
+      "metavar": "<float>",
+      "help": "Target initial acceptance for the calibrated uphill-delta quantile.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1
+      }
+    },
+    {
+      "id": "sa_final_uphill_acceptance",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_final_uphill_acceptance",
+      "cpp_type": "double",
+      "default": 0.01,
+      "cli": "--sa-final-uphill-acceptance",
+      "json_key": "sa_final_uphill_acceptance",
+      "metavar": "<float>",
+      "help": "Target final acceptance for the calibrated uphill-delta quantile.",
+      "constraints": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "exclusiveMaximum": 1
+      }
+    },
+    {
+      "id": "sa_candidate_trials",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_candidate_trials",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--sa-candidate-trials",
+      "json_key": "sa_candidate_trials",
+      "metavar": "<int>",
+      "help": "Candidate swaps evaluated per SA iteration; one preserves the historical proposal.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 64
+      }
+    },
+    {
+      "id": "sa_multiple_try_random_probability",
+      "section": "search",
+      "struct": "solver",
+      "member": "sa_multiple_try_random_probability",
+      "cpp_type": "double",
+      "default": 0.1,
+      "cli": "--sa-multiple-try-random-probability",
+      "json_key": "sa_multiple_try_random_probability",
+      "metavar": "<float>",
+      "help": "For multiple-try SA, probability of selecting a random valid trial instead of the best.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "restart_threads",
+      "section": "search",
+      "struct": "solver",
+      "member": "restart_threads",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--restart-threads",
+      "json_key": "restart_threads",
+      "metavar": "<int>",
+      "help": "Parallel subset-restart workers; zero requests automatic allocation.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "cli_default": 0
+    },
+    {
+      "id": "time_budget_per_p",
+      "section": "search",
+      "struct": "solver",
+      "member": "time_budget_per_p",
+      "cpp_type": "double",
+      "default": 0.0,
+      "cli": "--time-budget-per-p",
+      "json_key": "time_budget_per_p",
+      "metavar": "<sec>",
+      "help": "Wall-clock target per instance/p solve; zero disables anytime mode.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "final_exhaustive_k",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "final_exhaustive_k",
+      "cpp_type": "int",
+      "default": 300,
+      "cli": "--final-exhaustive-k",
+      "json_key": "final_exhaustive_k",
+      "metavar": "<int>",
+      "help": "Exhaustive final 2-opt cardinality threshold.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "exhaustive_two_opt_policy",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "exhaustive_two_opt_policy",
+      "cpp_type": "ExhaustiveTwoOptPolicy",
+      "default": "final-only",
+      "cpp_default": "ExhaustiveTwoOptPolicy::FinalOnly",
+      "cli": "--exhaustive-two-opt-policy",
+      "json_key": "exhaustive_two_opt_policy",
+      "metavar": "<name>",
+      "help": "Exhaustive 2-opt policy: never, final-only, or all-polish.",
+      "constraints": {
+        "enum": [
+          "never",
+          "final-only",
+          "all-polish"
+        ]
+      },
+      "parser": "parse_exhaustive_two_opt_policy",
+      "formatter": "exhaustive_two_opt_policy_name"
+    },
+    {
+      "id": "subset_swap_descent_passes",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "subset_swap_descent_passes",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--subset-swap-passes",
+      "json_key": "subset_swap_descent_passes",
+      "metavar": "<int>",
+      "help": "Deterministic one-for-one subset-swap passes.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "pair_exchange_passes",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "pair_exchange_passes",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--pair-exchange-passes",
+      "json_key": "pair_exchange_passes",
+      "metavar": "<int>",
+      "help": "Two-for-two subset-exchange passes.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 0
+    },
+    {
+      "id": "pair_exchange_max_k",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "pair_exchange_max_k",
+      "cpp_type": "int",
+      "default": 5000,
+      "cli": "--pair-exchange-max-k",
+      "json_key": "pair_exchange_max_k",
+      "metavar": "<int>",
+      "help": "Skip pair exchange above k; zero removes the gate.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ruin_recreate_rounds",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ruin_recreate_rounds",
+      "cpp_type": "int",
+      "default": 4,
+      "cli": "--ruin-recreate-rounds",
+      "json_key": "ruin_recreate_rounds",
+      "metavar": "<int>",
+      "help": "Ruin/recreate LNS rounds.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 1
+    },
+    {
+      "id": "adaptive_ruin_recreate",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "adaptive_ruin_recreate",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--adaptive-ruin-recreate",
+      "json_key": "adaptive_ruin_recreate",
+      "help": "Use the adaptive multi-scale ruin/recreate operator portfolio.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "ruin_recreate_max_fraction",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ruin_recreate_max_fraction",
+      "cpp_type": "double",
+      "default": 0.05,
+      "cli": "--ruin-recreate-max-fraction",
+      "json_key": "ruin_recreate_max_fraction",
+      "metavar": "<float>",
+      "help": "Maximum ruined fraction of k.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "ruin_recreate_max_nodes",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ruin_recreate_max_nodes",
+      "cpp_type": "int",
+      "default": 96,
+      "cli": "--ruin-recreate-max-nodes",
+      "json_key": "ruin_recreate_max_nodes",
+      "metavar": "<int>",
+      "help": "Absolute ruin-size cap; zero removes it.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ruin_recreate_pool_cap",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ruin_recreate_pool_cap",
+      "cpp_type": "int",
+      "default": 640,
+      "cli": "--ruin-recreate-pool-cap",
+      "json_key": "ruin_recreate_pool_cap",
+      "metavar": "<int>",
+      "help": "Candidate repair-pool cap.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "ejection_chain_starts",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ejection_chain_starts",
+      "cpp_type": "int",
+      "default": 3,
+      "cli": "--ejection-chain-starts",
+      "json_key": "ejection_chain_starts",
+      "metavar": "<int>",
+      "help": "Variable-depth membership-chain starts per restart.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ejection_chain_depth",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ejection_chain_depth",
+      "cpp_type": "int",
+      "default": 6,
+      "cli": "--ejection-chain-depth",
+      "json_key": "ejection_chain_depth",
+      "metavar": "<int>",
+      "help": "Maximum membership swaps per ejection chain.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ejection_chain_candidates",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ejection_chain_candidates",
+      "cpp_type": "int",
+      "default": 24,
+      "cli": "--ejection-chain-candidates",
+      "json_key": "ejection_chain_candidates",
+      "metavar": "<int>",
+      "help": "Incoming-node candidates per chain step.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ejection_chain_remove_cap",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ejection_chain_remove_cap",
+      "cpp_type": "int",
+      "default": 96,
+      "cli": "--ejection-chain-remove-cap",
+      "json_key": "ejection_chain_remove_cap",
+      "metavar": "<int>",
+      "help": "Removable selected-node cap per chain step; zero means all.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "ejection_chain_max_uphill",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "ejection_chain_max_uphill",
+      "cpp_type": "double",
+      "default": 0.75,
+      "cli": "--ejection-chain-max-uphill",
+      "json_key": "ejection_chain_max_uphill",
+      "metavar": "<float>",
+      "help": "Maximum cumulative uphill excursion in mean-edge units.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "elite_diversity_slots",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "elite_diversity_slots",
+      "cpp_type": "int",
+      "default": 4,
+      "cli": "--elite-diversity-slots",
+      "json_key": "elite_diversity_slots",
+      "metavar": "<int>",
+      "help": "Supplemental set-diverse elite slots.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "elite_min_jaccard",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "elite_min_jaccard",
+      "cpp_type": "double",
+      "default": 0.02,
+      "cli": "--elite-min-jaccard",
+      "json_key": "elite_min_jaccard",
+      "metavar": "<float>",
+      "help": "Minimum selected-set Jaccard distance for supplemental elite entries.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    {
+      "id": "elite_quality_slack",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "elite_quality_slack",
+      "cpp_type": "double",
+      "default": 0.03,
+      "cli": "--elite-quality-slack",
+      "json_key": "elite_quality_slack",
+      "metavar": "<float>",
+      "help": "Quality slack allowed for supplemental diverse entries.",
+      "constraints": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "path_relink_top",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_top",
+      "cpp_type": "int",
+      "default": 3,
+      "cli": "--path-relink-top",
+      "json_key": "path_relink_top",
+      "metavar": "<int>",
+      "help": "Literal maximum archive population exposed to relinking.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "quick_default": 0
+    },
+    {
+      "id": "path_relink_diverse_reserve",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_diverse_reserve",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--path-relink-diverse-reserve",
+      "json_key": "path_relink_diverse_reserve",
+      "metavar": "<int>",
+      "help": "Diversity-preferred entries inside the relinking node cap.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "path_relink_max_pairs",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_max_pairs",
+      "cpp_type": "int",
+      "default": 3,
+      "cli": "--path-relink-max-pairs",
+      "json_key": "path_relink_max_pairs",
+      "metavar": "<int>",
+      "help": "Maximum ranked relinking pair attempts; zero is unlimited.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "path_relink_max_removed",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_max_removed",
+      "cpp_type": "int",
+      "default": 64,
+      "cli": "--path-relink-max-removed",
+      "json_key": "path_relink_max_removed",
+      "metavar": "<int>",
+      "help": "Maximum one-way selected-set difference per pair; zero is unlimited.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "path_relink_max_removed_sum",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_max_removed_sum",
+      "cpp_type": "int",
+      "default": 128,
+      "cli": "--path-relink-max-removed-sum",
+      "json_key": "path_relink_max_removed_sum",
+      "metavar": "<int>",
+      "help": "Cumulative selected-set-difference budget; zero is unlimited.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "path_relink_max_candidate_scans",
+      "section": "neighborhoods",
+      "struct": "solver",
+      "member": "path_relink_max_candidate_scans",
+      "cpp_type": "int",
+      "default": 250000,
+      "cli": "--path-relink-max-candidate-scans",
+      "json_key": "path_relink_max_candidate_scans",
+      "metavar": "<int>",
+      "help": "Exact relinking candidate-scan budget; zero is unlimited.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "seed",
+      "section": "simulation",
+      "struct": "solver",
+      "member": "seed",
+      "cpp_type": "int",
+      "default": 2024,
+      "cli": "--seed",
+      "json_key": "seed",
+      "metavar": "<int>",
+      "help": "Base random seed.",
+      "constraints": {
+        "type": "integer"
+      }
+    },
+    {
+      "id": "mode",
+      "section": "search",
+      "struct": "solver",
+      "member": "mode",
+      "cpp_type": "SolverMode",
+      "default": "balanced",
+      "cpp_default": "SolverMode::Balanced",
+      "cli": "--mode",
+      "json_key": "mode",
+      "metavar": "<name>",
+      "help": "Solver mode: balanced, smallp-region, highp-delete, or hybrid.",
+      "constraints": {
+        "enum": [
+          "balanced",
+          "smallp-region",
+          "highp-delete",
+          "hybrid"
+        ]
+      },
+      "parser": "parse_solver_mode",
+      "formatter": "solver_mode_name"
+    },
+    {
+      "id": "disable_two_opt",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_two_opt",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-two-opt",
+      "json_key": "disable_two_opt",
+      "help": "Disable 2-opt.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_or_opt",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_or_opt",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-or-opt",
+      "json_key": "disable_or_opt",
+      "help": "Disable Or-opt.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_subset_swap",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_subset_swap",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-subset-swap",
+      "json_key": "disable_subset_swap",
+      "help": "Disable one-for-one subset swaps.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_pair_exchange",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_pair_exchange",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-pair-exchange",
+      "json_key": "disable_pair_exchange",
+      "help": "Disable two-for-two subset exchange.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_elite_restarts",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_elite_restarts",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-elite-restarts",
+      "json_key": "disable_elite_restarts",
+      "help": "Disable elite-seeded anytime restarts.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_ruin_recreate",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_ruin_recreate",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-ruin-recreate",
+      "json_key": "disable_ruin_recreate",
+      "help": "Disable ruin/recreate.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_ejection_chain",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_ejection_chain",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-ejection-chain",
+      "json_key": "disable_ejection_chain",
+      "help": "Disable membership ejection chains.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_path_relink",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_path_relink",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-path-relink",
+      "json_key": "disable_path_relink",
+      "help": "Disable path relinking.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_smallp_seeds",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_smallp_seeds",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-smallp-seeds",
+      "json_key": "disable_smallp_seeds",
+      "help": "Disable specialized small-p seeds.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "disable_highp_delete",
+      "section": "ablation",
+      "struct": "solver",
+      "member": "disable_highp_delete",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--disable-highp-delete",
+      "json_key": "disable_highp_delete",
+      "help": "Disable high-p deletion seeds and exchange.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "oracle_mode",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "mode",
+      "cpp_type": "ExternalOracleMode",
+      "default": "none",
+      "cpp_default": "ExternalOracleMode::None",
+      "cli": "--oracle",
+      "json_key": "oracle_mode",
+      "metavar": "<mode>",
+      "help": "External oracle: none, auto, lkh, or concorde.",
+      "constraints": {
+        "enum": [
+          "none",
+          "auto",
+          "lkh",
+          "concorde"
+        ]
+      },
+      "parser": "parse_external_oracle_mode",
+      "formatter": "external_oracle_mode_name"
+    },
+    {
+      "id": "oracle_format",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "problem_format",
+      "cpp_type": "OracleProblemFormat",
+      "default": "matrix",
+      "cpp_default": "OracleProblemFormat::Matrix",
+      "cli": "--oracle-format",
+      "json_key": "oracle_format",
+      "metavar": "<format>",
+      "help": "Oracle problem format: matrix or euc2d.",
+      "constraints": {
+        "enum": [
+          "matrix",
+          "euc2d"
+        ]
+      },
+      "parser": "parse_oracle_problem_format",
+      "formatter": "oracle_problem_format_name"
+    },
+    {
+      "id": "lkh_path",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "lkh_path",
+      "cpp_type": "std::string",
+      "default": "LKH",
+      "cli": "--lkh-path",
+      "json_key": "lkh_path",
+      "metavar": "<path>",
+      "help": "LKH executable path.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    {
+      "id": "concorde_path",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "concorde_path",
+      "cpp_type": "std::string",
+      "default": "concorde",
+      "cli": "--concorde-path",
+      "json_key": "concorde_path",
+      "metavar": "<path>",
+      "help": "Concorde executable path.",
+      "constraints": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    {
+      "id": "oracle_time_limit_sec",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "time_limit_sec",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--oracle-time-limit",
+      "json_key": "oracle_time_limit_sec",
+      "metavar": "<sec>",
+      "help": "Per-call oracle time limit; zero disables it.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "oracle_scale",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "scale",
+      "cpp_type": "int",
+      "default": 1000000,
+      "cli": "--oracle-scale",
+      "json_key": "oracle_scale",
+      "metavar": "<int>",
+      "help": "Distance scaling factor for integer oracle matrices.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "oracle_tsp_top",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "tsp_top",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--oracle-tsp-top",
+      "json_key": "oracle_tsp_top",
+      "metavar": "<int>",
+      "help": "Top full-TSP solutions sent to the oracle.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "oracle_subset_top",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "subset_top",
+      "cpp_type": "int",
+      "default": 1,
+      "cli": "--oracle-subset-top",
+      "json_key": "oracle_subset_top",
+      "metavar": "<int>",
+      "help": "Top subset solutions sent to the oracle.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "oracle_min_k",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "min_k",
+      "cpp_type": "int",
+      "default": 17,
+      "cpp_default": "kExactSmallTourLimit + 1",
+      "cli": "--oracle-min-k",
+      "json_key": "oracle_min_k",
+      "metavar": "<int>",
+      "help": "Minimum cardinality eligible for an external oracle.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 3
+      }
+    },
+    {
+      "id": "oracle_max_k",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "max_k",
+      "cpp_type": "int",
+      "default": 2500,
+      "cli": "--oracle-max-k",
+      "json_key": "oracle_max_k",
+      "metavar": "<int>",
+      "help": "Maximum cardinality eligible for an external oracle.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 3
+      }
+    },
+    {
+      "id": "oracle_lkh_runs",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "lkh_runs",
+      "cpp_type": "int",
+      "default": 6,
+      "cli": "--oracle-lkh-runs",
+      "json_key": "oracle_lkh_runs",
+      "metavar": "<int>",
+      "help": "LKH RUNS parameter.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    {
+      "id": "oracle_lkh_max_trials",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "lkh_max_trials",
+      "cpp_type": "int",
+      "default": 0,
+      "cli": "--oracle-lkh-trials",
+      "json_key": "oracle_lkh_max_trials",
+      "metavar": "<int>",
+      "help": "LKH MAX_TRIALS; zero uses the solver default.",
+      "constraints": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    {
+      "id": "oracle_use_for_tsp",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "use_for_tsp",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--oracle-no-tsp",
+      "json_key": "oracle_use_for_tsp",
+      "help": "Disable external-oracle use for full TSP.",
+      "constraints": {
+        "type": "boolean"
+      },
+      "invert": true
+    },
+    {
+      "id": "oracle_use_for_subset",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "use_for_subset",
+      "cpp_type": "bool",
+      "default": true,
+      "cli": "--oracle-no-subset",
+      "json_key": "oracle_use_for_subset",
+      "help": "Disable external-oracle use for subset tours.",
+      "constraints": {
+        "type": "boolean"
+      },
+      "invert": true
+    },
+    {
+      "id": "oracle_inline_feedback",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "inline_feedback",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--oracle-inline-feedback",
+      "json_key": "oracle_inline_feedback",
+      "help": "Feed oracle-improved cycles back into the in-process elite search.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "oracle_verbose",
+      "section": "oracle",
+      "struct": "oracle",
+      "member": "verbose",
+      "cpp_type": "bool",
+      "default": false,
+      "cli": "--oracle-verbose",
+      "json_key": "oracle_verbose",
+      "help": "Print external-oracle diagnostics.",
+      "constraints": {
+        "type": "boolean"
+      }
+    },
+    {
+      "id": "oracle_resolved",
+      "section": "oracle",
+      "json_key": "oracle_resolved",
+      "help": "Resolved external oracle.",
+      "constraints": {
+        "enum": [
+          "none",
+          "lkh",
+          "concorde"
+        ]
+      },
+      "emit_json": true,
+      "declare": false,
+      "cpp_type": "ResolvedOracleMode",
+      "formatter": "resolved_oracle_mode_name",
+      "json_expr": "opt.solver.oracle.resolved"
+    },
+    {
+      "id": "oracle_exec_path",
+      "section": "oracle",
+      "json_key": "oracle_exec_path",
+      "help": "Resolved oracle executable path.",
+      "constraints": {
+        "type": "string"
+      },
+      "emit_json": true,
+      "declare": false,
+      "cpp_type": "std::string",
+      "json_expr": "opt.solver.oracle.exec_path"
+    },
+    {
+      "id": "oracle_exec_sha256",
+      "section": "oracle",
+      "json_key": "oracle_exec_sha256",
+      "help": "SHA-256 identity of the resolved oracle executable, or unknown when it could not be read.",
+      "constraints": {
+        "type": "string"
+      },
+      "emit_json": true,
+      "required": false,
+      "declare": false,
+      "cpp_type": "std::string",
+      "json_expr": "opt.solver.oracle.exec_sha256"
+    },
+    {
+      "id": "oracle_version",
+      "section": "oracle",
+      "json_key": "oracle_version",
+      "help": "Resolved oracle version.",
+      "constraints": {
+        "type": "string"
+      },
+      "emit_json": true,
+      "declare": false,
+      "cpp_type": "std::string",
+      "json_expr": "opt.solver.oracle.version"
+    }
+  ]
+}

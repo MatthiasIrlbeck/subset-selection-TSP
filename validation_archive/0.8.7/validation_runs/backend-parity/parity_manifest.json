@@ -1,0 +1,27 @@
+{
+  "baseline_kind": "none",
+  "rows": [
+    {
+      "baseline_kind": "none",
+      "baseline_max_abs_mean_delta": "",
+      "baseline_wall_seconds": "",
+      "bruteforce_wall_seconds": 0.140622097,
+      "comparison": "grid-vs-bruteforce",
+      "current_wall_seconds": 0.137481928,
+      "matched_p_values": 3,
+      "max_abs_mean_delta": 0.0,
+      "scenario": "tiny-grid-parity"
+    },
+    {
+      "baseline_kind": "none",
+      "baseline_max_abs_mean_delta": "",
+      "baseline_wall_seconds": "",
+      "bruteforce_wall_seconds": 0.008886945,
+      "comparison": "grid-vs-bruteforce",
+      "current_wall_seconds": 0.008095774,
+      "matched_p_values": 4,
+      "max_abs_mean_delta": 0.0,
+      "scenario": "small-hybrid-parity"
+    }
+  ]
+}

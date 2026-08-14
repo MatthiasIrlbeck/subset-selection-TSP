@@ -1,0 +1,63 @@
++ build-github-release/aldous_tsp --mode balanced --N 28 --instances 2 --threads 1 --seed 101 --restarts 1 --sa-iters 12 --tsp-restarts 1 --tsp-ils 2 --output validation_runs/current/backend-parity/tiny-grid-parity-grid.json --force --p-values 0.25,0.5,1.0 --knn-backend grid --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=28, instances=2, threads=1, output_durability=full, seed=101, point_seed=101, search_seed=101, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=balanced, knn=27, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=12, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.03s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.03s  elapsed 0s  ETA 0s
+
+FINAL (N=28, instances=2, wall=0.1s)
+                   p     k       mean     stderr        min        max
+                0.25     7    0.75835    0.05209    0.70626    0.81044
+                 0.5    14    0.78452    0.01080    0.77373    0.79532
+                   1    28    0.85198    0.01531    0.83667    0.86729
+Results written to validation_runs/current/backend-parity/tiny-grid-parity-grid.json
+Timing receipt written to validation_runs/current/backend-parity/tiny-grid-parity-grid.json.receipt (end-to-end 0.064s)
++ build-github-release/aldous_tsp --mode balanced --N 28 --instances 2 --threads 1 --seed 101 --restarts 1 --sa-iters 12 --tsp-restarts 1 --tsp-ils 2 --output validation_runs/current/backend-parity/tiny-grid-parity-bruteforce.json --force --p-values 0.25,0.5,1.0 --knn-backend bruteforce --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=28, instances=2, threads=1, output_durability=full, seed=101, point_seed=101, search_seed=101, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=balanced, knn=27, knn_backend=coords_exact_bruteforce_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=12, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.25,0.5,1
+========================================================================
+  [done 1/2] instance 1 in 0.03s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.03s  elapsed 0s  ETA 0s
+
+FINAL (N=28, instances=2, wall=0.1s)
+                   p     k       mean     stderr        min        max
+                0.25     7    0.75835    0.05209    0.70626    0.81044
+                 0.5    14    0.78452    0.01080    0.77373    0.79532
+                   1    28    0.85198    0.01531    0.83667    0.86729
+Results written to validation_runs/current/backend-parity/tiny-grid-parity-bruteforce.json
+Timing receipt written to validation_runs/current/backend-parity/tiny-grid-parity-bruteforce.json.receipt (end-to-end 0.067s)
++ build-github-release/aldous_tsp --mode hybrid --N 36 --instances 2 --threads 1 --seed 202 --restarts 1 --sa-iters 18 --tsp-restarts 1 --tsp-ils 2 --output validation_runs/current/backend-parity/small-hybrid-parity-grid.json --force --p-values 0.1,0.3,0.8,1.0 --knn-backend grid --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=36, instances=2, threads=1, output_durability=full, seed=202, point_seed=202, search_seed=202, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=35, knn_backend=coords_exact_grid_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=18, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.10000000000000001,0.29999999999999999,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 0.01s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.00s  elapsed 0s  ETA 0s
+
+FINAL (N=36, instances=2, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.1     4    0.55141    0.10925    0.44217    0.66066
+                 0.3    11    0.69103    0.08831    0.60272    0.77934
+                 0.8    29    0.75143    0.01099    0.74044    0.76242
+                   1    36    0.79914    0.00891    0.79023    0.80804
+Results written to validation_runs/current/backend-parity/small-hybrid-parity-grid.json
+Timing receipt written to validation_runs/current/backend-parity/small-hybrid-parity-grid.json.receipt (end-to-end 0.012s)
++ build-github-release/aldous_tsp --mode hybrid --N 36 --instances 2 --threads 1 --seed 202 --restarts 1 --sa-iters 18 --tsp-restarts 1 --tsp-ils 2 --output validation_runs/current/backend-parity/small-hybrid-parity-bruteforce.json --force --p-values 0.1,0.3,0.8,1.0 --knn-backend bruteforce --final-exhaustive-k 128 --pair-exchange-passes 0 --ruin-recreate-rounds 0 --path-relink-top 0
+========================================================================
+  ALDOUS SUBSET-SELECTION TSP · solver 2.0.0
+  N=36, instances=2, threads=1, output_durability=full, seed=202, point_seed=202, search_seed=202, campaign_id=default, campaign_shard=0, replicate_offset=0, solver_policy_id=default, fidelity_level=strong, mode=hybrid, knn=35, knn_backend=coords_exact_bruteforce_knn, verify_knn_checks=0, search_policy=legacy-balanced, subset_restarts=1, continuation_restarts=1, continuation_policy=supplemental, racing_candidates=0, racing_survivors=2, staged_search=on, strong_polish_finalists=3, sa_iters=18, sa_iters_per_k=0, sa_iters_per_n=0, sa_t0=1.4, sa_t1=5e-05, restart_threads=5, second_sweep=false, periodic=false, control_variate=false, held_karp=false, exact_subset_max_n=0, tsp_candidate_starts=12, tsp_restarts=1, pair_exchange_max_k=5000, path_relink_top=0, oracle=disabled, p_values=0.10000000000000001,0.29999999999999999,0.80000000000000004,1
+========================================================================
+  [done 1/2] instance 1 in 0.01s  elapsed 0s  ETA 0s
+  [done 2/2] instance 2 in 0.00s  elapsed 0s  ETA 0s
+
+FINAL (N=36, instances=2, wall=0.0s)
+                   p     k       mean     stderr        min        max
+                 0.1     4    0.55141    0.10925    0.44217    0.66066
+                 0.3    11    0.69103    0.08831    0.60272    0.77934
+                 0.8    29    0.75143    0.01099    0.74044    0.76242
+                   1    36    0.79914    0.00891    0.79023    0.80804
+Results written to validation_runs/current/backend-parity/small-hybrid-parity-bruteforce.json
+Timing receipt written to validation_runs/current/backend-parity/small-hybrid-parity-bruteforce.json.receipt (end-to-end 0.012s)
+Wrote validation_runs/current/backend-parity/parity_manifest.csv

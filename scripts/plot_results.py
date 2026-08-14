@@ -1,143 +1,139 @@
 #!/usr/bin/env python3
+"""Plot Aldous subset-selection TSP result JSON files."""
+
+from __future__ import annotations
+
 import argparse
+import csv
 import json
-import math
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from typing import Iterable
 
 import matplotlib.pyplot as plt
-
-
-Row = Tuple[float, float, float, int]
 
 BHH_REFERENCE = 0.7124
 
 
-def load_results(path: Path) -> Tuple[dict, List[Row]]:
-    doc = json.loads(path.read_text())
-
-    summary = doc.get("summary", {})
-    rows: List[Row] = []
-    for p_str, entry in summary.items():
-        p = float(p_str)
-        mean = float(entry["mean"])
-        stderr = float(entry.get("stderr", 0.0))
-        n = int(entry.get("n", 0))
-        rows.append((p, mean, stderr, n))
-
+def load_rows(path: Path) -> tuple[dict, list[dict]]:
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    rows: list[dict] = []
+    if doc.get("summary_rows"):
+        for row in doc["summary_rows"]:
+            rows.append(
+                {
+                    "p": float(row["p"]),
+                    "k": int(row.get("k", 0)),
+                    "mean": float(row["mean"]),
+                    "stderr": float(row.get("stderr", 0.0)),
+                    "std": float(row.get("std", 0.0)),
+                    "n": int(row.get("n", 0)),
+                    "min": float(row.get("min", row["mean"])),
+                    "max": float(row.get("max", row["mean"])),
+                    "exact_optimal_instances": int(
+                        row.get("exact_optimal_instances", 0)
+                    ),
+                }
+            )
+    else:
+        summary = doc.get("summary", {})
+        for p_text, row in summary.items():
+            rows.append(
+                {
+                    "p": float(p_text),
+                    "k": int(row.get("k", 0)),
+                    "mean": float(row["mean"]),
+                    "stderr": float(row.get("stderr", 0.0)),
+                    "std": float(row.get("std", 0.0)),
+                    "n": int(row.get("n", 0)),
+                    "min": float(row.get("min", row["mean"])),
+                    "max": float(row.get("max", row["mean"])),
+                    "exact_optimal_instances": int(
+                        row.get("exact_optimal_instances", 0)
+                    ),
+                }
+            )
     if not rows:
-        raise ValueError("results.json contains no summary rows")
-
-    rows.sort(key=lambda row: row[0])
+        raise ValueError(f"{path} contains no summary rows")
+    rows.sort(key=lambda row: row["p"])
     return doc, rows
 
 
+def write_csv(path: Path, rows: Iterable[dict]) -> None:
+    rows = list(rows)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "p", "k", "mean", "stderr", "std", "n", "min", "max",
+                "exact_optimal_instances",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
-def annotation_layout(
-    p_values: Sequence[float], means: Sequence[float], best_idx: int
-) -> Tuple[Tuple[float, float], str, str]:
-    x_value = p_values[best_idx]
-    y_value = means[best_idx]
 
-    x_mid = 0.5 * (min(p_values) + max(p_values))
-    y_mid = 0.5 * (min(means) + max(means))
-
-    x_offset = 16 if x_value <= x_mid else -16
-    y_offset = 16 if y_value <= y_mid else -16
-
-    horizontal_alignment = "left" if x_offset > 0 else "right"
-    vertical_alignment = "bottom" if y_offset > 0 else "top"
-    return (x_offset, y_offset), horizontal_alignment, vertical_alignment
-
+def default_title(doc: dict) -> str:
+    return (
+        "Aldous subset-selection TSP\n"
+        f"N={doc.get('N')}, mode={doc.get('mode')}, instances={doc.get('done')}, "
+        f"threads={doc.get('threads')}"
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Plot Aldous subset-selection TSP results from results.json."
-    )
-    parser.add_argument("input_json", help="Path to results.json")
-    parser.add_argument(
-        "-o", "--output", default="aldous_curve.png", help="Output PNG path"
-    )
-    parser.add_argument(
-        "--title",
-        default=None,
-        help="Optional custom title. By default a compact title is generated.",
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input_json", type=Path)
+    parser.add_argument("-o", "--output", type=Path, default=Path("aldous_curve.png"))
+    parser.add_argument("--format", choices=["png", "svg", "pdf"], default=None)
+    parser.add_argument("--dpi", type=int, default=180)
+    parser.add_argument("--title", default=None)
+    parser.add_argument("--no-bhh", action="store_true")
+    parser.add_argument("--stderr-multiplier", type=float, default=1.0)
+    parser.add_argument("--csv", type=Path, default=None, help="Optional summary CSV output")
     args = parser.parse_args()
 
-    doc, rows = load_results(Path(args.input_json))
+    doc, rows = load_rows(args.input_json)
+    if args.csv is not None:
+        write_csv(args.csv, rows)
 
-    p_values = [row[0] for row in rows]
-    means = [row[1] for row in rows]
-    stderrs = [row[2] for row in rows]
+    p = [row["p"] for row in rows]
+    mean = [row["mean"] for row in rows]
+    stderr = [row["stderr"] * args.stderr_multiplier for row in rows]
 
-    best_idx = min(range(len(means)), key=lambda idx: means[idx])
+    fig, ax = plt.subplots(figsize=(9, 5.5), dpi=args.dpi)
+    (line,) = ax.plot(p, mean, marker="o", linewidth=2, label="mean L(k)/k")
 
-    fig, ax = plt.subplots(figsize=(9, 5.5), dpi=180)
+    if any(value > 0 for value in stderr):
+        lower = [m - e for m, e in zip(mean, stderr)]
+        upper = [m + e for m, e in zip(mean, stderr)]
+        ax.fill_between(p, lower, upper, alpha=0.18, color=line.get_color(), label=f"±{args.stderr_multiplier:g} stderr")
 
-    (line,) = ax.plot(
-        p_values,
-        means,
-        marker="o",
-        linewidth=2,
-        label="mean edge length",
-    )
+    if not args.no_bhh:
+        ax.axhline(BHH_REFERENCE, linestyle="--", linewidth=1.5, label=f"BHH ref ({BHH_REFERENCE})")
 
-    if any(stderr > 0.0 for stderr in stderrs):
-        lower = [mean - stderr for mean, stderr in zip(means, stderrs)]
-        upper = [mean + stderr for mean, stderr in zip(means, stderrs)]
-        ax.fill_between(
-            p_values,
-            lower,
-            upper,
-            alpha=0.18,
-            color=line.get_color(),
-            label="±1 stderr",
-        )
-
-    ax.axhline(
-        BHH_REFERENCE,
-        linestyle="--",
-        linewidth=1.5,
-        color="grey",
-        label=f"BHH asymptotic limit ({BHH_REFERENCE})",
-    )
-
-    ax.scatter([p_values[best_idx]], [means[best_idx]], zorder=3)
-    xytext, ha, va = annotation_layout(p_values, means, best_idx)
+    best = min(range(len(rows)), key=lambda idx: mean[idx])
+    ax.scatter([p[best]], [mean[best]], zorder=3)
     ax.annotate(
-        f"lowest sampled mean\np = {p_values[best_idx]:.2f}, {means[best_idx]:.4f}",
-        xy=(p_values[best_idx], means[best_idx]),
-        xytext=xytext,
+        f"lowest sampled mean\np={p[best]:.4g}, {mean[best]:.4f}",
+        xy=(p[best], mean[best]),
+        xytext=(16, 16),
         textcoords="offset points",
-        ha=ha,
-        va=va,
         arrowprops={"arrowstyle": "-", "linewidth": 0.8},
         bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.95},
     )
 
-    n_value = doc.get("N")
-    mode = doc.get("mode")
-    instances = doc.get("done")
-    restarts = doc.get("restarts")
-
-    title = args.title
-    if title is None:
-        title = (
-            "Aldous subset-selection TSP\n"
-            f"N = {n_value}, mode = {mode}, instances = {instances}, restarts = {restarts}"
-        )
-
-    ax.set_title(title)
-    ax.set_xlabel("Subset fraction p = k / N")
-    ax.set_ylabel("Estimated mean cycle edge length")
+    ax.set_title(args.title or default_title(doc))
+    ax.set_xlabel("subset fraction p = k/N")
+    ax.set_ylabel("estimated mean cycle edge length L(k)/k")
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="lower right")
-    ax.set_xlim(min(p_values), max(p_values))
-
+    ax.legend(loc="best")
+    ax.set_xlim(min(p), max(p))
     fig.tight_layout()
-    fig.savefig(args.output, bbox_inches="tight")
+
+    save_kwargs = {"bbox_inches": "tight"}
+    if args.format is not None:
+        save_kwargs["format"] = args.format
+    fig.savefig(args.output, **save_kwargs)
 
 
 if __name__ == "__main__":

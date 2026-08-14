@@ -1,0 +1,159 @@
+name: Verified release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    name: build-test-attest-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55 # v5.5.0
+        with:
+          python-version: "3.12"
+      - name: Install build and validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ python3-jsonschema
+      - name: Verify immutable generated surfaces and release identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/generate_options.py --check
+          version=$(sed -n 's/^project(aldous_tsp VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)
+          test -n "$version"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            test "$GITHUB_REF_NAME" = "v${version}"
+            test "$(git cat-file -t "$GITHUB_REF_NAME")" = "tag"
+            tag_object=$(git rev-parse "$GITHUB_REF_NAME^{tag}")
+            verification=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" \
+              --jq '.verification.verified')
+            reason=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/git/tags/${tag_object}" \
+              --jq '.verification.reason')
+            test "$verification" = "true" || {
+              echo "GitHub did not verify release-tag signature: ${reason}" >&2
+              exit 1
+            }
+          fi
+          test -z "$(git status --porcelain)"
+          printf 'VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          printf 'SOURCE_DATE_EPOCH=%s\n' "$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+          printf 'SOURCE_COMMIT=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          printf 'SOURCE_TREE=%s\n' "$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_ENV"
+      - name: Configure, build, and test
+        run: |
+          cmake -S . -B build-release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON \
+            -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
+          cmake --build build-release --parallel 2
+          ctest --test-dir build-release --output-on-failure
+      - name: Create reproducible source archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          prefix="subset-selection-TSP-${VERSION}/"
+          python3 scripts/create_source_archives.py \
+            --repo . \
+            --ref HEAD \
+            --prefix "$prefix" \
+            --zip "dist/subset-selection-TSP-${VERSION}.zip" \
+            --tar-gz "dist/subset-selection-TSP-${VERSION}.tar.gz"
+          rm -rf release-sbom-source
+          unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d release-sbom-source
+          source_dir="release-sbom-source/subset-selection-TSP-${VERSION}"
+          python3 scripts/generate_sbom.py \
+            --root "$source_dir" \
+            --output "dist/subset-selection-TSP-${VERSION}.spdx.json" \
+            --version "$VERSION" \
+            --commit "$SOURCE_COMMIT" \
+            --tree "$SOURCE_TREE"
+          python3 scripts/generate_provenance.py \
+            --output "dist/subset-selection-TSP-${VERSION}-provenance.json" \
+            --artifact "dist/subset-selection-TSP-${VERSION}.zip" \
+            --artifact "dist/subset-selection-TSP-${VERSION}.tar.gz" \
+            --artifact "dist/subset-selection-TSP-${VERSION}.spdx.json" \
+            --version "$VERSION" \
+            --commit "$SOURCE_COMMIT" \
+            --tree "$SOURCE_TREE" \
+            --builder-id "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          (cd dist && sha256sum * > SHA256SUMS)
+          python3 scripts/verify_release_bundle.py \
+            --dist dist \
+            --expected-version "$VERSION" \
+            --expected-commit "$SOURCE_COMMIT" \
+            --expected-tree "$SOURCE_TREE"
+      - name: Verify source-archive revision fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-archive-check source-archive-build
+          unzip -q "dist/subset-selection-TSP-${VERSION}.zip" -d source-archive-check
+          source_dir="source-archive-check/subset-selection-TSP-${VERSION}"
+          cmake -S "$source_dir" -B source-archive-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DALDOUS_TSP_ENABLE_WARNINGS=ON \
+            -DALDOUS_TSP_ENABLE_WERROR=ON \
+            -DALDOUS_TSP_ENABLE_PYTHON_TESTS=ON
+          cmake --build source-archive-build --parallel 2
+          ctest --test-dir source-archive-build --output-on-failure
+          grep -F "kGitCommit = \"${SOURCE_COMMIT}\"" \
+            source-archive-build/generated/aldous_tsp/version.hpp
+          grep -F "kGitTree = \"${SOURCE_TREE}\"" \
+            source-archive-build/generated/aldous_tsp/version.hpp
+          grep -F 'kRevisionSource = "source-archive"' \
+            source-archive-build/generated/aldous_tsp/version.hpp
+          (cd dist && sha256sum --check SHA256SUMS)
+      - name: Create signed build-provenance attestations
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            dist/subset-selection-TSP-${{ env.VERSION }}.zip
+            dist/subset-selection-TSP-${{ env.VERSION }}.tar.gz
+            dist/subset-selection-TSP-${{ env.VERSION }}.spdx.json
+            dist/subset-selection-TSP-${{ env.VERSION }}-provenance.json
+            dist/SHA256SUMS
+      - name: Upload verified release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: subset-selection-TSP-${{ env.VERSION }}-verified-release
+          if-no-files-found: error
+          path: dist
+      - name: Publish tagged GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes_file="docs/releases/${VERSION}.md"
+          test -f "$notes_file"
+          gh release create "$GITHUB_REF_NAME" \
+            dist/* \
+            --verify-tag \
+            --title "subset-selection-TSP ${VERSION}" \
+            --notes-file "$notes_file" \
+            --draft \
+            --latest=false \
+            --fail-on-no-commits

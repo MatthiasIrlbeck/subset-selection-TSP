@@ -1,0 +1,38 @@
+{
+  "errors": [],
+  "oracle_call_records": [
+    {
+      "after_length": 29.475179448928227,
+      "before_length": 30.174664869485053,
+      "error": "",
+      "exec_path": "/usr/local/bin/LKH",
+      "format": "matrix",
+      "gain": 0.6994854205568259,
+      "k": 32,
+      "seconds": 0.101123013,
+      "solver": "lkh",
+      "status": "improved",
+      "type": "tsp"
+    },
+    {
+      "after_length": 29.475179448928227,
+      "before_length": 30.174664869485053,
+      "error": "",
+      "exec_path": "/usr/local/bin/LKH",
+      "format": "euc2d",
+      "gain": 0.6994854205568259,
+      "k": 32,
+      "seconds": 0.100887597,
+      "solver": "lkh",
+      "status": "improved",
+      "type": "tsp"
+    }
+  ],
+  "solvers": [
+    [
+      "lkh",
+      "/usr/local/bin/LKH"
+    ]
+  ],
+  "status": "passed"
+}

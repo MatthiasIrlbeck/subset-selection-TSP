@@ -1,0 +1,20 @@
+{
+  "receipt_schema_version": 1,
+  "result_path": "validation_runs/current/original-compat/original-compat-tiny-bruteforce.json",
+  "result_sha256": "db50ae8ee774beeb34e7aa55d8868c1ff9374a5c6e6e18bc46f70d800797633a",
+  "result_bytes": 13529,
+  "requested_durability": "full",
+  "commit_state": "fully-durable",
+  "timing": {
+    "solver_wall_seconds": 0.004127975,
+    "control_reference_seconds": 0,
+    "aggregation_seconds": 1.3811e-05,
+    "experiment_wall_seconds": 0.004141866,
+    "serialization_seconds": 0.000234278,
+    "output_write_seconds": 1.1507e-05,
+    "output_synchronization_seconds": 0.001463785,
+    "output_commit_seconds": 1.8687e-05,
+    "output_total_seconds": 0.001525648,
+    "process_end_to_end_seconds": 0.006054908
+  }
+}
