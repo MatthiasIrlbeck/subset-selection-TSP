@@ -33,7 +33,12 @@ jobs:
       - name: Install build and validation dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build g++ python3-jsonschema
+          sudo apt-get install -y ninja-build g++
+          python -m pip install --disable-pip-version-check --requirement requirements-analysis.txt
+          python - <<'PY'
+          import jsonschema
+          print(f"jsonschema import OK: {jsonschema.__file__}")
+          PY
       - name: Verify immutable generated surfaces and release identity
         shell: bash
         env:
